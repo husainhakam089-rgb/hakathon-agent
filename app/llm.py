@@ -148,7 +148,7 @@ class GeminiLLM:
         from google.genai import errors, types
 
         self._httpx, self._errors, self.types = httpx, errors, types
-        self.model = model or os.getenv("GEMINI_MODEL") or "gemini-3.8-flash"
+        self.model = model or os.getenv("GEMINI_MODEL") or "gemini-3.7-flash"
         self.max_tokens = max_tokens
         key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not key:
