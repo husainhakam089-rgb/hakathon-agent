@@ -17,6 +17,7 @@ history, so providers must work without it too.
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 
 # Models that accept the server-side refusal fallback (`fallbacks: "default"`).
@@ -53,8 +54,8 @@ class AnthropicLLM:
         import anthropic
 
         self._anthropic = anthropic
-        self.model = model or os.getenv("MODEL_NAME", "claude-sonnet-5-5")
-        self.effort = effort or os.getenv("EFFORT", "medium")
+        self.model = model or os.getenv("MODEL_NAME") or "claude-sonnet-5-5"
+        self.effort = effort or os.getenv("EFFORT") or "medium"
         self.max_tokens = max_tokens
         # The SDK also resolves credentials itself when no key is passed.
         self.client = anthropic.Anthropic(api_key=api_key or os.getenv("ANTHROPIC_API_KEY") or None)
@@ -147,12 +148,19 @@ class GeminiLLM:
         from google.genai import errors, types
 
         self._httpx, self._errors, self.types = httpx, errors, types
-        self.model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self.model = model or os.getenv("GEMINI_MODEL") or "gemini-3.8-flash"
         self.max_tokens = max_tokens
         key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not key:
             raise LLMError("ما كو مفتاح Gemini. حط GEMINI_API_KEY بملف .env", "missing GEMINI_API_KEY")
-        self.client = genai.Client(api_key=key)
+        # Gemini often answers 503 "high demand" for a moment: retry those.
+        # 429 is not retried: on the free tier it is usually the daily quota.
+        self.http_options = types.HttpOptions(
+            timeout=60_000,  # ms, per attempt
+            retry_options=types.HttpRetryOptions(
+                attempts=4, initial_delay=1.0, max_delay=8.0,
+                http_status_codes=[408, 500, 502, 503, 504]))
+        self.client = genai.Client(api_key=key, http_options=self.http_options)
 
     # ----- format conversion -----
 
@@ -191,6 +199,34 @@ class GeminiLLM:
 
     # ----- main call -----
 
+    MAX_RATE_LIMIT_WAIT = 60  # seconds: a per-minute window never needs more
+
+    @staticmethod
+    def _retry_delay(e) -> float | None:
+        """Seconds Gemini asks us to wait (RetryInfo in the error details), if any."""
+        error = e.details.get("error", e.details) if isinstance(e.details, dict) else {}
+        for d in error.get("details") or []:
+            if str(d.get("@type", "")).endswith("RetryInfo"):
+                try:
+                    return float(str(d.get("retryDelay", "")).rstrip("s"))
+                except ValueError:
+                    return None
+        return None
+
+    def _generate(self, contents, config):
+        """Free tier allows only a few requests per minute. When Gemini says how
+        long to wait, wait and retry instead of failing, up to MAX_RATE_LIMIT_WAIT in total."""
+        waited = 0.0
+        while True:
+            try:
+                return self.client.models.generate_content(model=self.model, contents=contents, config=config)
+            except self._errors.ClientError as e:
+                delay = self._retry_delay(e) if e.code == 429 and "PerDay" not in str(e) else None
+                if delay is None or waited + delay > self.MAX_RATE_LIMIT_WAIT:
+                    raise
+                time.sleep(delay + 1)
+                waited += delay + 1
+
     def complete(self, system: str, messages: list[dict], tools: list[dict]) -> LLMResponse:
         t, errors = self.types, self._errors
         config = t.GenerateContentConfig(
@@ -201,11 +237,13 @@ class GeminiLLM:
             max_output_tokens=self.max_tokens,
         )
         try:
-            response = self.client.models.generate_content(
-                model=self.model, contents=self._to_contents(messages), config=config)
+            response = self._generate(self._to_contents(messages), config)
         except errors.ClientError as e:
             if e.code == 429:
-                raise LLMError("خلصت حصة Gemini المجانية هسه، انتظر شوية وعيد.", str(e))
+                if "PerDay" in str(e):
+                    raise LLMError(f"خلصت حصة اليوم المجانية للنموذج {self.model}. جرب باچر، "
+                                   "أو بدّل GEMINI_MODEL بملف .env لنموذج ثاني.", str(e))
+                raise LLMError("خلصت حصة Gemini المجانية هسه، انتظر دقيقة وعيد.", str(e))
             if e.code in (401, 403) or "API_KEY" in str(e):
                 raise LLMError("مفتاح Gemini غلط أو ما عنده صلاحية. تأكد من GEMINI_API_KEY بملف .env", str(e))
             if e.code == 404:
@@ -240,7 +278,7 @@ class GeminiLLM:
 
 def make_llm():
     """Factory: the one place to change when switching provider (LLM_PROVIDER in .env)."""
-    provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
+    provider = (os.getenv("LLM_PROVIDER") or "anthropic").strip().lower()
     if provider == "gemini":
         return GeminiLLM()
     return AnthropicLLM()

@@ -115,6 +115,17 @@ def test_llm_error_is_friendly(make_agent):
     assert [m["role"] for m in a.llm.calls[1]] == ["user", "assistant", "user"]
 
 
+def test_error_after_write_says_what_was_saved(make_agent, conn):
+    cid = db.add_customer(conn, "أبو علي")
+    a = make_agent(
+        LLMResponse(text="", tool_calls=[call("record_debt", customer_id=cid, amount=25000, currency="IQD")]),
+        LLMError("خلصت حصة Gemini المجانية هسه، انتظر دقيقة وعيد.", "429"),
+    )
+    reply = a.chat("s", "سجل على ابو علي 25 الف")["reply"]
+    assert reply.startswith("خلصت حصة")
+    assert "سجلت على أبو علي 25,000 دينار" in reply and "لا تعيده" in reply
+
+
 def test_unexpected_error_does_not_crash(make_agent):
     a = make_agent(RuntimeError("boom"))
     assert "خطأ" in a.chat("s", "هلو")["reply"]

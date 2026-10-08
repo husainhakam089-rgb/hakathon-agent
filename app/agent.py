@@ -23,6 +23,32 @@ EMPTY_REPLY = "ما فهمت عليك، عيد الطلب بطريقة ثاني�
 DEFAULT_LOG_PATH = Path(__file__).resolve().parent.parent / "logs" / "tool_calls.jsonl"
 
 
+def _money(amount: int, currency: str) -> str:
+    return f"{amount:,} " + ("دولار" if currency == "USD" else "دينار")
+
+
+def _with_done_note(reply: str, tool_log: list[dict]) -> str:
+    """When a turn fails after a tool already wrote something, say what was
+    saved, so the shop owner does not resend the message and record it twice."""
+    done = []
+    for entry in tool_log:
+        r = entry["result"]
+        if not r.get("ok"):
+            continue
+        if entry["tool"] == "record_debt":
+            done.append(f"سجلت على {r['customer_name']} {_money(r['amount'], r['currency'])}")
+        elif entry["tool"] == "record_payment":
+            done.append(f"سجلت تسديد من {r['customer_name']} {_money(r['amount'], r['currency'])}")
+        elif entry["tool"] == "add_customer":
+            done.append(f"أضفت الزبون {r['name']}")
+        elif entry["tool"] == "undo_last":
+            u = r["undone"]
+            done.append(f"لغيت آخر قيد ({u['customer_name']} {_money(u['amount'], u['currency'])})")
+    if not done:
+        return reply
+    return f"{reply}\nبس انتبه، هذا انحفظ قبل المشكلة: " + "، و".join(done) + ". لا تعيده."
+
+
 class Session:
     def __init__(self, conn):
         self.tools = DebtTools(conn)
@@ -97,13 +123,13 @@ class Agent:
                                     "is_error": not entry["result"].get("ok", False)})
                 turn.append({"role": "tool", "results": results})
             else:
-                reply = CONFUSED_REPLY
+                reply = _with_done_note(CONFUSED_REPLY, tool_log)
         except LLMError as e:
             log.warning("LLM error: %s", e.detail)
-            reply = e.user_message
+            reply = _with_done_note(e.user_message, tool_log)
         except Exception:  # never crash the chat on an unexpected failure
             log.exception("Agent turn failed")
-            reply = "صار خطأ غير متوقع، عيد المحاولة."
+            reply = _with_done_note("صار خطأ غير متوقع، عيد المحاولة.", tool_log)
 
         turn.append({"role": "assistant", "text": reply, "tool_calls": []})
         session.commit(turn)

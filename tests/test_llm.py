@@ -33,7 +33,7 @@ import pytest
 from app.llm import GeminiLLM, LLMError
 
 
-def _gemini(responses, seen=None):
+def _gemini(responses, seen=None, retry=True):
     from google import genai
 
     def handler(req):
@@ -43,8 +43,11 @@ def _gemini(responses, seen=None):
         return httpx.Response(status, json=body)
 
     llm = GeminiLLM(api_key="test")
-    llm.client = genai.Client(api_key="test", http_options={
-        "httpx_client": httpx.Client(transport=httpx.MockTransport(handler))})
+    update = {"httpx_client": httpx.Client(transport=httpx.MockTransport(handler))}
+    if not retry:
+        update["retry_options"] = llm.http_options.retry_options.model_copy(update={"attempts": 1})
+    options = llm.http_options.model_copy(update=update)
+    llm.client = genai.Client(api_key="test", http_options=options)
     return llm
 
 
@@ -94,11 +97,48 @@ def test_gemini_skips_thoughts():
     (500, "INTERNAL", "بيها مشكلة"),
 ])
 def test_gemini_errors(status, status_text, needle):
-    llm = _gemini([(status, {"error": {"code": status, "message": "x", "status": status_text}})])
-    llm.client._api_client._http_options.retry_options = None
+    llm = _gemini([(status, {"error": {"code": status, "message": "x", "status": status_text}})], retry=False)
     with pytest.raises(LLMError) as e:
         llm.complete("sys", [{"role": "user", "text": "x"}], SCHEMAS)
     assert needle in e.value.user_message.replace("حصة", "الحصة")
+
+
+def test_gemini_daily_quota_is_not_retried():
+    body = {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED",
+                      "message": "quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier"}}
+    llm = _gemini([(429, body)])  # a retry would pop from an empty list
+    with pytest.raises(LLMError) as e:
+        llm.complete("sys", [{"role": "user", "text": "x"}], SCHEMAS)
+    assert "حصة اليوم" in e.value.user_message
+
+
+def test_gemini_retries_busy_model():
+    busy = (503, {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}})
+    llm = _gemini([busy, _ok([{"text": "تمام"}])])
+    assert llm.complete("sys", [{"role": "user", "text": "x"}], SCHEMAS).text == "تمام"
+
+
+def _rate_limited(delay):
+    return 429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED",
+                           "message": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",
+                           "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo",
+                                        "retryDelay": delay}]}}
+
+
+def test_gemini_waits_out_per_minute_limit(monkeypatch):
+    slept = []
+    monkeypatch.setattr("app.llm.time.sleep", slept.append)
+    llm = _gemini([_rate_limited("12s"), _rate_limited("5s"), _ok([{"text": "تمام"}])])
+    assert llm.complete("sys", [{"role": "user", "text": "x"}], SCHEMAS).text == "تمام"
+    assert slept == [13.0, 6.0]
+
+
+def test_gemini_long_wait_is_an_error(monkeypatch):
+    monkeypatch.setattr("app.llm.time.sleep", lambda s: pytest.fail("should not wait"))
+    llm = _gemini([_rate_limited("300s")])
+    with pytest.raises(LLMError) as e:
+        llm.complete("sys", [{"role": "user", "text": "x"}], SCHEMAS)
+    assert "انتظر دقيقة" in e.value.user_message
 
 
 def test_gemini_blocked_is_refusal():
