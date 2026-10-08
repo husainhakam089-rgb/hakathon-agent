@@ -1,0 +1,9 @@
+# Web server (stage 3)
+fastapi>=0.110
+uvicorn>=0.29
+# Claude API with tool use (stage 2)
+anthropic>=0.40
+# Loads settings from .env
+python-dotenv>=1.0
+# Tests
+pytest>=8.0
