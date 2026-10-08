@@ -74,7 +74,7 @@ class Agent:
         self.log_path = log_path
         self.sessions: dict[str, Session] = {}
         # v0 serves one shop: one turn at a time keeps the shared SQLite connection safe.
-        self._lock = threading.Lock()
+        self.lock = threading.Lock()
 
     def _get_llm(self):
         if self.llm is None:
@@ -91,7 +91,7 @@ class Agent:
 
     def chat(self, session_id: str, message: str) -> dict:
         """Run one user turn. Returns {"reply": str, "tool_calls": [...]}."""
-        with self._lock:
+        with self.lock:
             return self._chat(session_id, message.strip())
 
     def _chat(self, session_id: str, message: str) -> dict:

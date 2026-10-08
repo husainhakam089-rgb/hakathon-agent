@@ -1,3 +1,8 @@
+import os
+
+# Importing app.main opens the database: keep tests off the real debt.db
+os.environ["DB_PATH"] = ":memory:"
+
 import pytest
 
 from app import db
