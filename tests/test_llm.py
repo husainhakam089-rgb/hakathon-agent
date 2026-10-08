@@ -84,6 +84,15 @@ def test_gemini_tool_call_roundtrip():
     assert tool_turn["parts"][0]["functionResponse"] == {"name": "find_customer", "response": {"ok": True}}
 
 
+def test_gemini_thinking_level(monkeypatch):
+    seen = []
+    monkeypatch.setenv("GEMINI_THINKING", "minimal")
+    llm = _gemini([_ok([{"text": "x"}])], seen)
+    llm.complete("sys", [{"role": "user", "text": "x"}], SCHEMAS)
+    config = seen[0]["generationConfig"]["thinkingConfig"]
+    assert list(config.values()) == ["MINIMAL"]  # key spelling differs between SDK versions
+
+
 def test_gemini_skips_thoughts():
     llm = _gemini([_ok([{"text": "أفكر...", "thought": True}, {"text": "الجواب"}])])
     assert llm.complete("sys", [{"role": "user", "text": "x"}], SCHEMAS).text == "الجواب"

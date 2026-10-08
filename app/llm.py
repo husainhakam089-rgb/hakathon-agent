@@ -148,8 +148,11 @@ class GeminiLLM:
         from google.genai import errors, types
 
         self._httpx, self._errors, self.types = httpx, errors, types
-        self.model = model or os.getenv("GEMINI_MODEL") or "gemini-3.7-flash"
+        self.model = model or os.getenv("GEMINI_MODEL") or "gemini-3.6-flash"
         self.max_tokens = max_tokens
+        # How much the model thinks before answering: minimal / low / medium / high.
+        # Each message needs 2-3 model calls, so less thinking = noticeably faster replies.
+        self.thinking = (os.getenv("GEMINI_THINKING") or "").strip().upper() or None
         key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not key:
             raise LLMError("ما كو مفتاح Gemini. حط GEMINI_API_KEY بملف .env", "missing GEMINI_API_KEY")
@@ -235,6 +238,7 @@ class GeminiLLM:
             # We run the tools ourselves in agent.py
             automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True),
             max_output_tokens=self.max_tokens,
+            thinking_config=t.ThinkingConfig(thinking_level=self.thinking) if self.thinking else None,
         )
         try:
             response = self._generate(self._to_contents(messages), config)
