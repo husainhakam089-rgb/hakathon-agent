@@ -15,6 +15,7 @@ blocks) inside the current turn. The agent drops it when a turn is saved to
 history, so providers must work without it too.
 """
 
+import json
 import os
 from dataclasses import dataclass, field
 
@@ -128,6 +129,118 @@ class AnthropicLLM:
         return LLMResponse(text=text, tool_calls=calls, raw=list(response.content))
 
 
+_GENERATED_ID = "gen_"
+
+
+def _real_id(call_id: str):
+    """Ids we made up locally are never sent back to Gemini."""
+    return None if call_id.startswith(_GENERATED_ID) else call_id
+
+
+class GeminiLLM:
+    """Google Gemini via the official `google-genai` SDK."""
+
+    def __init__(self, model: str | None = None, api_key: str | None = None,
+                 max_tokens: int = 8192):
+        import httpx
+        from google import genai
+        from google.genai import errors, types
+
+        self._httpx, self._errors, self.types = httpx, errors, types
+        self.model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self.max_tokens = max_tokens
+        key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if not key:
+            raise LLMError("ما كو مفتاح Gemini. حط GEMINI_API_KEY بملف .env", "missing GEMINI_API_KEY")
+        self.client = genai.Client(api_key=key)
+
+    # ----- format conversion -----
+
+    def _tools(self, tools: list[dict]):
+        t = self.types
+        decls = []
+        for tool in tools:
+            schema = tool.get("input_schema") or {}
+            kwargs = {"name": tool["name"], "description": tool.get("description", "")}
+            if schema.get("properties"):  # tools without inputs get no schema
+                kwargs["parameters_json_schema"] = schema
+            decls.append(t.FunctionDeclaration(**kwargs))
+        return [t.Tool(function_declarations=decls)]
+
+    def _to_contents(self, messages: list[dict]):
+        t = self.types
+        out = []
+        for m in messages:
+            if m["role"] == "user":
+                out.append(t.Content(role="user", parts=[t.Part(text=m["text"])]))
+            elif m["role"] == "assistant":
+                if m.get("raw") is not None:
+                    out.append(m["raw"])  # native content incl. thought signatures, unchanged
+                    continue
+                parts = [t.Part(text=m["text"])] if m.get("text") else []
+                parts += [t.Part(function_call=t.FunctionCall(id=_real_id(tc.id), name=tc.name, args=tc.input))
+                          for tc in m.get("tool_calls", [])]
+                out.append(t.Content(role="model", parts=parts))
+            elif m["role"] == "tool":
+                out.append(t.Content(role="user", parts=[
+                    t.Part(function_response=t.FunctionResponse(
+                        id=_real_id(r["id"]), name=r["name"], response=json.loads(r["content"])))
+                    for r in m["results"]
+                ]))
+        return out
+
+    # ----- main call -----
+
+    def complete(self, system: str, messages: list[dict], tools: list[dict]) -> LLMResponse:
+        t, errors = self.types, self._errors
+        config = t.GenerateContentConfig(
+            system_instruction=system,
+            tools=self._tools(tools),
+            # We run the tools ourselves in agent.py
+            automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True),
+            max_output_tokens=self.max_tokens,
+        )
+        try:
+            response = self.client.models.generate_content(
+                model=self.model, contents=self._to_contents(messages), config=config)
+        except errors.ClientError as e:
+            if e.code == 429:
+                raise LLMError("خلصت حصة Gemini المجانية هسه، انتظر شوية وعيد.", str(e))
+            if e.code in (401, 403) or "API_KEY" in str(e):
+                raise LLMError("مفتاح Gemini غلط أو ما عنده صلاحية. تأكد من GEMINI_API_KEY بملف .env", str(e))
+            if e.code == 404:
+                raise LLMError(f"النموذج {self.model} مو موجود. تأكد من GEMINI_MODEL بملف .env", str(e))
+            raise LLMError("صار خطأ بالطلب للنموذج، عيد المحاولة.", str(e))
+        except errors.APIError as e:
+            raise LLMError("خدمة الذكاء الاصطناعي بيها مشكلة هسه، جرب بعد شوية.", str(e))
+        except self._httpx.TransportError as e:
+            raise LLMError("ما گدرت أتصل بالإنترنت. تأكد من النت وعيد.", str(e))
+
+        if not response.candidates:
+            return LLMResponse(text="", refused=True)  # prompt blocked
+        candidate = response.candidates[0]
+        reason = candidate.finish_reason
+        if reason == t.FinishReason.MAX_TOKENS:
+            raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens")
+        parts = (candidate.content.parts if candidate.content else None) or []
+        if not parts and reason in (t.FinishReason.SAFETY, t.FinishReason.PROHIBITED_CONTENT,
+                                    t.FinishReason.BLOCKLIST, t.FinishReason.SPII):
+            return LLMResponse(text="", refused=True)
+
+        text = "".join(p.text for p in parts if p.text and not p.thought).strip()
+        calls = []
+        for i, p in enumerate(parts):
+            if p.function_call:
+                fc = p.function_call
+                # Some models give no id; then tool results are matched by name only.
+                call_id = fc.id or f"{_GENERATED_ID}{len(messages)}_{i}"
+                calls.append(ToolCall(call_id, fc.name, dict(fc.args or {})))
+        return LLMResponse(text=text, tool_calls=calls, raw=candidate.content)
+
+
 def make_llm():
-    """Factory: the one place to change when switching provider."""
+    """Factory: the one place to change when switching provider (LLM_PROVIDER in .env)."""
+    provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
+    if provider == "gemini":
+        return GeminiLLM()
     return AnthropicLLM()

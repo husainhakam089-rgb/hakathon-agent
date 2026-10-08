@@ -1,8 +1,9 @@
 # Web server (stage 3)
 fastapi>=0.110
 uvicorn>=0.29
-# Claude API with tool use (stage 2)
+# Model providers (stage 2) - pick one with LLM_PROVIDER in .env
 anthropic>=0.40
+google-genai>=1.0
 # Loads settings from .env
 python-dotenv>=1.0
 # Tests

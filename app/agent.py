@@ -92,7 +92,7 @@ class Agent:
                 for call in response.tool_calls:
                     entry = self._run_tool(session, session_id, message, call)
                     tool_log.append(entry)
-                    results.append({"id": call.id,
+                    results.append({"id": call.id, "name": call.name,
                                     "content": json.dumps(entry["result"], ensure_ascii=False),
                                     "is_error": not entry["result"].get("ok", False)})
                 turn.append({"role": "tool", "results": results})
