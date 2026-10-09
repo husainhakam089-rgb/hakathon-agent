@@ -60,3 +60,13 @@ def test_debtors_sorted_and_credit_not_in_total(client, conn):
 
 def test_empty_message_rejected(client):
     assert client().post("/chat", json={"session_id": "s", "message": ""}).status_code == 422
+
+
+def test_port_in_use():
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        s.listen()
+        port = s.getsockname()[1]
+        assert main_mod.port_in_use(port)
+    assert not main_mod.port_in_use(port)

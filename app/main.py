@@ -45,6 +45,14 @@ def debtors():
     return {"debtors": rows, "totals": totals}
 
 
+def port_in_use(port: int) -> bool:
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
 def main() -> None:
     import threading
     import webbrowser
@@ -53,6 +61,12 @@ def main() -> None:
 
     port = int(os.getenv("PORT") or 8000)
     url = f"http://127.0.0.1:{port}"
+    if port_in_use(port):
+        # Otherwise the browser would open an older copy that is still running.
+        print(f"المنفذ {port} مشغول: أكو نسخة ثانية من البرنامج شغالة (ممكن نسخة قديمة).")
+        print("سدها أول، أو اكتب بـ PowerShell:  taskkill /F /IM python.exe /IM py.exe")
+        print("وبعدين شغّل start.bat من جديد.")
+        raise SystemExit(1)
     print(f"دفتر الديون شغال على: {url}  (للإيقاف: Ctrl+C)")
     if not os.getenv("NO_BROWSER"):
         threading.Timer(1.5, webbrowser.open, [url]).start()
