@@ -33,16 +33,19 @@ import pytest
 from app.llm import GeminiLLM, LLMError
 
 
-def _gemini(responses, seen=None, retry=True):
+def _gemini(responses, seen=None, retry=True, models=None, urls=None):
     from google import genai
 
     def handler(req):
         if seen is not None:
             seen.append(json.loads(req.content))
+        if urls is not None:
+            urls.append(str(req.url))
         status, body = responses.pop(0)
         return httpx.Response(status, json=body)
 
     llm = GeminiLLM(api_key="test")
+    llm.models = models or [llm.model]  # no fallback models unless a test asks for them
     update = {"httpx_client": httpx.Client(transport=httpx.MockTransport(handler))}
     if not retry:
         update["retry_options"] = llm.http_options.retry_options.model_copy(update={"attempts": 1})
@@ -148,6 +151,61 @@ def test_gemini_long_wait_is_an_error(monkeypatch):
     with pytest.raises(LLMError) as e:
         llm.complete("sys", [{"role": "user", "text": "x"}], SCHEMAS)
     assert "انتظر دقيقة" in e.value.user_message
+
+
+def _per_day():
+    return 429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED",
+                           "message": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}}
+
+
+def test_gemini_switches_model_when_daily_quota_runs_out():
+    urls = []
+    llm = _gemini([_per_day(), _ok([{"text": "تمام"}]), _ok([{"text": "ثاني"}])],
+                  models=["m-a", "m-b"], urls=urls)
+    llm.model = "m-a"
+    msgs = [{"role": "user", "text": "x"}]
+    assert llm.complete("sys", msgs, SCHEMAS).text == "تمام"
+    assert llm.complete("sys", msgs, SCHEMAS).text == "ثاني"  # stays on m-b, no retry of m-a
+    assert [u.split("/models/")[1].split(":")[0] for u in urls] == ["m-a", "m-b", "m-b"]
+
+
+def test_gemini_no_switch_mid_turn():
+    llm = _gemini([_ok([{"functionCall": {"name": "undo_last", "args": {}}}]), _per_day()],
+                  models=["m-a", "m-b"])
+    llm.model = "m-a"
+    msgs = [{"role": "user", "text": "x"}]
+    r = llm.complete("sys", msgs, SCHEMAS)
+    msgs += [{"role": "assistant", "text": "", "tool_calls": r.tool_calls, "raw": r.raw},
+             {"role": "tool", "results": [{"id": r.tool_calls[0].id, "name": "undo_last",
+                                           "content": "{}", "is_error": False}]}]
+    with pytest.raises(LLMError) as e:  # a fallback call would pop from an empty list
+        llm.complete("sys", msgs, SCHEMAS)
+    assert "عيد رسالتك" in e.value.user_message
+
+
+def test_gemini_all_models_out_of_quota():
+    llm = _gemini([_per_day(), _per_day()], models=["m-a", "m-b"])
+    llm.model = "m-a"
+    for _ in range(2):  # second time: known exhausted, no request at all
+        with pytest.raises(LLMError) as e:
+            llm.complete("sys", [{"role": "user", "text": "x"}], SCHEMAS)
+        assert "لكل نماذج" in e.value.user_message
+
+
+def test_gemini_switches_instead_of_waiting_at_turn_start(monkeypatch):
+    monkeypatch.setattr("app.llm.time.sleep", lambda s: pytest.fail("should switch, not wait"))
+    llm = _gemini([_rate_limited("30s"), _ok([{"text": "تمام"}])], models=["m-a", "m-b"])
+    llm.model = "m-a"
+    assert llm.complete("sys", [{"role": "user", "text": "x"}], SCHEMAS).text == "تمام"
+    assert llm.model == "m-b"
+
+
+def test_gemini_skips_overloaded_model():
+    busy = (503, {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}})
+    llm = _gemini([busy, _ok([{"text": "تمام"}])], retry=False, models=["m-a", "m-b"])
+    llm.model = "m-a"
+    assert llm.complete("sys", [{"role": "user", "text": "x"}], SCHEMAS).text == "تمام"
+    assert llm.model == "m-b"
 
 
 def test_gemini_blocked_is_refusal():

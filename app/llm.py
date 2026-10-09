@@ -19,6 +19,7 @@ import json
 import os
 import time
 from dataclasses import dataclass, field
+from datetime import date
 
 # Models that accept the server-side refusal fallback (`fallbacks: "default"`).
 _FALLBACK_MODELS = {"claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"}
@@ -132,6 +133,12 @@ class AnthropicLLM:
 
 _GENERATED_ID = "gen_"
 
+# Tried in this order after GEMINI_MODEL (each has its own free daily quota).
+DEFAULT_GEMINI_FALLBACKS = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash",
+                            "gemini-3.8-flash", "gemini-3.5-flash-lite"]
+ALL_QUOTA_USED = ("خلصت حصة اليوم المجانية لكل نماذج Gemini. جرب باچر، "
+                  "أو فعّل الدفع بحساب Google AI Studio حتى ما توگف.")
+
 
 def _real_id(call_id: str):
     """Ids we made up locally are never sent back to Gemini."""
@@ -149,6 +156,12 @@ class GeminiLLM:
 
         self._httpx, self._errors, self.types = httpx, errors, types
         self.model = model or os.getenv("GEMINI_MODEL") or "gemini-3.6-flash"
+        # Free tier gives each model its own daily quota. When the model in use runs
+        # out (or stays overloaded), switch to the next one in this list.
+        fallbacks = os.getenv("GEMINI_FALLBACK_MODELS")
+        fallbacks = DEFAULT_GEMINI_FALLBACKS if fallbacks is None else fallbacks.split(",")
+        self.models = list(dict.fromkeys([self.model] + [m.strip() for m in fallbacks if m.strip()]))
+        self._out_of_quota: dict[str, date] = {}  # model -> day its daily quota ran out
         self.max_tokens = max_tokens
         # How much the model thinks before answering: minimal / low / medium / high.
         # Each message needs 2-3 model calls, so less thinking = noticeably faster replies.
@@ -156,12 +169,12 @@ class GeminiLLM:
         key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not key:
             raise LLMError("ما كو مفتاح Gemini. حط GEMINI_API_KEY بملف .env", "missing GEMINI_API_KEY")
-        # Gemini often answers 503 "high demand" for a moment: retry those.
-        # 429 is not retried: on the free tier it is usually the daily quota.
+        # Gemini often answers 503 "high demand" for a moment: retry those (then
+        # switch model). 429 is not retried: on the free tier it is usually the daily quota.
         self.http_options = types.HttpOptions(
             timeout=60_000,  # ms, per attempt
             retry_options=types.HttpRetryOptions(
-                attempts=4, initial_delay=1.0, max_delay=8.0,
+                attempts=3, initial_delay=1.0, max_delay=4.0,
                 http_status_codes=[408, 500, 502, 503, 504]))
         self.client = genai.Client(api_key=key, http_options=self.http_options)
 
@@ -216,19 +229,60 @@ class GeminiLLM:
                     return None
         return None
 
-    def _generate(self, contents, config):
-        """Free tier allows only a few requests per minute. When Gemini says how
-        long to wait, wait and retry instead of failing, up to MAX_RATE_LIMIT_WAIT in total."""
-        waited = 0.0
-        while True:
+    def _generate(self, contents, config, can_switch: bool):
+        """Call the current model. At the start of a turn (`can_switch`), move on to the
+        next model when this one is out of daily quota, rate limited, overloaded or
+        unavailable; wait out a per-minute limit only when no model is free.
+        Mid-turn we stay on one model: its native content is replayed in the request."""
+        errors = self._errors
+        today = date.today()
+        if can_switch:
+            candidates = [self.model] + [m for m in self.models if m != self.model]
+            candidates = [m for m in candidates if self._out_of_quota.get(m) != today]
+        else:
+            candidates = [self.model]
+        rate_limited = []  # (model, error) hit by a per-minute limit
+        last_error = None
+        for model in candidates:
             try:
-                return self.client.models.generate_content(model=self.model, contents=contents, config=config)
-            except self._errors.ClientError as e:
-                delay = self._retry_delay(e) if e.code == 429 and "PerDay" not in str(e) else None
-                if delay is None or waited + delay > self.MAX_RATE_LIMIT_WAIT:
+                response = self._generate_with(model, contents, config, wait=not can_switch)
+                self.model = model
+                return response
+            except errors.ClientError as e:
+                if e.code == 429 and "PerDay" in str(e):
+                    self._out_of_quota[model] = today
+                elif e.code == 429:
+                    rate_limited.append((model, e))
+                elif e.code != 404:
                     raise
+                last_error = e
+            except errors.ServerError as e:  # still overloaded after retries
+                last_error = e
+        if rate_limited:  # every usable model is busy this minute: wait for the first one
+            model, first_error = rate_limited[0]
+            response = self._generate_with(model, contents, config, wait=True, first_error=first_error)
+            self.model = model
+            return response
+        if last_error is None:  # every model already known to be out of quota today
+            raise LLMError(ALL_QUOTA_USED, "all Gemini models out of daily quota")
+        raise last_error
+
+    def _generate_with(self, model, contents, config, wait: bool, first_error=None):
+        """Free tier allows only a few requests per minute. With `wait`, when Gemini
+        says how long to wait, wait and retry, up to MAX_RATE_LIMIT_WAIT in total."""
+        waited = 0.0
+        error = first_error
+        while True:
+            if error is not None:
+                delay = self._retry_delay(error) if error.code == 429 and "PerDay" not in str(error) else None
+                if not wait or delay is None or waited + delay > self.MAX_RATE_LIMIT_WAIT:
+                    raise error
                 time.sleep(delay + 1)
                 waited += delay + 1
+            try:
+                return self.client.models.generate_content(model=model, contents=contents, config=config)
+            except self._errors.ClientError as e:
+                error = e
 
     def complete(self, system: str, messages: list[dict], tools: list[dict]) -> LLMResponse:
         t, errors = self.types, self._errors
@@ -240,13 +294,16 @@ class GeminiLLM:
             max_output_tokens=self.max_tokens,
             thinking_config=t.ThinkingConfig(thinking_level=self.thinking) if self.thinking else None,
         )
+        # Native content in the request = we are mid-turn on the current model.
+        can_switch = not any(m.get("raw") is not None for m in messages)
         try:
-            response = self._generate(self._to_contents(messages), config)
+            response = self._generate(self._to_contents(messages), config, can_switch)
         except errors.ClientError as e:
             if e.code == 429:
                 if "PerDay" in str(e):
-                    raise LLMError(f"خلصت حصة اليوم المجانية للنموذج {self.model}. جرب باچر، "
-                                   "أو بدّل GEMINI_MODEL بملف .env لنموذج ثاني.", str(e))
+                    if any(self._out_of_quota.get(m) != date.today() for m in self.models):
+                        raise LLMError("خلصت حصة النموذج بنص الطلب. عيد رسالتك وراح أستعمل نموذج ثاني.", str(e))
+                    raise LLMError(ALL_QUOTA_USED, str(e))
                 raise LLMError("خلصت حصة Gemini المجانية هسه، انتظر دقيقة وعيد.", str(e))
             if e.code in (401, 403) or "API_KEY" in str(e):
                 raise LLMError("مفتاح Gemini غلط أو ما عنده صلاحية. تأكد من GEMINI_API_KEY بملف .env", str(e))
