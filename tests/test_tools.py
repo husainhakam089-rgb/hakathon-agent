@@ -43,6 +43,9 @@ def test_find_customer(tools, abu_ali):
 
 
 def test_add_customer(tools, conn):
+    tools.turn = 1
+    assert tools.execute("add_customer", {"name": "سعد", "phone": "0780"})["error"] == "ask_first"
+    tools.turn = 2  # the owner answered "إي"
     r = tools.execute("add_customer", {"name": "سعد", "phone": "0780"})
     assert r["ok"] and db.get_customer(conn, r["customer_id"])["phone"] == "0780"
     dup = tools.execute("add_customer", {"name": "  سَعد "})
@@ -184,3 +187,17 @@ def test_undo_batch(tools, conn):
     assert r["totals"] == {"debt_IQD": 25000, "debt_USD": 5}
     assert db.get_balance(conn, cid) == {"IQD": 0, "USD": 0}
     assert tools.execute("undo_batch", {"batch_id": "b1"})["error"] == "nothing_to_undo"
+
+
+
+def test_add_customer_needs_a_later_turn(tools, conn):
+    """Rule 1 in code: a name first seen in this turn cannot be added in this turn."""
+    tools.turn = 1
+    assert tools.execute("find_customer", {"query": "سعد"})["count"] == 0
+    r = tools.execute("add_customer", {"name": "سعد"})
+    assert r["error"] == "ask_first" and "أضيفه" in r["message"]
+    assert db.all_customers(conn) == []
+    tools.turn = 2
+    assert tools.execute("add_customer", {"name": "سَعد"})["ok"]  # same name, normalized
+    tools.turn = 3
+    assert tools.execute("add_customer", {"name": "كريم"})["error"] == "ask_first"  # new name, new question

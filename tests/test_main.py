@@ -79,3 +79,13 @@ def test_version_endpoint(client):
 
 def test_running_version_of_something_else():
     assert main_mod.running_version("http://127.0.0.1:9") is None  # nothing listening
+
+
+def test_voice_message_is_saved_with_source_voice(client, conn):
+    cid = db.add_customer(conn, "أبو علي")
+    debt = LLMResponse(text="", tool_calls=[ToolCall("t", "record_debt", {"customer_id": cid, "amount": 25000, "currency": "IQD"})])
+    c = client(debt, LLMResponse(text="تمام"), debt, LLMResponse(text="تمام"))
+    c.post("/chat", json={"session_id": "s", "message": "سجل على ابو علي 25 الف", "source": "voice"})
+    c.post("/chat", json={"session_id": "s", "message": "سجل على ابو علي 25 الف"})
+    assert [r[0] for r in conn.execute("SELECT source FROM transactions ORDER BY id")] == ["voice", "chat"]
+    assert c.post("/chat", json={"session_id": "s", "message": "x", "source": "email"}).status_code == 422

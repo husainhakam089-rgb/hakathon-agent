@@ -66,7 +66,8 @@ def check(case: dict, result: dict, conn, ids: dict, before_max_id: int, seeded:
         if not undone:
             failures.append(f"قيد {name} ما انلغى")
 
-    called = [c["tool"] for c in result["tool_calls"]]
+    # A call the tool refused (ok=false) did nothing, so only successful calls count.
+    called = [c["tool"] for c in result["tool_calls"] if c["result"].get("ok")]
     for tool in exp.get("tools_called", []):
         if tool not in called:
             failures.append(f"ما استدعى {tool}")

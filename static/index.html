@@ -100,6 +100,19 @@ form button:disabled { opacity: .5; cursor: wait; }
 form .attach-btn { background: var(--card-strong); color: inherit; border: 1px solid var(--border); padding: 0 14px; font-size: 18px; font-weight: 400; }
 form .attach-btn:hover { border-color: var(--accent-border); }
 
+/* ---------- voice (stage 8) ---------- */
+form .mic-btn { background: var(--card-strong); color: inherit; border: 1px solid var(--border); padding: 0 14px; font-size: 18px; font-weight: 400; }
+form .mic-btn:hover { border-color: var(--accent-border); }
+form .mic-btn.on { background: #e11d48; border-color: #e11d48; animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(225,29,72,.5); } 50% { box-shadow: 0 0 0 8px rgba(225,29,72,0); } }
+.voice-preview { display: none; margin: 0 12px; padding: 8px 12px; border: 1px dashed var(--accent-border); border-radius: 14px;
+  font-size: 14px; line-height: 1.9; }
+.voice-preview.show { display: block; }
+.voice-preview small { display: block; color: var(--muted); font-size: 11px; }
+.voice-preview mark { background: #facc15; color: #111827; border-radius: 4px; padding: 0 3px; }
+.voice-hint { display: none; margin: 0 12px 8px; font-size: 12px; color: var(--muted); }
+.voice-hint.show { display: block; }
+
 /* ---------- attachment + review table (stage 6) ---------- */
 .attachment { display: none; align-items: center; gap: 10px; margin: 0 12px; padding: 8px 10px; border: 1px solid var(--accent-border);
   background: var(--accent-soft); border-radius: 14px; font-size: 13px; }
@@ -213,11 +226,14 @@ tr.flash td { animation: flash 1.6s ease-out; }
         <div class="info"><span id="attName"></span><small id="attSize"></small></div>
         <button type="button" id="attClear" title="إلغاء">✕</button>
       </div>
+      <div class="voice-preview" id="voicePreview"><small>🎤 هذا اللي سمعته. راجع الأرقام المظللة وصحح بالكتابة إذا تحتاج، وبعدين دوس إرسال.</small><span id="voiceText"></span></div>
+      <div class="voice-hint" id="voiceHint"></div>
       <form id="form" autocomplete="off">
         <!-- No capture attribute: on phones it would open the camera only; without it
              the phone offers camera or gallery. -->
         <input type="file" id="file" accept="image/*,application/pdf" hidden>
         <button type="button" class="attach-btn" id="attach" title="صوّر صفحة من الدفتر أو اختار ملف">📎</button>
+        <button type="button" class="mic-btn" id="mic" title="احچي (دوس مرة تبدي، ومرة توگف)">🎤</button>
         <input id="input" placeholder="اكتب رسالتك هنا..." maxlength="2000">
         <button id="send" type="submit">إرسال</button>
       </form>
@@ -338,15 +354,20 @@ async function send(text) {
   if (busy) return;
   if (attachment) return sendAttachment(text);
   if (!text) return;
+  stopVoice(true);
   addUser(text);
   $('input').value = '';
+  const voiceSource = fromVoice;
+  setVoicePreview(false);
+  fromVoice = voiceSource;  // still needed for the request below
   setBusy(true);
   try {
     const res = await fetch('/chat', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({session_id: sessionId, message: text}),
+      body: JSON.stringify({session_id: sessionId, message: text, source: fromVoice ? 'voice' : 'chat'}),
     });
+    fromVoice = false;
     if (!res.ok) throw new Error('status ' + res.status);
     const data = await res.json();
     setBusy(false);
@@ -361,6 +382,110 @@ async function send(text) {
 }
 
 $('form').onsubmit = e => { e.preventDefault(); send($('input').value); };
+
+/* ---------- voice via the browser (stage 8) ----------
+   The words land in the text box and are NEVER sent automatically: the owner reads,
+   fixes and presses send. Numbers are highlighted because that is where a misheard
+   word costs money ("خمسة عشر" vs "خمسين"). */
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+const VOICE_MAX_MS = 30000;
+let rec = null, recording = false, voiceTimer = null, voiceLang = 'ar-IQ', fromVoice = false;
+
+const AR = '\\u0621-\\u064A';
+const NUMBER_WORDS = ['واحد', 'وحدة', 'اثنين', 'ثنين', 'ثلاث', 'ثلاثة', 'ثلث', 'اربع', 'أربع', 'اربعة', 'أربعة', 'خمس', 'خمسة',
+  'ست', 'ستة', 'سبع', 'سبعة', 'ثمن', 'ثمان', 'ثمانية', 'تسع', 'تسعة', 'عشر', 'عشرة', 'عشرين', 'ثلاثين', 'ثلثين', 'اربعين', 'أربعين',
+  'خمسين', 'ستين', 'سبعين', 'ثمانين', 'تسعين', 'مية', 'مئة', 'مائة', 'ميتين', 'الف', 'ألف', 'آلاف', 'الاف', 'تلاف', 'مليون',
+  'مليونين', 'ملايين', 'ربع', 'نص', 'نصف', 'دينار', 'دولار'];
+const NUMBER_RE = new RegExp(`([0-9٠-٩][0-9٠-٩,.٬]*|\\$|(?<![${AR}])[وب]?(?:${NUMBER_WORDS.join('|')})(?![${AR}]))`, 'g');
+
+function highlightNumbers(text) {
+  return esc(text).replace(NUMBER_RE, '<mark>$1</mark>');
+}
+
+function setVoicePreview(show) {
+  if (!show) { fromVoice = false; $('voicePreview').classList.remove('show'); return; }
+  $('voiceText').innerHTML = highlightNumbers($('input').value);
+  $('voicePreview').classList.add('show');
+}
+
+function voiceHint(text) {
+  $('voiceHint').textContent = text;
+  $('voiceHint').classList.toggle('show', !!text);
+}
+
+function disableVoice(text) {
+  $('mic').hidden = true;
+  voiceHint(text);
+}
+
+// discard: drop whatever is still being recognised (used when sending).
+function stopVoice(discard = false) {
+  if (!rec || !recording) return;
+  if (discard) { const r = rec; rec = null; r.abort(); } else rec.stop();
+}
+
+function startVoice() {
+  if (busy) return;
+  voiceHint('');
+  const before = $('input').value.trim();
+  const r = rec = new SpeechRec();
+  r.lang = voiceLang;
+  r.interimResults = true;
+  r.continuous = true;
+  r.maxAlternatives = 1;
+  let heard = false;
+  r.onresult = e => {
+    if (r !== rec) return;  // late result after the message was sent
+    let text = '';
+    for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+    heard = true;
+    fromVoice = true;
+    $('input').value = (before ? before + ' ' : '') + text.trim();
+    setVoicePreview(true);
+  };
+  r.onerror = e => {
+    if (e.error === 'language-not-supported' && voiceLang !== 'ar') {
+      voiceLang = 'ar';  // no Iraqi Arabic here: plain Arabic
+      recording = false;
+      return setTimeout(startVoice, 50);
+    }
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      return disableVoice('الصوت يحتاج Chrome، وإذن للمايك. إذا رفضت الإذن، فعّله من القفل يم عنوان الصفحة وحدّث الصفحة.');
+    }
+    if (e.error === 'no-speech') return voiceHint('ما سمعت شي، دوس 🎤 وعيد.');
+    if (e.error === 'network') return voiceHint('تحويل الصوت لنص يحتاج إنترنت.');
+    if (e.error !== 'aborted') voiceHint('صار خلل بالمايك، جرب مرة ثانية.');
+  };
+  r.onend = () => {
+    if (rec !== r && rec !== null) return;  // an older recognizer ending late
+    recording = false;
+    clearTimeout(voiceTimer);
+    $('mic').classList.remove('on');
+    $('mic').textContent = '🎤';
+    $('input').placeholder = 'اكتب رسالتك هنا...';
+    if (heard) $('input').focus();
+  };
+  try {
+    r.start();
+  } catch (e) {
+    return voiceHint('ما گدرت أشغّل المايك، جرب مرة ثانية.');
+  }
+  recording = true;
+  $('mic').classList.add('on');
+  $('mic').textContent = '⏹';
+  $('input').placeholder = 'دا أسمعك... (30 ثانية بالأكثر)';
+  voiceTimer = setTimeout(stopVoice, VOICE_MAX_MS);
+}
+
+if (!SpeechRec) {
+  disableVoice('الصوت يحتاج Chrome (أو Edge). بهذا المتصفح اكتب بالكيبورد.');
+} else {
+  $('mic').onclick = () => (recording ? stopVoice() : startVoice());
+}
+$('input').addEventListener('input', () => {
+  if (fromVoice && $('input').value.trim()) setVoicePreview(true);
+  else setVoicePreview(false);
+});
 
 /* ---------- photos / PDF of the notebook (stage 6) ----------
    Nothing is saved from a photo directly: upload -> extract -> the owner reviews and
@@ -429,6 +554,8 @@ async function postJson(url, body) {
 }
 
 async function sendAttachment(note) {
+  stopVoice(true);
+  setVoicePreview(false);
   const att = attachment;
   // Show what was sent
   $('welcome')?.remove();

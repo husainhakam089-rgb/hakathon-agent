@@ -157,3 +157,15 @@ def test_undo_works_across_turns(make_agent, conn):
     out = a.chat("s", "شطبها")
     assert out["tool_calls"][0]["result"]["ok"]
     assert db.get_balance(conn, cid)["IQD"] == 0
+
+
+def test_new_customer_is_only_added_after_the_owner_answers(make_agent, conn):
+    add = LLMResponse(text="", tool_calls=[ToolCall("t_add", "add_customer", {"name": "سعد"})])
+    a = make_agent(add, LLMResponse(text="ما عندي زبون اسمه سعد، أضيفه؟"),
+                   add, LLMResponse(text="ضفته."))
+    first = a.chat("s", "سجل على زبون جديد اسمه سعد 30 الف")
+    assert first["tool_calls"][0]["result"]["error"] == "ask_first"
+    assert db.all_customers(conn) == []
+    second = a.chat("s", "إي")
+    assert second["tool_calls"][0]["result"]["ok"]
+    assert [c["name"] for c in db.all_customers(conn)] == ["سعد"]

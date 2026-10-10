@@ -98,14 +98,16 @@ class Agent:
     def reset(self, session_id: str) -> None:
         self.sessions.pop(session_id, None)
 
-    def chat(self, session_id: str, message: str) -> dict:
+    def chat(self, session_id: str, message: str, source: str = "chat") -> dict:
         """Run one user turn. Returns {"reply": str, "tool_calls": [...]}."""
         with self.lock:
-            return self._chat(session_id, message.strip())
+            return self._chat(session_id, message.strip(), source)
 
-    def _chat(self, session_id: str, message: str) -> dict:
+    def _chat(self, session_id: str, message: str, source: str = "chat") -> dict:
         session = self.session(session_id)
         session.tools.source_message = message
+        session.tools.source = source
+        session.tools.turn += 1
         turn: list[dict] = [{"role": "user", "text": message}]
         tool_log: list[dict] = []
 

@@ -4,6 +4,7 @@ import os
 import re
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -36,6 +37,7 @@ agent = Agent(db.connect())
 class ChatRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     message: str = Field(min_length=1, max_length=2000)
+    source: Literal["chat", "voice"] = "chat"  # "voice": dictated with the mic, then read and sent
 
 
 @app.get("/")
@@ -51,7 +53,7 @@ def version():
 
 @app.post("/chat")
 def chat(req: ChatRequest):
-    return agent.chat(req.session_id, req.message)
+    return agent.chat(req.session_id, req.message, req.source)
 
 
 @app.get("/debtors")

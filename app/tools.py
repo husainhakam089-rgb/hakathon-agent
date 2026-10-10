@@ -144,8 +144,15 @@ class DebtTools:
         )
         # Transactions recorded in this session, for undo_last.
         self.session_tx_ids: list[int] = []
-        # Set by the agent before each turn so every entry keeps its original message.
+        # Set by the agent before each turn so every entry keeps its original message
+        # and where it came from ("chat" typed, "voice" dictated).
         self.source_message: str | None = None
+        self.source: str = "chat"
+        # Chat turn counter (the agent bumps it) and, per new name, the turn it first
+        # came up: add_customer only works in a LATER turn, i.e. after the owner was
+        # asked "أضيفه؟" and answered. Enforced here, not only in the prompt.
+        self.turn = 0
+        self._new_name_turn: dict[str, int] = {}
 
     # ----- dispatcher -----
 
@@ -191,7 +198,7 @@ class DebtTools:
         before = db.get_balance(self.conn, customer["id"])
         tx_id = db.add_transaction(
             self.conn, customer["id"], tx_type, value, currency,
-            note=note, source_message=self.source_message,
+            note=note, source_message=self.source_message, source=self.source,
         )
         self.session_tx_ids.append(tx_id)
         after = db.get_balance(self.conn, customer["id"])
@@ -215,6 +222,8 @@ class DebtTools:
 
     def tool_find_customer(self, query):
         matches = db.find_customers(self.conn, str(query))
+        if not matches:
+            self._new_name_turn.setdefault(normalize(str(query)), self.turn)
         return {
             "ok": True,
             "count": len(matches),
@@ -233,6 +242,11 @@ class DebtTools:
         if exact:
             return _error("customer_exists", "اكو زبون بنفس الاسم",
                           existing={"id": exact[0]["id"], "name": exact[0]["name"]})
+        first_seen = self._new_name_turn.setdefault(normalize(name), self.turn)
+        if first_seen >= self.turn:
+            return _error("ask_first",
+                          "لا تضيف هسه. اسأل صاحب المحل: 'ما عندي زبون اسمه " + name +
+                          "، أضيفه؟' ولا تسجل شي، وانتظر جوابه بالرسالة الجاية.")
         cid = db.add_customer(self.conn, name, phone)
         return {"ok": True, "customer_id": cid, "name": name}
 
