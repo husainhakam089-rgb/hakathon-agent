@@ -6,3 +6,5 @@ __pycache__/
 .venv/
 venv/
 logs/
+eval/last_results.json
+uploads/

@@ -1,0 +1,42 @@
+{
+  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply.",
+  "base_setup": {
+    "customers": ["أبو علي", "أم حسين", "الحجي كريم"],
+    "transactions": [
+      ["أبو علي", "debt", 25000, "IQD"],
+      ["أبو علي", "payment", 10000, "IQD"],
+      ["أم حسين", "debt", 80000, "IQD"],
+      ["الحجي كريم", "debt", 5, "USD"]
+    ]
+  },
+  "cases": [
+    {"id": 1, "message": "سجل على ابو علي 25 الف",
+     "expect": {"transactions": [["أبو علي", "debt", 25000, "IQD"]], "reply_has_any": ["25,000"]}},
+    {"id": 2, "message": "أبو علي دفع عشرة",
+     "expect": {"transactions": [["أبو علي", "payment", 10000, "IQD"]], "reply_has_any": ["10,000"]}},
+    {"id": 3, "message": "شكد باقي على ابو علي؟",
+     "expect": {"transactions": [], "reply_has_any": ["15,000", "15000"]}},
+    {"id": 4, "message": "سجل على حجي كريم",
+     "expect": {"transactions": [], "tools_not_called": ["add_customer"], "reply_has_any": ["شكد", "شگد", "المبلغ", "كم"]}},
+    {"id": 5, "message": "سجل على أحمد 50 الف",
+     "setup": {"customers": ["أحمد علي", "أحمد حسن"]},
+     "expect": {"transactions": [], "tools_not_called": ["add_customer"], "reply_has_any": ["منو", "أحمد علي", "أحمد حسن"]}},
+    {"id": 6, "message": "سجل على زبون جديد اسمه سعد 30 الف",
+     "expect": {"transactions": [], "tools_not_called": ["add_customer"], "reply_has_any": ["أضيفه", "اضيفه", "أضيف", "تريد"]}},
+    {"id": 7, "message": "منو أكثر واحد عليه دين؟",
+     "expect": {"transactions": [], "tools_called": ["list_debtors"], "reply_has_any": ["أم حسين"]}},
+    {"id": 8, "message": "ابو علي جاب 20 دولار",
+     "expect": {"transactions": [["أبو علي", "payment", 20, "USD"]], "reply_has_any": ["20"]}},
+    {"id": 9, "message": "سجل على ابو علي ربع مليون",
+     "expect": {"transactions": [["أبو علي", "debt", 250000, "IQD"]], "reply_has_any": ["250,000"]}},
+    {"id": 10, "message": "سجل على ابو علي 3 مليون",
+     "expect": {"transactions": [], "reply_has_any": ["متأكد", "3,000,000"]}},
+    {"id": 11, "message": "شطب آخر وحدة غلط",
+     "setup": {"transactions": [["أم حسين", "debt", 15000, "IQD", true]]},
+     "expect": {"transactions": [], "tools_called": ["undo_last"], "undone": ["أم حسين"], "reply_has_any": ["15,000", "أم حسين"]}},
+    {"id": 12, "message": "شكد مجموع الديون كله؟",
+     "expect": {"transactions": [], "tools_called": ["list_debtors"], "reply_has_any": ["95,000"], "reply_has_all": ["5"]}},
+    {"id": 13, "message": "شنو سعر الطماطة اليوم؟",
+     "expect": {"transactions": [], "tools_not_called": ["record_debt", "record_payment", "add_customer", "undo_last"], "reply_has_any": ["ديون", "الديون", "دين"]}}
+  ]
+}
