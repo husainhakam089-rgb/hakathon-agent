@@ -23,6 +23,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
+APP_VERSION = "6"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf"}
@@ -40,6 +41,11 @@ class ChatRequest(BaseModel):
 @app.get("/")
 def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/version")
+def version():
+    return {"app": "debt-agent", "version": APP_VERSION}
 
 
 @app.post("/chat")
@@ -189,6 +195,19 @@ def port_in_use(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+def running_version(url: str) -> str | None:
+    """Version of the debt agent answering on url, or None (older copy / something else)."""
+    import json
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url + "/version", timeout=2) as r:
+            data = json.loads(r.read())
+        return data.get("version") if data.get("app") == "debt-agent" else None
+    except Exception:
+        return None
+
+
 def main() -> None:
     import threading
     import webbrowser
@@ -198,8 +217,14 @@ def main() -> None:
     port = int(os.getenv("PORT") or 8000)
     url = f"http://127.0.0.1:{port}"
     if port_in_use(port):
+        if running_version(url) == APP_VERSION:
+            # Same version already running (e.g. start.bat clicked twice): just show it.
+            print("البرنامج شغال من قبل بنافذة ثانية، فتحتلك المتصفح عليه.")
+            if not os.getenv("NO_BROWSER"):
+                webbrowser.open(url)
+            return
         # Otherwise the browser would open an older copy that is still running.
-        print(f"المنفذ {port} مشغول: أكو نسخة ثانية من البرنامج شغالة (ممكن نسخة قديمة).")
+        print(f"المنفذ {port} مشغول: أكو نسخة قديمة من البرنامج بعدها شغالة.")
         print("سدها أول، أو اكتب بـ PowerShell:  taskkill /F /IM python.exe /IM py.exe")
         print("وبعدين شغّل start.bat من جديد.")
         raise SystemExit(1)

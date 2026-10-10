@@ -70,3 +70,11 @@ def test_port_in_use():
         port = s.getsockname()[1]
         assert main_mod.port_in_use(port)
     assert not main_mod.port_in_use(port)
+
+
+def test_version_endpoint(client):
+    assert client().get("/version").json() == {"app": "debt-agent", "version": main_mod.APP_VERSION}
+
+
+def test_running_version_of_something_else():
+    assert main_mod.running_version("http://127.0.0.1:9") is None  # nothing listening
