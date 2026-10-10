@@ -81,7 +81,6 @@ def test_file_db_persists(tmp_path):
 
 # ---------- v1: batches and migration ----------
 
-import sqlite3
 
 import pytest
 

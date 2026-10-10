@@ -1,0 +1,4 @@
+# Only for regenerating the eval test images (eval/images/make_test_images.py)
+Pillow>=10.0
+arabic-reshaper>=3.0
+python-bidi>=0.4

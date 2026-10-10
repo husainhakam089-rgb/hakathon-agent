@@ -1,0 +1,39 @@
+{
+  "rows": [
+    {
+      "name": "أبو علي",
+      "amount": 25000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false
+    },
+    {
+      "name": "أم حسين",
+      "amount": 10000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false
+    },
+    {
+      "name": "الحجي كريم",
+      "amount": 150000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false
+    },
+    {
+      "name": "سعد",
+      "amount": 7500,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false
+    },
+    {
+      "name": "أبو زينب",
+      "amount": 50,
+      "currency": "USD",
+      "type": "debt",
+      "crossed_out": false
+    }
+  ]
+}

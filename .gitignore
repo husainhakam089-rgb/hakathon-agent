@@ -8,3 +8,4 @@ venv/
 logs/
 eval/last_results.json
 uploads/
+eval/last_image_results.json
