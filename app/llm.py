@@ -90,7 +90,6 @@ class AnthropicLLM:
     # ----- main call -----
 
     def complete(self, system: str, messages: list[dict], tools: list[dict]) -> LLMResponse:
-        a = self._anthropic
         params = dict(
             model=self.model,
             max_tokens=self.max_tokens,
@@ -100,12 +99,52 @@ class AnthropicLLM:
             output_config={"effort": self.effort},
             cache_control={"type": "ephemeral"},  # system + tools are stable: cache them
         )
+        response = self._create(params)
+
+        if response.stop_reason == "refusal":
+            return LLMResponse(text="", refused=True)
+        if response.stop_reason == "max_tokens":
+            raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens")
+
+        text = "".join(b.text for b in response.content if b.type == "text").strip()
+        calls = [ToolCall(b.id, b.name, dict(b.input)) for b in response.content if b.type == "tool_use"]
+        return LLMResponse(text=text, tool_calls=calls, raw=list(response.content))
+
+    def extract(self, system: str, text: str, file_bytes: bytes, mime: str, tool: dict) -> dict:
+        """One-shot extraction from an image or PDF: the model must answer by calling
+        `tool` (and nothing else). Returns that tool call's input."""
+        import base64
+
+        data = base64.standard_b64encode(file_bytes).decode()
+        kind = "document" if mime == "application/pdf" else "image"
+        params = dict(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            system=system,
+            tools=[tool],
+            tool_choice={"type": "tool", "name": tool["name"]},
+            messages=[{"role": "user", "content": [
+                {"type": kind, "source": {"type": "base64", "media_type": mime, "data": data}},
+                {"type": "text", "text": text},
+            ]}],
+        )
+        response = self._create(params)
+        if response.stop_reason == "refusal":
+            raise LLMError("النموذج رفض يقرا هذا الملف.", "refusal")
+        if response.stop_reason == "max_tokens":
+            raise LLMError("الصفحة بيها هواية أسطر وانقطع الاستخراج. صوّر نص الصفحة وجرب.", "max_tokens")
+        for block in response.content:
+            if block.type == "tool_use" and block.name == tool["name"]:
+                return dict(block.input)
+        raise LLMError("النموذج ما رجّع جدول، عيد المحاولة.", "no tool call")
+
+    def _create(self, params: dict):
+        a = self._anthropic
         try:
             if self.model in _FALLBACK_MODELS:
-                response = self.client.beta.messages.create(
+                return self.client.beta.messages.create(
                     betas=["server-side-fallback-2026-07-01"], fallbacks="default", **params)
-            else:
-                response = self.client.messages.create(**params)
+            return self.client.messages.create(**params)
         except a.AuthenticationError as e:
             raise LLMError("مفتاح الـ API غلط أو مو موجود. تأكد من ANTHROPIC_API_KEY بملف .env", str(e))
         except a.PermissionDeniedError as e:
@@ -120,15 +159,6 @@ class AnthropicLLM:
             raise LLMError("خدمة الذكاء الاصطناعي بيها مشكلة هسه، جرب بعد شوية.", str(e))
         except a.APIConnectionError as e:
             raise LLMError("ما گدرت أتصل بالإنترنت. تأكد من النت وعيد.", str(e))
-
-        if response.stop_reason == "refusal":
-            return LLMResponse(text="", refused=True)
-        if response.stop_reason == "max_tokens":
-            raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens")
-
-        text = "".join(b.text for b in response.content if b.type == "text").strip()
-        calls = [ToolCall(b.id, b.name, dict(b.input)) for b in response.content if b.type == "tool_use"]
-        return LLMResponse(text=text, tool_calls=calls, raw=list(response.content))
 
 
 _GENERATED_ID = "gen_"
@@ -285,7 +315,7 @@ class GeminiLLM:
                 error = e
 
     def complete(self, system: str, messages: list[dict], tools: list[dict]) -> LLMResponse:
-        t, errors = self.types, self._errors
+        t = self.types
         config = t.GenerateContentConfig(
             system_instruction=system,
             tools=self._tools(tools),
@@ -296,24 +326,7 @@ class GeminiLLM:
         )
         # Native content in the request = we are mid-turn on the current model.
         can_switch = not any(m.get("raw") is not None for m in messages)
-        try:
-            response = self._generate(self._to_contents(messages), config, can_switch)
-        except errors.ClientError as e:
-            if e.code == 429:
-                if "PerDay" in str(e):
-                    if any(self._out_of_quota.get(m) != date.today() for m in self.models):
-                        raise LLMError("خلصت حصة النموذج بنص الطلب. عيد رسالتك وراح أستعمل نموذج ثاني.", str(e))
-                    raise LLMError(ALL_QUOTA_USED, str(e))
-                raise LLMError("خلصت حصة Gemini المجانية هسه، انتظر دقيقة وعيد.", str(e))
-            if e.code in (401, 403) or "API_KEY" in str(e):
-                raise LLMError("مفتاح Gemini غلط أو ما عنده صلاحية. تأكد من GEMINI_API_KEY بملف .env", str(e))
-            if e.code == 404:
-                raise LLMError(f"النموذج {self.model} مو موجود. تأكد من GEMINI_MODEL بملف .env", str(e))
-            raise LLMError("صار خطأ بالطلب للنموذج، عيد المحاولة.", str(e))
-        except errors.APIError as e:
-            raise LLMError("خدمة الذكاء الاصطناعي بيها مشكلة هسه، جرب بعد شوية.", str(e))
-        except self._httpx.TransportError as e:
-            raise LLMError("ما گدرت أتصل بالإنترنت. تأكد من النت وعيد.", str(e))
+        response = self._safe_generate(self._to_contents(messages), config, can_switch)
 
         if not response.candidates:
             return LLMResponse(text="", refused=True)  # prompt blocked
@@ -335,6 +348,54 @@ class GeminiLLM:
                 call_id = fc.id or f"{_GENERATED_ID}{len(messages)}_{i}"
                 calls.append(ToolCall(call_id, fc.name, dict(fc.args or {})))
         return LLMResponse(text=text, tool_calls=calls, raw=candidate.content)
+
+    def extract(self, system: str, text: str, file_bytes: bytes, mime: str, tool: dict) -> dict:
+        """One-shot extraction from an image or PDF: the model must answer by calling
+        `tool` (and nothing else). Returns that tool call's arguments."""
+        t = self.types
+        config = t.GenerateContentConfig(
+            system_instruction=system,
+            tools=self._tools([tool]),
+            tool_config=t.ToolConfig(function_calling_config=t.FunctionCallingConfig(
+                mode=t.FunctionCallingConfigMode.ANY, allowed_function_names=[tool["name"]])),
+            automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True),
+            max_output_tokens=self.max_tokens,
+            thinking_config=t.ThinkingConfig(thinking_level=self.thinking) if self.thinking else None,
+        )
+        contents = [t.Content(role="user", parts=[
+            t.Part.from_bytes(data=file_bytes, mime_type=mime), t.Part(text=text)])]
+        response = self._safe_generate(contents, config, can_switch=True)
+        candidate = response.candidates[0] if response.candidates else None
+        if candidate is None:
+            raise LLMError("النموذج رفض يقرا هذا الملف.", "blocked")
+        if candidate.finish_reason == t.FinishReason.MAX_TOKENS:
+            raise LLMError("الصفحة بيها هواية أسطر وانقطع الاستخراج. صوّر نص الصفحة وجرب.", "max_tokens")
+        for p in (candidate.content.parts if candidate.content else None) or []:
+            if p.function_call and p.function_call.name == tool["name"]:
+                return dict(p.function_call.args or {})
+        raise LLMError("النموذج ما رجّع جدول، عيد المحاولة.", f"no tool call ({candidate.finish_reason})")
+
+    def _safe_generate(self, contents, config, can_switch: bool):
+        """_generate with every failure turned into an LLMError the shop owner can read."""
+        errors = self._errors
+        try:
+            return self._generate(contents, config, can_switch)
+        except errors.ClientError as e:
+            if e.code == 429:
+                if "PerDay" in str(e):
+                    if any(self._out_of_quota.get(m) != date.today() for m in self.models):
+                        raise LLMError("خلصت حصة النموذج بنص الطلب. عيد رسالتك وراح أستعمل نموذج ثاني.", str(e))
+                    raise LLMError(ALL_QUOTA_USED, str(e))
+                raise LLMError("خلصت حصة Gemini المجانية هسه، انتظر دقيقة وعيد.", str(e))
+            if e.code in (401, 403) or "API_KEY" in str(e):
+                raise LLMError("مفتاح Gemini غلط أو ما عنده صلاحية. تأكد من GEMINI_API_KEY بملف .env", str(e))
+            if e.code == 404:
+                raise LLMError(f"النموذج {self.model} مو موجود. تأكد من GEMINI_MODEL بملف .env", str(e))
+            raise LLMError("صار خطأ بالطلب للنموذج، عيد المحاولة.", str(e))
+        except errors.APIError as e:
+            raise LLMError("خدمة الذكاء الاصطناعي بيها مشكلة هسه، جرب بعد شوية.", str(e))
+        except self._httpx.TransportError as e:
+            raise LLMError("ما گدرت أتصل بالإنترنت. تأكد من النت وعيد.", str(e))
 
 
 def make_llm():

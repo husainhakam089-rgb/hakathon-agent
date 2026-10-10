@@ -28,11 +28,19 @@ CREATE TABLE IF NOT EXISTS transactions (
   note            TEXT,
   source_message  TEXT,
   undone          INTEGER NOT NULL DEFAULT 0,
-  created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  batch_id        TEXT,                    -- rows imported together (image / file)
+  source          TEXT NOT NULL DEFAULT 'chat'  -- chat | image:<file_id> | file:<file_id> | voice
 );
 
 CREATE INDEX IF NOT EXISTS idx_tx_customer ON transactions(customer_id);
 """
+
+# Columns added after v0: (name, definition) added to older databases on connect.
+_MIGRATIONS = [
+    ("batch_id", "TEXT"),
+    ("source", "TEXT NOT NULL DEFAULT 'chat'"),
+]
 
 
 def connect(path=None) -> sqlite3.Connection:
@@ -42,17 +50,28 @@ def connect(path=None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn) -> None:
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(transactions)")}
+    for name, definition in _MIGRATIONS:
+        if name not in columns:
+            conn.execute(f"ALTER TABLE transactions ADD COLUMN {name} {definition}")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_batch ON transactions(batch_id)")
+    conn.commit()
 
 
 # ---------- customers ----------
 
-def add_customer(conn, name: str, phone: str | None = None) -> int:
+def add_customer(conn, name: str, phone: str | None = None, commit: bool = True) -> int:
     cur = conn.execute(
         "INSERT INTO customers (name, normalized_name, phone) VALUES (?, ?, ?)",
         (name.strip(), normalize(name), phone),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return cur.lastrowid
 
 
@@ -72,13 +91,16 @@ def find_customers(conn, query: str) -> list[dict]:
 # ---------- transactions ----------
 
 def add_transaction(conn, customer_id, tx_type, amount, currency="IQD",
-                    note=None, source_message=None) -> int:
+                    note=None, source_message=None, batch_id=None, source="chat",
+                    commit: bool = True) -> int:
     cur = conn.execute(
-        """INSERT INTO transactions (customer_id, type, amount, currency, note, source_message)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (customer_id, tx_type, amount, currency, note, source_message),
+        """INSERT INTO transactions (customer_id, type, amount, currency, note, source_message,
+                                     batch_id, source)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (customer_id, tx_type, amount, currency, note, source_message, batch_id, source),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return cur.lastrowid
 
 
@@ -90,6 +112,52 @@ def get_transaction(conn, tx_id: int):
 def mark_undone(conn, tx_id: int) -> None:
     conn.execute("UPDATE transactions SET undone = 1 WHERE id = ?", (tx_id,))
     conn.commit()
+
+
+# ---------- batches (imports) ----------
+
+def import_batch(conn, rows: list[dict], batch_id: str, source: str, note: str | None = None) -> list[int]:
+    """Insert all rows in one database transaction: all of them or none.
+
+    Each row: {"customer_id": int | None, "new_customer": str | None,
+               "type": "debt"|"payment", "amount": int, "currency": "IQD"|"USD"}.
+    A row with `new_customer` creates that customer (once per name in the batch).
+    """
+    created: dict[str, int] = {}
+    tx_ids = []
+    try:
+        for row in rows:
+            cid = row.get("customer_id")
+            if cid is None:
+                key = normalize(row["new_customer"])
+                if key not in created:
+                    created[key] = add_customer(conn, row["new_customer"], commit=False)
+                cid = created[key]
+            tx_ids.append(add_transaction(conn, cid, row["type"], row["amount"], row["currency"],
+                                          note=note, batch_id=batch_id, source=source, commit=False))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return tx_ids
+
+
+def last_batch_id(conn) -> str | None:
+    """Most recent batch that still has rows not undone."""
+    row = conn.execute(
+        "SELECT batch_id FROM transactions WHERE batch_id IS NOT NULL AND undone = 0 "
+        "ORDER BY id DESC LIMIT 1").fetchone()
+    return row["batch_id"] if row else None
+
+
+def undo_batch(conn, batch_id: str) -> list[dict]:
+    """Mark every row of the batch undone. Returns the rows that were undone now."""
+    rows = [dict(r) for r in conn.execute(
+        "SELECT id, customer_id, type, amount, currency FROM transactions "
+        "WHERE batch_id = ? AND undone = 0 ORDER BY id", (batch_id,))]
+    conn.execute("UPDATE transactions SET undone = 1 WHERE batch_id = ?", (batch_id,))
+    conn.commit()
+    return rows
 
 
 def get_history(conn, customer_id: int, limit: int = 10) -> list[dict]:

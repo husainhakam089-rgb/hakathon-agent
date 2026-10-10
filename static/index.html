@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
 <title>دفتر الديون</title>
 <style>
 :root {
@@ -42,7 +43,7 @@ body {
   background: var(--bg); color: var(--text);
   transition: background-color .25s, color .25s;
 }
-button, input { font: inherit; color: inherit; }
+button, input, select { font: inherit; color: inherit; }
 .glass { background: var(--card); border: 1px solid var(--border); border-radius: 18px;
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 
@@ -96,6 +97,56 @@ form input { flex: 1; min-width: 0; background: var(--card-strong); border: 1px 
 form input:focus { border-color: var(--accent-border); }
 form button { background: var(--accent); color: #0f172a; border: none; border-radius: 14px; padding: 0 20px; font-weight: 700; cursor: pointer; }
 form button:disabled { opacity: .5; cursor: wait; }
+form .attach-btn { background: var(--card-strong); color: inherit; border: 1px solid var(--border); padding: 0 14px; font-size: 18px; font-weight: 400; }
+form .attach-btn:hover { border-color: var(--accent-border); }
+
+/* ---------- attachment + review table (stage 6) ---------- */
+.attachment { display: none; align-items: center; gap: 10px; margin: 0 12px; padding: 8px 10px; border: 1px solid var(--accent-border);
+  background: var(--accent-soft); border-radius: 14px; font-size: 13px; }
+.attachment.show { display: flex; }
+.attachment img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
+.attachment .pdf { width: 44px; height: 44px; border-radius: 8px; display: grid; place-items: center; background: var(--card-strong); font-size: 11px; }
+.attachment .info { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment .info small { display: block; color: var(--muted); }
+.attachment button { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--muted); padding: 4px 8px; }
+.msg.user img { display: block; max-width: 180px; max-height: 180px; border-radius: 10px; margin-bottom: 6px; }
+
+.agent-wrap.review-wrap { align-self: stretch; align-items: stretch; max-width: 100%; width: 100%; min-width: 0; }
+.review { background: var(--card-strong); border: 1px solid var(--border); border-radius: 16px; padding: 12px; font-size: 13px; min-width: 0; }
+.review.done { opacity: .6; }
+.review .lead { margin: 0 0 8px; font-size: 14px; line-height: 1.7; }
+.review .opts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; color: var(--muted); }
+.review .opts label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.review .scroll { overflow-x: auto; max-width: 100%; }
+.review table { font-size: 13px; min-width: 560px; }
+.review th { position: static; background: none; }
+.review td { padding: 6px 4px; vertical-align: top; }
+.review input[type=text], .review select { width: 100%; min-width: 0; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 5px 6px; font-size: 13px; }
+.review select option { background: var(--bg); color: var(--text); }
+.review .c-name { min-width: 130px; }
+.review .c-amount { min-width: 100px; }
+.review .c-cur, .review .c-type { width: 82px; min-width: 82px; }
+.review input.amount { direction: ltr; text-align: right; font-variant-numeric: tabular-nums; }
+.review td.n { width: 28px; text-align: center; }
+.review .raw { display: block; color: var(--faint); font-size: 11px; margin-top: 3px; }
+.review .written { display: block; color: var(--accent-text); font-size: 11px; margin-top: 3px; }
+.review tr.low td { background: rgba(250,204,21,0.10); }
+.review tr.crossed .raw { text-decoration: line-through; }
+.review tr.off td:not(.n) { opacity: .55; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; white-space: nowrap; border: 1px solid var(--border); }
+.badge.new { color: var(--accent-text); border-color: var(--accent-border); }
+.badge.ok { color: var(--good); }
+.badge.pick { color: var(--bad); border-color: rgba(244,63,94,0.3); }
+.review .unreadable { margin-top: 10px; color: var(--muted); }
+.review .unreadable li { margin: 2px 0; }
+.review .foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.review .sum { flex: 1; min-width: 180px; color: var(--muted); }
+.review .btn { border: none; border-radius: 12px; padding: 9px 14px; font-weight: 700; cursor: pointer; }
+.review .btn.go { background: var(--accent); color: #0f172a; }
+.review .btn.no { background: var(--card); border: 1px solid var(--border); }
+.review .btn:disabled { opacity: .5; cursor: not-allowed; }
+.review .errors { color: var(--bad); margin: 8px 0 0; padding-inline-start: 18px; }
 
 /* ---------- debtors ---------- */
 .debtors { display: flex; flex-direction: column; min-height: 0; }
@@ -120,7 +171,7 @@ tr.flash td { animation: flash 1.6s ease-out; }
 /* ---------- mobile ---------- */
 @media (max-width: 860px) {
   .app { height: auto; min-height: 100%; padding: 10px; gap: 10px; }
-  main { grid-template-columns: 1fr; }
+  main { grid-template-columns: minmax(0, 1fr); }
   .chat { height: 72vh; }
   .debtors { min-height: 300px; }
   header p { display: none; }
@@ -157,7 +208,16 @@ tr.flash td { animation: flash 1.6s ease-out; }
         <button class="chip">منو أكثر واحد عليه دين؟</button>
         <button class="chip">شطب آخر وحدة</button>
       </div>
+      <div class="attachment" id="attachment">
+        <span id="attThumb"></span>
+        <div class="info"><span id="attName"></span><small id="attSize"></small></div>
+        <button type="button" id="attClear" title="إلغاء">✕</button>
+      </div>
       <form id="form" autocomplete="off">
+        <!-- No capture attribute: on phones it would open the camera only; without it
+             the phone offers camera or gallery. -->
+        <input type="file" id="file" accept="image/*,application/pdf" hidden>
+        <button type="button" class="attach-btn" id="attach" title="صوّر صفحة من الدفتر أو اختار ملف">📎</button>
         <input id="input" placeholder="اكتب رسالتك هنا..." maxlength="2000">
         <button id="send" type="submit">إرسال</button>
       </form>
@@ -214,6 +274,7 @@ const TOOL_LABELS = {
   get_history: 'شاف آخر القيود',
   list_debtors: 'جاب قائمة المدينين',
   undo_last: 'لغى آخر قيد',
+  undo_batch: 'لغى دفعة كاملة',
 };
 
 function scrollDown() { const m = $('messages'); m.scrollTop = m.scrollHeight; }
@@ -274,7 +335,9 @@ function setBusy(on) {
 
 async function send(text) {
   text = text.trim();
-  if (!text || busy) return;
+  if (busy) return;
+  if (attachment) return sendAttachment(text);
+  if (!text) return;
   addUser(text);
   $('input').value = '';
   setBusy(true);
@@ -289,7 +352,7 @@ async function send(text) {
     setBusy(false);
     addAgent(data.reply, data.tool_calls);
     const wrote = (data.tool_calls || []).some(c => c.result && c.result.ok &&
-      ['record_debt', 'record_payment', 'add_customer', 'undo_last'].includes(c.tool));
+      ['record_debt', 'record_payment', 'add_customer', 'undo_last', 'undo_batch'].includes(c.tool));
     loadDebtors(wrote);
   } catch (e) {
     setBusy(false);
@@ -298,6 +361,296 @@ async function send(text) {
 }
 
 $('form').onsubmit = e => { e.preventDefault(); send($('input').value); };
+
+/* ---------- photos / PDF of the notebook (stage 6) ----------
+   Nothing is saved from a photo directly: upload -> extract -> the owner reviews and
+   edits the table -> only the ticked rows are saved, after pressing the button. */
+const MAX_UPLOAD = 10 * 1024 * 1024;
+let attachment = null;  // {blob, name, previewUrl, isPdf}
+
+function fmtSize(n) { return n > 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB'; }
+
+// Longest side 1600px, JPEG 0.85: quick to upload on a weak connection.
+async function shrinkImage(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = url; });
+    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);  // transparent PNG -> white
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return await new Promise(ok => canvas.toBlob(ok, 'image/jpeg', 0.85));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function clearAttachment() {
+  if (attachment && attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+  attachment = null;
+  $('attachment').classList.remove('show');
+  $('file').value = '';
+}
+
+$('attach').onclick = () => { if (!busy) $('file').click(); };
+$('attClear').onclick = clearAttachment;
+$('file').onchange = async () => {
+  const file = $('file').files[0];
+  if (!file) return;
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  let blob = file;
+  try {
+    if (!isPdf) blob = await shrinkImage(file);
+  } catch (e) {
+    addAgent('ما گدرت أفتح هاي الصورة. جرب صورة ثانية (jpg أو png).', [], true);
+    return clearAttachment();
+  }
+  if (!blob || blob.size > MAX_UPLOAD) {
+    addAgent('الملف أكبر من 10 ميگا. صوّر الصفحة من جديد أو صغّر الملف.', [], true);
+    return clearAttachment();
+  }
+  clearAttachment();
+  attachment = {blob, name: file.name, isPdf, previewUrl: isPdf ? null : URL.createObjectURL(blob)};
+  $('attThumb').innerHTML = isPdf ? '<div class="pdf">PDF</div>' : `<img src="${attachment.previewUrl}" alt="">`;
+  $('attName').textContent = file.name;
+  $('attSize').textContent = fmtSize(blob.size) + (isPdf ? '' : ' بعد التصغير');
+  $('attachment').classList.add('show');
+  $('input').focus();
+};
+
+async function postJson(url, body) {
+  const res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+  return {ok: res.ok, data};
+}
+
+async function sendAttachment(note) {
+  const att = attachment;
+  // Show what was sent
+  $('welcome')?.remove();
+  const bubble = document.createElement('div');
+  bubble.className = 'msg user';
+  if (att.previewUrl) {
+    const img = document.createElement('img');
+    img.src = att.previewUrl;  // kept alive for the bubble
+    bubble.appendChild(img);
+  } else {
+    bubble.appendChild(document.createTextNode('📄 ' + att.name + '\n'));
+  }
+  if (note) bubble.appendChild(document.createTextNode(note));
+  $('messages').appendChild(bubble);
+  attachment = null;  // the bubble owns the preview now
+  $('attachment').classList.remove('show');
+  $('file').value = '';
+  $('input').value = '';
+
+  setBusy(true);
+  try {
+    const up = await fetch('/upload', {method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body: att.blob});
+    let upData = {};
+    try { upData = await up.json(); } catch (e) {}
+    if (!up.ok) { setBusy(false); return addAgent(upData.message || 'ما گدرت أرفع الملف.', [], true); }
+    $('thinking') && ($('thinking').firstChild.textContent = 'دا أقرا الصفحة');
+    const ex = await postJson('/extract', {file_id: upData.file_id, note: note || null});
+    setBusy(false);
+    if (!ex.ok) return addAgent(ex.data.message || 'ما گدرت أقرا الصفحة.', [], true);
+    renderReview(ex.data);
+  } catch (e) {
+    setBusy(false);
+    addAgent('ما گدرت أوصل للسيرفر. تأكد إن البرنامج بعده شغال بالطرفية.', [], true);
+  }
+}
+
+const toNumber = v => {
+  const s = String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[,٬\s]/g, '');
+  return /^\d+$/.test(s) ? Number(s) : null;
+};
+
+function renderReview(data) {
+  const rows = (data.rows || []).map(r => ({
+    ...r,
+    written: toNumber(r.amount_as_written),
+    customer_id: r.match && r.match.status === 'existing' ? r.match.customer_id : null,
+    status: (r.match && r.match.status) || 'new',
+    nameEdited: false,
+  }));
+  // Start "×1000" on when the model already scaled a small written number.
+  let thousands = rows.some(r => r.written && r.amount && r.amount === r.written * 1000);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'agent-wrap review-wrap';
+  const card = document.createElement('div');
+  card.className = 'review';
+  wrap.appendChild(card);
+  $('messages').appendChild(wrap);
+
+  if (!rows.length) {
+    card.innerHTML = `<p class="lead">ما لگيت أسماء ومبالغ بهاي الصفحة.</p>` + unreadableHtml(data.unreadable_lines);
+    return scrollDown();
+  }
+
+  card.innerHTML = `
+    <p class="lead">لگيت ${rows.length} سطر. راجعهن وعدّل أي شي غلط، وبعدين سجّل المحدد.${data.notes ? '<br><small style="color:var(--muted)">' + esc(data.notes) + '</small>' : ''}</p>
+    <div class="opts">
+      <label><input type="checkbox" class="o-thousands" ${thousands ? 'checked' : ''}> الأرقام بالآلاف ×1000</label>
+      <label><input type="checkbox" class="o-migrated"> هذي أرصدة منقولة من الدفتر القديم</label>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th class="n">✓</th><th class="c-name">الاسم</th><th class="c-amount">المبلغ</th><th class="c-cur">العملة</th><th class="c-type">النوع</th><th>الحالة</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+    ${unreadableHtml(data.unreadable_lines)}
+    <ul class="errors"></ul>
+    <div class="foot"><span class="sum"></span>
+      <button class="btn no">إلغاء</button><button class="btn go"></button></div>`;
+  const tbody = card.querySelector('tbody');
+
+  rows.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    tr.className = (r.confidence === 'low' ? 'low ' : '') + (r.crossed_out ? 'crossed ' : '');
+    const nameCell = r.status === 'ambiguous'
+      ? `<select class="f-pick"><option value="">اختار منو...</option>${(r.match.candidates || []).map(c =>
+          `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>`
+      : `<input type="text" class="f-name" value="${esc(r.name || '')}" placeholder="الاسم">`;
+    tr.innerHTML = `
+      <td class="n"><input type="checkbox" class="f-sel" ${r.selected ? 'checked' : ''}></td>
+      <td>${nameCell}<span class="raw" title="النص مثل ما انقرأ">${esc(r.raw_text || '')}</span></td>
+      <td><input type="text" inputmode="numeric" class="amount f-amount"><span class="written"></span></td>
+      <td><select class="f-cur"><option value="">؟</option><option value="IQD">دينار</option><option value="USD">دولار</option></select></td>
+      <td><select class="f-type"><option value="">؟</option><option value="debt">دين</option><option value="payment">تسديد</option></select></td>
+      <td class="f-status"></td>`;
+    tbody.appendChild(tr);
+    r.tr = tr;
+    tr.querySelector('.f-cur').value = ['IQD', 'USD'].includes(r.currency) ? r.currency : '';
+    tr.querySelector('.f-type').value = ['debt', 'payment'].includes(r.type) ? r.type : '';
+    setAmount(r, r.amount);
+
+    tr.querySelector('.f-sel').onchange = e => { r.selected = e.target.checked; update(); };
+    tr.querySelector('.f-amount').oninput = e => { r.amount = toNumber(e.target.value); update(); };
+    tr.querySelector('.f-cur').onchange = e => { r.currency = e.target.value; update(); };
+    tr.querySelector('.f-type').onchange = e => { r.type = e.target.value; update(); };
+    const name = tr.querySelector('.f-name');
+    if (name) name.oninput = e => {
+      r.name = e.target.value;
+      if (!r.nameEdited) { r.nameEdited = true; r.customer_id = null; }  // the server finds or adds the new name
+      update();
+    };
+    const pick = tr.querySelector('.f-pick');
+    if (pick) pick.onchange = e => {
+      r.customer_id = e.target.value ? Number(e.target.value) : null;
+      r.name = e.target.selectedOptions[0].textContent;
+      update();
+    };
+  });
+
+  function setAmount(r, value) {
+    r.amount = value;
+    r.tr.querySelector('.f-amount').value = value ? fmt(value) : '';
+    const w = r.tr.querySelector('.written');
+    w.textContent = r.amount_as_written && String(r.amount_as_written) !== String(value) ? `(مكتوب: ${r.amount_as_written})` : '';
+  }
+
+  card.querySelector('.o-thousands').onchange = e => {
+    thousands = e.target.checked;
+    rows.forEach(r => {
+      if (r.written) setAmount(r, thousands ? r.written * 1000 : r.written);
+      else if (r.amount) setAmount(r, thousands ? r.amount * 1000 : (r.amount % 1000 ? r.amount : r.amount / 1000));
+    });
+    update();
+  };
+
+  function statusHtml(r) {
+    if (r.status === 'ambiguous' && !r.customer_id) return '<span class="badge pick">اختار منو</span>';
+    if (r.customer_id) return '<span class="badge ok">✓ زبون موجود</span>';
+    if (r.nameEdited) return '<span class="badge">اسم معدّل</span>';
+    return '<span class="badge new">زبون جديد ➕</span>';
+  }
+
+  function update() {
+    const picked = rows.filter(r => r.selected);
+    const sums = {};
+    rows.forEach(r => {
+      r.tr.classList.toggle('off', !r.selected);
+      r.tr.querySelector('.f-status').innerHTML = statusHtml(r) +
+        (r.confidence === 'low' ? ' <span class="badge">ثقة قليلة</span>' : '') +
+        (r.crossed_out ? ' <span class="badge">مشطوب</span>' : '');
+    });
+    picked.forEach(r => {
+      if (!r.amount || !r.currency || !r.type) return;
+      const k = (r.type === 'debt' ? 'ديون' : 'تسديدات') + ' ' + (r.currency === 'USD' ? 'دولار' : 'دينار');
+      sums[k] = (sums[k] || 0) + r.amount;
+    });
+    const parts = Object.entries(sums).map(([k, v]) => {
+      const [kind, cur] = k.split(' ');
+      return `${kind} ${fmt(v)} ${cur}`;
+    });
+    card.querySelector('.sum').textContent = picked.length ? 'المجموع: ' + (parts.join('، ') || '—') : 'ما محدد شي';
+    const go = card.querySelector('.btn.go');
+    go.textContent = `سجّل المحدد (${picked.length} قيد)`;
+    go.disabled = !picked.length;
+  }
+
+  function finish(text) {
+    card.classList.add('done');
+    card.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
+    card.querySelector('.foot').innerHTML = `<span class="sum">${esc(text)}</span>`;
+  }
+
+  card.querySelector('.btn.no').onclick = () => {
+    finish('انلغى، ما انسجل شي.');
+    addAgent('تمام، ما سجلت شي من الصورة.', []);
+  };
+
+  card.querySelector('.btn.go').onclick = async () => {
+    const picked = rows.filter(r => r.selected);
+    const problems = [];
+    picked.forEach((r, i) => {
+      const label = `"${r.name || 'بدون اسم'}"`;
+      if (r.status === 'ambiguous' && !r.customer_id) problems.push(`${label}: اختار منو تقصد.`);
+      else if (!r.customer_id && !(r.name || '').trim()) problems.push(`سطر بدون اسم: اكتب الاسم أو شيل الصح منه.`);
+      if (!r.amount) problems.push(`${label}: اكتب المبلغ.`);
+      if (!r.currency) problems.push(`${label}: اختار العملة.`);
+      if (!r.type) problems.push(`${label}: اختار دين لو تسديد.`);
+    });
+    const errorsEl = card.querySelector('.errors');
+    errorsEl.innerHTML = problems.map(p => `<li>${esc(p)}</li>`).join('');
+    if (problems.length) return;
+
+    const go = card.querySelector('.btn.go');
+    go.disabled = true;
+    go.textContent = 'دا أسجل...';
+    try {
+      const res = await postJson('/import/commit', {
+        session_id: sessionId,
+        file_id: data.file_id,
+        migrated: card.querySelector('.o-migrated').checked,
+        rows: picked.map(r => ({name: r.name, customer_id: r.customer_id, amount: r.amount, currency: r.currency, type: r.type})),
+      });
+      if (!res.ok) {
+        errorsEl.innerHTML = [res.data.message, ...(res.data.errors || [])].filter(Boolean).map(p => `<li>${esc(p)}</li>`).join('');
+        return update();
+      }
+      finish(`انسجل ✓ (${res.data.count} قيد)`);
+      addAgent(res.data.reply, []);
+      loadDebtors(true);
+    } catch (e) {
+      errorsEl.innerHTML = '<li>ما گدرت أوصل للسيرفر. ما انسجل شي، عيد المحاولة.</li>';
+      update();
+    }
+  };
+
+  update();
+  scrollDown();
+}
+
+function unreadableHtml(lines) {
+  if (!lines || !lines.length) return '';
+  return `<div class="unreadable">أسطر ما انقرأت (ضيفها بالكتابة إذا تريد):<ul>${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul></div>`;
+}
 $('chips').onclick = e => { if (e.target.classList.contains('chip')) send(e.target.textContent); };
 $('newChat').onclick = () => {
   if (busy) return;

@@ -170,3 +170,17 @@ def test_undo_is_per_session(conn, abu_ali):
     s1.execute("record_debt", {"customer_id": abu_ali, "amount": 1000, "currency": "IQD"})
     assert s2.execute("undo_last", {})["error"] == "nothing_to_undo"
     assert s1.execute("undo_last", {})["ok"]
+
+
+def test_undo_batch(tools, conn):
+    cid = db.add_customer(conn, "أبو علي")
+    assert tools.execute("undo_batch", {})["error"] == "nothing_to_undo"
+    db.import_batch(conn, [
+        {"customer_id": cid, "type": "debt", "amount": 25000, "currency": "IQD"},
+        {"customer_id": cid, "type": "debt", "amount": 5, "currency": "USD"},
+    ], batch_id="b1", source="image:f")
+    r = tools.execute("undo_batch", {})
+    assert r["ok"] and r["undone_count"] == 2 and r["customers"] == ["أبو علي"]
+    assert r["totals"] == {"debt_IQD": 25000, "debt_USD": 5}
+    assert db.get_balance(conn, cid) == {"IQD": 0, "USD": 0}
+    assert tools.execute("undo_batch", {"batch_id": "b1"})["error"] == "nothing_to_undo"

@@ -228,3 +228,72 @@ def test_gemini_missing_key(monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     with pytest.raises(LLMError):
         GeminiLLM()
+
+
+# ---------- extraction calls (stage 6) ----------
+
+EXTRACT_TOOL = {"name": "submit_extraction", "description": "d",
+                "input_schema": {"type": "object", "properties": {"rows": {"type": "array"}}}}
+
+
+def test_gemini_extract_forces_the_tool_and_sends_the_image():
+    seen = []
+    llm = _gemini([_ok([{"functionCall": {"name": "submit_extraction", "args": {"rows": [{"name": "علي"}]}}}])], seen)
+    out = llm.extract("اقرا", "الصفحة", b"\xff\xd8\xffJPEG", "image/jpeg", EXTRACT_TOOL)
+    assert out == {"rows": [{"name": "علي"}]}
+    req = seen[0]
+    fcc = req["toolConfig"]["functionCallingConfig"]
+    assert fcc["mode"] == "ANY" and fcc["allowedFunctionNames"] == ["submit_extraction"]
+    assert [d["name"] for d in req["tools"][0]["functionDeclarations"]] == ["submit_extraction"]
+    parts = req["contents"][0]["parts"]
+    inline = parts[0]["inlineData"]
+    assert (inline.get("mimeType") or inline.get("mime_type")) == "image/jpeg"  # spelling varies by SDK
+    assert parts[1]["text"] == "الصفحة"
+
+
+def test_gemini_extract_without_tool_call_is_an_error():
+    llm = _gemini([_ok([{"text": "ما گدرت"}])])
+    with pytest.raises(LLMError):
+        llm.extract("s", "t", b"%PDF", "application/pdf", EXTRACT_TOOL)
+
+
+def _anthropic(responses, seen):
+    import anthropic
+
+    from app.llm import AnthropicLLM
+
+    # The anthropic SDK ships its own httpx fork (httpx2); older versions use httpx.
+    try:
+        import httpx2 as hx
+    except ImportError:
+        hx = httpx
+
+    def handler(req):
+        seen.append(json.loads(req.content))
+        return hx.Response(200, json=responses.pop(0))
+
+    llm = AnthropicLLM(model="claude-test", api_key="k")
+    llm.client = anthropic.Anthropic(api_key="k", http_client=hx.Client(transport=hx.MockTransport(handler)))
+    return llm
+
+
+def _claude_message(content, stop="tool_use"):
+    return {"id": "m", "type": "message", "role": "assistant", "model": "claude-test", "content": content,
+            "stop_reason": stop, "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 1}}
+
+
+def test_anthropic_extract_forces_the_tool():
+    seen = []
+    llm = _anthropic([_claude_message([{"type": "tool_use", "id": "t", "name": "submit_extraction",
+                                        "input": {"rows": []}}])], seen)
+    assert llm.extract("اقرا", "الصفحة", b"%PDF-1.4", "application/pdf", EXTRACT_TOOL) == {"rows": []}
+    req = seen[0]
+    assert req["tool_choice"] == {"type": "tool", "name": "submit_extraction"}
+    block = req["messages"][0]["content"][0]
+    assert block["type"] == "document" and block["source"]["media_type"] == "application/pdf"
+
+
+def test_anthropic_complete_still_works_after_refactor():
+    seen = []
+    llm = _anthropic([_claude_message([{"type": "text", "text": "هلا"}], stop="end_turn")], seen)
+    assert llm.complete("s", [{"role": "user", "text": "هلو"}], SCHEMAS).text == "هلا"

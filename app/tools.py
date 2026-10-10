@@ -107,6 +107,14 @@ TOOL_SCHEMAS = [
         "description": "يلغي آخر قيد انسجل بهذه الجلسة ويرجع شنو انلغى.",
         "input_schema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "undo_batch",
+        "description": "يلغي كل قيود دفعة مستوردة (من صورة أو ملف) مرة وحدة. بدون batch_id يلغي آخر دفعة.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"batch_id": {"type": "string", "description": "رقم الدفعة، اختياري"}},
+        },
+    },
 ]
 
 
@@ -276,6 +284,21 @@ class DebtTools:
                     "balance": db.get_balance(self.conn, tx["customer_id"]),
                 }
         return _error("nothing_to_undo", "ما كو قيد بهذه الجلسة حتى ألغيه")
+
+    def tool_undo_batch(self, batch_id=None):
+        batch_id = str(batch_id).strip() if batch_id else db.last_batch_id(self.conn)
+        if not batch_id:
+            return _error("nothing_to_undo", "ما كو دفعة مستوردة حتى ألغيها")
+        rows = db.undo_batch(self.conn, batch_id)
+        if not rows:
+            return _error("nothing_to_undo", "هاي الدفعة ملغية من قبل أو مو موجودة", batch_id=batch_id)
+        totals = {}
+        for r in rows:
+            key = f"{r['type']}_{r['currency']}"
+            totals[key] = totals.get(key, 0) + r["amount"]
+        names = sorted({db.get_customer(self.conn, r["customer_id"])["name"] for r in rows})
+        return {"ok": True, "batch_id": batch_id, "undone_count": len(rows),
+                "totals": totals, "customers": names}
 
 
 def main(argv: list[str]) -> int:

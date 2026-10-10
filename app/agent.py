@@ -76,7 +76,7 @@ class Agent:
         # v0 serves one shop: one turn at a time keeps the shared SQLite connection safe.
         self.lock = threading.Lock()
 
-    def _get_llm(self):
+    def get_llm(self):
         if self.llm is None:
             self.llm = make_llm()
         return self.llm
@@ -85,6 +85,15 @@ class Agent:
         if session_id not in self.sessions:
             self.sessions[session_id] = Session(self.conn)
         return self.sessions[session_id]
+
+    def record_event(self, session_id: str, what_happened: str, reply: str) -> None:
+        """Put something done outside the chat (e.g. an image import) into the
+        session history, so the agent can refer to it ("ألغِ آخر دفعة")."""
+        with self.lock:
+            self.session(session_id).commit([
+                {"role": "user", "text": what_happened},
+                {"role": "assistant", "text": reply, "tool_calls": []},
+            ])
 
     def reset(self, session_id: str) -> None:
         self.sessions.pop(session_id, None)
@@ -102,7 +111,7 @@ class Agent:
 
         reply = None
         try:
-            llm = self._get_llm()
+            llm = self.get_llm()
             for _ in range(MAX_ITERATIONS):
                 response = llm.complete(SYSTEM_PROMPT, session.history() + turn, TOOL_SCHEMAS)
                 if response.refused:
