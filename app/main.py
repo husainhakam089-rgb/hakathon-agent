@@ -58,15 +58,25 @@ def chat(req: ChatRequest):
     return agent.chat(req.session_id, req.message, req.source)
 
 
-@app.get("/debtors")
-def debtors():
-    """Everyone with a non-zero balance (negative = shop owes them), biggest debt first."""
+def _ledger(kind: str) -> dict:
+    """Everyone in this ledger with a non-zero balance, biggest first. For customers a
+    positive balance is owed to the shop; for suppliers it is what the shop owes."""
     with agent.lock:
-        rows = db.all_balances(agent.conn)
+        rows = db.all_balances(agent.conn, kind)
     rows = [r for r in rows if any(r["balances"].values())]
     rows.sort(key=lambda r: (r["balances"]["IQD"], r["balances"]["USD"]), reverse=True)
     totals = {cur: sum(max(r["balances"][cur], 0) for r in rows) for cur in db.CURRENCIES}
     return {"debtors": rows, "totals": totals}
+
+
+@app.get("/debtors")
+def debtors():
+    return _ledger("customer")
+
+
+@app.get("/suppliers")
+def suppliers():
+    return _ledger("supplier")
 
 
 # ---------- stage 6: photos of the notebook ----------

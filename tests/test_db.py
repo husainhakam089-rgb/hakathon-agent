@@ -109,6 +109,8 @@ def test_old_database_is_migrated(tmp_path):
     row = conn.execute("SELECT batch_id, source FROM transactions").fetchone()
     assert (row["batch_id"], row["source"]) == (None, "chat")
     assert db.get_balance(conn, 1)["IQD"] == 25000
+    assert [c["name"] for c in db.all_customers(conn)] == ["أبو علي"]  # old rows are customers
+    assert db.all_customers(conn, "supplier") == []
     db.connect(path).close()  # second connect: nothing to migrate, no error
 
 

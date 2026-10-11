@@ -89,3 +89,15 @@ def test_voice_message_is_saved_with_source_voice(client, conn):
     c.post("/chat", json={"session_id": "s", "message": "سجل على ابو علي 25 الف"})
     assert [r[0] for r in conn.execute("SELECT source FROM transactions ORDER BY id")] == ["voice", "chat"]
     assert c.post("/chat", json={"session_id": "s", "message": "x", "source": "email"}).status_code == 422
+
+
+def test_suppliers_endpoint_is_its_own_ledger(client, conn):
+    ali = db.add_customer(conn, "أبو علي")
+    zain = db.add_customer(conn, "شركة الزين", kind="supplier")
+    db.add_transaction(conn, ali, "debt", 25000)
+    db.add_transaction(conn, zain, "debt", 500000)
+    db.add_transaction(conn, zain, "debt", 40, "USD")
+    c = client()
+    d, s = c.get("/debtors").json(), c.get("/suppliers").json()
+    assert [x["name"] for x in d["debtors"]] == ["أبو علي"] and d["totals"] == {"IQD": 25000, "USD": 0}
+    assert [x["name"] for x in s["debtors"]] == ["شركة الزين"] and s["totals"] == {"IQD": 500000, "USD": 40}

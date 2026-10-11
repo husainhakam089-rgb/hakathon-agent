@@ -7,6 +7,9 @@ from pathlib import Path
 from app.arabic import find_matches, normalize
 
 CURRENCIES = ("IQD", "USD")
+# Who a party is. customer: owes the shop (receivable). supplier: a company, supplier or
+# sales rep the shop owes (payable). Same tables, separate ledgers.
+KINDS = ("customer", "supplier")
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "debt.db"
 
@@ -16,7 +19,8 @@ CREATE TABLE IF NOT EXISTS customers (
   name            TEXT NOT NULL,
   normalized_name TEXT NOT NULL,
   phone           TEXT,
-  created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  kind            TEXT NOT NULL DEFAULT 'customer'  -- customer | supplier
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -59,16 +63,19 @@ def _migrate(conn) -> None:
     for name, definition in _MIGRATIONS:
         if name not in columns:
             conn.execute(f"ALTER TABLE transactions ADD COLUMN {name} {definition}")
+    if "kind" not in {r["name"] for r in conn.execute("PRAGMA table_info(customers)")}:
+        conn.execute("ALTER TABLE customers ADD COLUMN kind TEXT NOT NULL DEFAULT 'customer'")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_batch ON transactions(batch_id)")
     conn.commit()
 
 
 # ---------- customers ----------
 
-def add_customer(conn, name: str, phone: str | None = None, commit: bool = True) -> int:
+def add_customer(conn, name: str, phone: str | None = None, commit: bool = True,
+                 kind: str = "customer") -> int:
     cur = conn.execute(
-        "INSERT INTO customers (name, normalized_name, phone) VALUES (?, ?, ?)",
-        (name.strip(), normalize(name), phone),
+        "INSERT INTO customers (name, normalized_name, phone, kind) VALUES (?, ?, ?, ?)",
+        (name.strip(), normalize(name), phone, kind),
     )
     if commit:
         conn.commit()
@@ -80,12 +87,12 @@ def get_customer(conn, customer_id: int):
     return dict(row) if row else None
 
 
-def all_customers(conn) -> list[dict]:
-    return [dict(r) for r in conn.execute("SELECT * FROM customers ORDER BY id")]
+def all_customers(conn, kind: str = "customer") -> list[dict]:
+    return [dict(r) for r in conn.execute("SELECT * FROM customers WHERE kind = ? ORDER BY id", (kind,))]
 
 
-def find_customers(conn, query: str) -> list[dict]:
-    return find_matches(query, all_customers(conn))
+def find_customers(conn, query: str, kind: str = "customer") -> list[dict]:
+    return find_matches(query, all_customers(conn, kind))
 
 
 # ---------- transactions ----------
@@ -190,15 +197,18 @@ def get_balance(conn, customer_id: int) -> dict:
     return balances
 
 
-def all_balances(conn) -> list[dict]:
-    """Every customer with their per-currency balance and last activity time."""
+def all_balances(conn, kind: str = "customer") -> list[dict]:
+    """Every party of this kind with their per-currency balance and last activity time.
+    For a supplier the balance is what the shop owes them."""
     customers = {
         c["id"]: {"id": c["id"], "name": c["name"], "balances": {k: 0 for k in CURRENCIES},
                   "last_activity": None}
-        for c in all_customers(conn)
+        for c in all_customers(conn, kind)
     }
     for r in conn.execute(_BALANCE_SQL.format(where="")):
-        entry = customers[r["customer_id"]]
+        entry = customers.get(r["customer_id"])
+        if entry is None:  # the other ledger
+            continue
         entry["balances"][r["currency"]] = r["balance"]
         if entry["last_activity"] is None or r["last_activity"] > entry["last_activity"]:
             entry["last_activity"] = r["last_activity"]

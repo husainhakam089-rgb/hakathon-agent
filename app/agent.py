@@ -41,6 +41,12 @@ def _with_done_note(reply: str, tool_log: list[dict]) -> str:
             done.append(f"سجلت تسديد من {r['customer_name']} {_money(r['amount'], r['currency'])}")
         elif entry["tool"] == "add_customer":
             done.append(f"أضفت الزبون {r['name']}")
+        elif entry["tool"] == "record_purchase":
+            done.append(f"سجلت وارد من {r['supplier_name']} {_money(r['amount'], r['currency'])}")
+        elif entry["tool"] == "record_supplier_payment":
+            done.append(f"سجلت إنك دفعت لـ {r['supplier_name']} {_money(r['amount'], r['currency'])}")
+        elif entry["tool"] == "add_supplier":
+            done.append(f"أضفت المورد {r['name']}")
         elif entry["tool"] == "undo_last":
             u = r["undone"]
             done.append(f"لغيت آخر قيد ({u['customer_name']} {_money(u['amount'], u['currency'])})")

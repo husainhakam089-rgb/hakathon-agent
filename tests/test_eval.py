@@ -28,7 +28,7 @@ class Script:
 
 
 def test_cases_file_is_complete():
-    assert [c["id"] for c in CASES["cases"]] == list(range(1, 14))
+    assert [c["id"] for c in CASES["cases"]] == list(range(1, 20))  # 1-13 customers, 14-19 suppliers
 
 
 def test_correct_debt_passes():
@@ -61,4 +61,19 @@ def test_undo_case_sees_seeded_session_row():
         LLMResponse(text="", tool_calls=[ToolCall("a", "undo_last", {})]),
         LLMResponse(text="لغيت دين أم حسين 15,000 دينار."),
     ))
+    assert r["passed"], r["failures"]
+
+
+def test_supplier_case_checks_the_right_ledger():
+    # 15: paying the supplier passes; recording it as a customer payment would not
+    ok = run_eval.run_case(case(15), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "record_supplier_payment",
+                                                  {"supplier_id": 4, "amount": 200000, "currency": "IQD"})]),
+        LLMResponse(text="تمام، دفعت لشركة الزين 200,000 دينار. باقي عليك إلهم 300,000."),
+    ))
+    assert ok["passed"], ok["failures"]
+
+
+def test_ambiguous_case_accepts_asking():
+    r = run_eval.run_case(case(19), BASE, Script(LLMResponse(text="تقصد الزبون لو المورد؟")))
     assert r["passed"], r["failures"]

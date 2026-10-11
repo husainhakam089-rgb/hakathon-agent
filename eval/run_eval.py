@@ -29,12 +29,17 @@ CASES_PATH = Path(__file__).with_name("cases.json")
 RESULTS_PATH = Path(__file__).with_name("last_results.json")
 
 
+SUPPLIER = "مورد:"
+
+
 def build_db(base: dict, extra: dict):
     """Fresh database from base_setup + the case's own setup. Returns (conn, ids, session_tx_ids)."""
     conn = db.connect(":memory:")
-    ids = {}
+    ids = {}  # suppliers are keyed "مورد:<name>", so a name can be in both ledgers
     for name in base.get("customers", []) + extra.get("customers", []):
         ids[name] = db.add_customer(conn, name)
+    for name in base.get("suppliers", []) + extra.get("suppliers", []):
+        ids[SUPPLIER + name] = db.add_customer(conn, name, kind="supplier")
     session_txs = []
     for row in base.get("transactions", []) + extra.get("transactions", []):
         name, tx_type, amount, currency, *rest = row
@@ -55,9 +60,11 @@ def check(case: dict, result: dict, conn, ids: dict, before_max_id: int, seeded:
         (before_max_id,)).fetchall()
     got = sorted([names.get(r["customer_id"], f"#{r['customer_id']}"), r["type"], r["amount"], r["currency"]]
                  for r in new_rows)
-    want = sorted(list(t) for t in exp.get("transactions", []))
-    if got != want:
-        failures.append(f"القيود: المتوقع {want or 'ولا قيد'}، الموجود {got or 'ولا قيد'}")
+    options = exp.get("transactions_any_of") or [exp.get("transactions", [])]
+    wanted = [sorted(list(t) for t in option) for option in options]
+    if got not in wanted:
+        shown = " أو ".join(str(w or "ولا قيد") for w in wanted)
+        failures.append(f"القيود: المتوقع {shown}، الموجود {got or 'ولا قيد'}")
 
     for name in exp.get("undone", []):
         undone = conn.execute(

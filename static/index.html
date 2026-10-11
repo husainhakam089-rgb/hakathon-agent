@@ -100,6 +100,17 @@ form button:disabled { opacity: .5; cursor: wait; }
 form .attach-btn { background: var(--card-strong); color: inherit; border: 1px solid var(--border); padding: 0 14px; font-size: 18px; font-weight: 400; }
 form .attach-btn:hover { border-color: var(--accent-border); }
 
+/* ---------- ledgers tabs (stage 10) ---------- */
+.ledger-head { justify-content: space-between; flex-wrap: wrap; }
+.tabs { display: flex; gap: 6px; }
+.tab { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; cursor: pointer;
+  font-size: 13px; color: var(--muted); font-weight: 600; }
+.tab.on { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-text); }
+.net { margin: 12px 18px 0; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--border-soft);
+  background: var(--card); font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }
+.net b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.net .pos { color: var(--good); } .net .neg { color: var(--bad); }
+
 /* ---------- voice (stage 8) ---------- */
 form .mic-btn { background: var(--card-strong); color: inherit; border: 1px solid var(--border); padding: 0 14px; font-size: 18px; font-weight: 400; }
 form .mic-btn:hover { border-color: var(--accent-border); }
@@ -225,6 +236,8 @@ tr.flash td { animation: flash 1.6s ease-out; }
         <button class="chip">ابو علي دفع عشرة</button>
         <button class="chip">شكد باقي على ابو علي؟</button>
         <button class="chip">منو أكثر واحد عليه دين؟</button>
+        <button class="chip">أخذت من شركة الزين بضاعة بمليون</button>
+        <button class="chip">شكد عليّ للشركات؟</button>
         <button class="chip">شطب آخر وحدة</button>
       </div>
       <div class="attachment" id="attachment">
@@ -246,11 +259,18 @@ tr.flash td { animation: flash 1.6s ease-out; }
     </section>
 
     <section class="debtors glass">
-      <div class="section-title">المدينين <small id="updated"></small></div>
+      <div class="section-title ledger-head">
+        <div class="tabs" id="tabs">
+          <button class="tab on" data-tab="customer" title="ديون إلك على الزبائن">الزبائن (إلي)</button>
+          <button class="tab" data-tab="supplier" title="ديون عليك للشركات والموردين والمندوبين">الموردين (عليّ)</button>
+        </div>
+        <small id="updated"></small>
+      </div>
+      <div class="net" id="net"></div>
       <div class="stats">
-        <div class="stat accent"><span>مجموع الديون بالدينار</span><b id="totalIqd">0</b></div>
-        <div class="stat accent"><span>مجموع الديون بالدولار</span><b id="totalUsd">0</b></div>
-        <div class="stat"><span>عدد الزبائن</span><b id="count">0</b></div>
+        <div class="stat accent"><span id="statIqd">مجموع الديون بالدينار</span><b id="totalIqd">0</b></div>
+        <div class="stat accent"><span id="statUsd">مجموع الديون بالدولار</span><b id="totalUsd">0</b></div>
+        <div class="stat"><span id="statCount">عدد الزبائن</span><b id="count">0</b></div>
       </div>
       <div class="table-wrap">
         <table>
@@ -297,6 +317,12 @@ const TOOL_LABELS = {
   list_debtors: 'جاب قائمة المدينين',
   undo_last: 'لغى آخر قيد',
   undo_batch: 'لغى دفعة كاملة',
+  find_supplier: 'دوّر على مورد',
+  add_supplier: 'أضاف مورد',
+  record_purchase: 'سجّل وارد من مورد',
+  record_supplier_payment: 'سجّل دفعة لمورد',
+  get_supplier_balance: 'شاف رصيد المورد',
+  list_suppliers: 'جاب قائمة الموردين',
 };
 
 function scrollDown() { const m = $('messages'); m.scrollTop = m.scrollHeight; }
@@ -378,9 +404,13 @@ async function send(text) {
     const data = await res.json();
     setBusy(false);
     addAgent(data.reply, data.tool_calls);
-    const wrote = (data.tool_calls || []).some(c => c.result && c.result.ok &&
-      ['record_debt', 'record_payment', 'add_customer', 'undo_last', 'undo_batch'].includes(c.tool));
-    loadDebtors(wrote);
+    const okCalls = (data.tool_calls || []).filter(c => c.result && c.result.ok);
+    const wrote = okCalls.some(c => ['record_debt', 'record_payment', 'add_customer', 'undo_last', 'undo_batch',
+      'record_purchase', 'record_supplier_payment', 'add_supplier'].includes(c.tool));
+    const supplierWrite = okCalls.some(c => ['record_purchase', 'record_supplier_payment', 'add_supplier'].includes(c.tool)
+      || (c.tool === 'undo_last' && c.result.undone && c.result.undone.ledger === 'supplier'));
+    const customerWrite = okCalls.some(c => ['record_debt', 'record_payment', 'add_customer'].includes(c.tool));
+    loadDebtors(wrote, supplierWrite ? 'supplier' : customerWrite ? 'customer' : null);
   } catch (e) {
     setBusy(false);
     addAgent('ما گدرت أوصل للسيرفر. تأكد إن البرنامج بعده شغال بالطرفية.', [], true);
@@ -792,7 +822,7 @@ function renderReview(data) {
       }
       finish(`انسجل ✓ (${res.data.count} قيد)`);
       addAgent(res.data.reply, []);
-      loadDebtors(true);
+      loadDebtors(true, 'customer');
     } catch (e) {
       errorsEl.innerHTML = '<li>ما گدرت أوصل للسيرفر. ما انسجل شي، عيد المحاولة.</li>';
       update();
@@ -894,13 +924,63 @@ $('newChat').onclick = () => {
   $('messages').innerHTML = '<div class="welcome" id="welcome">بدينا محادثة جديدة. البيانات محفوظة مثل ما هي.</div>';
 };
 
-/* ---------- debtors table ---------- */
+/* ---------- ledgers: customers (owed to me) / suppliers (I owe) ---------- */
 let lastSnapshot = {};
+let ledgers = {customer: null, supplier: null};
+let activeTab = store.get('debt_tab') === 'supplier' ? 'supplier' : 'customer';
+const TAB_TEXT = {
+  customer: {iqd: 'مجموع الديون بالدينار', usd: 'مجموع الديون بالدولار', count: 'عدد الزبائن',
+             empty: 'ما كو ديون على الزبائن.', credit: 'إله', creditTitle: 'إله عندك'},
+  supplier: {iqd: 'عليّ للموردين بالدينار', usd: 'عليّ للموردين بالدولار', count: 'عدد الموردين',
+             empty: 'ما عليك شي للموردين.', credit: 'إلي', creditTitle: 'المورد صار مطلوب إلك'},
+};
 
-function balanceCell(v) {
+function balanceCell(v, tab = 'customer') {
   if (!v) return '<td class="num zero">—</td>';
-  if (v < 0) return `<td class="num credit" title="إله عندك">إله ${fmt(-v)}</td>`;
+  if (v < 0) return `<td class="num credit" title="${TAB_TEXT[tab].creditTitle}">${TAB_TEXT[tab].credit} ${fmt(-v)}</td>`;
   return `<td class="num">${fmt(v)}</td>`;
+}
+
+function setTab(tab) {
+  activeTab = tab;
+  store.set('debt_tab', tab);
+  document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  renderLedger(false);
+}
+$('tabs').onclick = e => { if (e.target.dataset.tab) setTab(e.target.dataset.tab); };
+// the remembered tab: highlight the right button from the start
+document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === activeTab));
+
+function renderNet() {
+  const c = ledgers.customer, s = ledgers.supplier;
+  if (!c || !s) return;
+  const parts = ['IQD', 'USD'].map(cur => {
+    const net = (c.totals[cur] || 0) - (s.totals[cur] || 0);
+    if (!net && cur === 'USD') return '';
+    const word = cur === 'USD' ? 'دولار' : 'دينار';
+    return net >= 0 ? `<span>إلك <b class="pos">${fmt(net)}</b> ${word}</span>`
+                    : `<span>عليك <b class="neg">${fmt(-net)}</b> ${word}</span>`;
+  }).filter(Boolean);
+  $('net').innerHTML = `<span>الصافي (اللي إلك على الزبائن − اللي عليك للموردين):</span> ${parts.join(' · ')}`;
+}
+
+function renderLedger(flash) {
+  const data = ledgers[activeTab];
+  if (!data) return;
+  const rows = data.debtors || [];
+  const text = TAB_TEXT[activeTab];
+  $('statIqd').textContent = text.iqd;
+  $('statUsd').textContent = text.usd;
+  $('statCount').textContent = text.count;
+  $('empty').textContent = text.empty;
+  $('totalIqd').textContent = fmt(data.totals.IQD);
+  $('totalUsd').textContent = fmt(data.totals.USD);
+  $('count').textContent = fmt(rows.length);
+  $('empty').style.display = rows.length ? 'none' : 'block';
+  $('rows').innerHTML = rows.map(r => {
+    const changed = flash && lastSnapshot[activeTab + ':' + r.id] !== r.balances.IQD + '|' + r.balances.USD;
+    return `<tr class="${changed ? 'flash' : ''}"><td>${esc(r.name)}</td>${balanceCell(r.balances.IQD, activeTab)}${balanceCell(r.balances.USD, activeTab)}<td class="date">${esc(shortDate(r.last_activity))}</td></tr>`;
+  }).join('');
 }
 
 function shortDate(s) {
@@ -910,22 +990,22 @@ function shortDate(s) {
   return d === today ? 'اليوم ' + (t || '').slice(0, 5) : d;
 }
 
-async function loadDebtors(flash) {
+// showTab: switch to the ledger that just changed (e.g. after a supplier entry)
+async function loadDebtors(flash, showTab) {
   try {
-    const res = await fetch('/debtors');
-    const data = await res.json();
-    const rows = data.debtors || [];
-    $('totalIqd').textContent = fmt(data.totals.IQD);
-    $('totalUsd').textContent = fmt(data.totals.USD);
-    $('count').textContent = fmt(rows.length);
-    $('empty').style.display = rows.length ? 'none' : 'block';
+    const [c, s] = await Promise.all([fetch('/debtors'), fetch('/suppliers')]);
+    ledgers = {customer: await c.json(), supplier: await s.json()};
+    if (showTab && showTab !== activeTab) {
+      activeTab = showTab;
+      store.set('debt_tab', showTab);
+      document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === showTab));
+    }
+    renderNet();
+    renderLedger(flash);
     const snapshot = {};
-    $('rows').innerHTML = rows.map(r => {
-      const key = r.balances.IQD + '|' + r.balances.USD;
-      snapshot[r.id] = key;
-      const changed = flash && lastSnapshot[r.id] !== key;
-      return `<tr class="${changed ? 'flash' : ''}"><td>${esc(r.name)}</td>${balanceCell(r.balances.IQD)}${balanceCell(r.balances.USD)}<td class="date">${esc(shortDate(r.last_activity))}</td></tr>`;
-    }).join('');
+    for (const tab of ['customer', 'supplier']) {
+      for (const r of ledgers[tab].debtors || []) snapshot[tab + ':' + r.id] = r.balances.IQD + '|' + r.balances.USD;
+    }
     lastSnapshot = snapshot;
     $('updated').textContent = '· تحدث ' + new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'});
   } catch (e) {

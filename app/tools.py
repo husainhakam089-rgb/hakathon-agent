@@ -115,6 +115,72 @@ TOOL_SCHEMAS = [
             "properties": {"batch_id": {"type": "string", "description": "رقم الدفعة، اختياري"}},
         },
     },
+    # ----- suppliers ledger (stage 10): companies, suppliers and sales reps the shop owes -----
+    {
+        "name": "find_supplier",
+        "description": "يدور على مورد / شركة / مندوب بالاسم (دفتر الموردين، مو الزبائن). يرجع المطابقات مع شكد عليّ إله.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "اسم المورد أو الشركة أو المندوب"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "add_supplier",
+        "description": "يضيف مورد / شركة / مندوب جديد. لا تستدعيها إلا بعد موافقة المستخدم الصريحة.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "phone": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "record_purchase",
+        "description": "وارد: صاحب المحل أخذ بضاعة من المورد بالدين، فزاد اللي عليه للمورد. يرجع الرصيد الجديد (شكد عليّ إله).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "supplier_id": {"type": "integer"},
+                "amount": {"type": "integer", "description": "عدد صحيح موجب، بالوحدة الكاملة"},
+                "currency": {"type": "string", "enum": ["IQD", "USD"]},
+                "note": {"type": "string"},
+                "confirmed": {"type": "boolean", "description": "true فقط بعد ما المستخدم يأكد مبلغ كبير"},
+            },
+            "required": ["supplier_id", "amount", "currency"],
+        },
+    },
+    {
+        "name": "record_supplier_payment",
+        "description": "صادر: صاحب المحل دفع للمورد، فنقص اللي عليه للمورد. يرجع الرصيد الجديد.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "supplier_id": {"type": "integer"},
+                "amount": {"type": "integer", "description": "عدد صحيح موجب، بالوحدة الكاملة"},
+                "currency": {"type": "string", "enum": ["IQD", "USD"]},
+                "note": {"type": "string"},
+                "confirmed": {"type": "boolean", "description": "true فقط بعد ما المستخدم يأكد مبلغ كبير"},
+            },
+            "required": ["supplier_id", "amount", "currency"],
+        },
+    },
+    {
+        "name": "get_supplier_balance",
+        "description": "شكد عليّ لهذا المورد بكل عملة (موجب = عليّ إله).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"supplier_id": {"type": "integer"}},
+            "required": ["supplier_id"],
+        },
+    },
+    {
+        "name": "list_suppliers",
+        "description": "الموردين والشركات والمندوبين اللي عليّ إلهم فلوس، من الأكثر، مع المجموع الكلي لكل عملة.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "default": 10}},
+        },
+    },
 ]
 
 
@@ -167,15 +233,24 @@ class DebtTools:
 
     # ----- helpers -----
 
-    def _customer_or_error(self, customer_id):
-        cid = _as_int(customer_id)
-        customer = db.get_customer(self.conn, cid) if cid is not None else None
-        if customer is None:
-            return None, _error("customer_not_found", f"ما كو زبون بالرقم {customer_id}")
-        return customer, None
+    def _party_or_error(self, party_id, kind):
+        """The party, only if it is in the right ledger: a customer tool never touches a
+        supplier and the other way round, whatever id the model passes."""
+        pid = _as_int(party_id)
+        party = db.get_customer(self.conn, pid) if pid is not None else None
+        if party is None or party.get("kind", "customer") != kind:
+            if kind == "supplier":
+                return None, _error("supplier_not_found",
+                                    f"ما كو مورد بالرقم {party_id}. دوّر بـ find_supplier.")
+            return None, _error("customer_not_found", f"ما كو زبون بالرقم {party_id}")
+        return party, None
 
-    def _record(self, tx_type, customer_id, amount, currency="IQD", note=None, confirmed=False):
-        customer, err = self._customer_or_error(customer_id)
+    def _customer_or_error(self, customer_id):
+        return self._party_or_error(customer_id, "customer")
+
+    def _record(self, tx_type, customer_id, amount, currency="IQD", note=None, confirmed=False,
+                kind="customer"):
+        customer, err = self._party_or_error(customer_id, kind)
         if err:
             return err
 
@@ -203,52 +278,67 @@ class DebtTools:
         self.session_tx_ids.append(tx_id)
         after = db.get_balance(self.conn, customer["id"])
 
-        result = {
-            "ok": True,
-            "transaction_id": tx_id,
-            "type": tx_type,
-            "customer_id": customer["id"],
-            "customer_name": customer["name"],
-            "amount": value,
-            "currency": currency,
-            "balance": after,
-        }
+        if kind == "supplier":
+            result = {
+                "ok": True,
+                "ledger": "supplier",
+                "transaction_id": tx_id,
+                "type": "purchase" if tx_type == "debt" else "supplier_payment",
+                "supplier_id": customer["id"],
+                "supplier_name": customer["name"],
+                "amount": value,
+                "currency": currency,
+                "balance_owed_by_me": after,
+            }
+        else:
+            result = {
+                "ok": True,
+                "transaction_id": tx_id,
+                "type": tx_type,
+                "customer_id": customer["id"],
+                "customer_name": customer["name"],
+                "amount": value,
+                "currency": currency,
+                "balance": after,
+            }
         if tx_type == "payment" and value > before[currency]:
             result["overpayment"] = True
             result["overpaid_by"] = value - max(before[currency], 0)
         return result
 
-    # ----- tools -----
-
-    def tool_find_customer(self, query):
-        matches = db.find_customers(self.conn, str(query))
+    def _matches(self, query, kind):
+        matches = db.find_customers(self.conn, str(query), kind)
         if not matches:
-            self._new_name_turn.setdefault(normalize(str(query)), self.turn)
-        return {
-            "ok": True,
-            "count": len(matches),
-            "matches": [
-                {"id": c["id"], "name": c["name"], "balance": db.get_balance(self.conn, c["id"])}
-                for c in matches
-            ],
-        }
+            self._new_name_turn.setdefault((kind, normalize(str(query))), self.turn)
+        return [{"id": c["id"], "name": c["name"], "balance": db.get_balance(self.conn, c["id"])}
+                for c in matches]
 
-    def tool_add_customer(self, name, phone=None):
+    def _add_party(self, name, phone, kind):
+        label = "مورد" if kind == "supplier" else "زبون"
         name = (name or "").strip()
         if not name:
             return _error("invalid_name", "الاسم فارغ")
-        exact = [c for c in db.find_customers(self.conn, name)
+        exact = [c for c in db.find_customers(self.conn, name, kind)
                  if c["normalized_name"] == normalize(name)]
         if exact:
-            return _error("customer_exists", "اكو زبون بنفس الاسم",
+            return _error(f"{kind}_exists", f"اكو {label} بنفس الاسم",
                           existing={"id": exact[0]["id"], "name": exact[0]["name"]})
-        first_seen = self._new_name_turn.setdefault(normalize(name), self.turn)
+        first_seen = self._new_name_turn.setdefault((kind, normalize(name)), self.turn)
         if first_seen >= self.turn:
             return _error("ask_first",
-                          "لا تضيف هسه. اسأل صاحب المحل: 'ما عندي زبون اسمه " + name +
+                          f"لا تضيف هسه. اسأل صاحب المحل: 'ما عندي {label} اسمه " + name +
                           "، أضيفه؟' ولا تسجل شي، وانتظر جوابه بالرسالة الجاية.")
-        cid = db.add_customer(self.conn, name, phone)
-        return {"ok": True, "customer_id": cid, "name": name}
+        pid = db.add_customer(self.conn, name, phone, kind=kind)
+        return {"ok": True, f"{kind}_id": pid, "name": name}
+
+    # ----- tools -----
+
+    def tool_find_customer(self, query):
+        matches = self._matches(query, "customer")
+        return {"ok": True, "count": len(matches), "matches": matches}
+
+    def tool_add_customer(self, name, phone=None):
+        return self._add_party(name, phone, "customer")
 
     def tool_record_debt(self, customer_id, amount, currency="IQD", note=None, confirmed=False):
         return self._record("debt", customer_id, amount, currency, note, confirmed)
@@ -279,6 +369,38 @@ class DebtTools:
         totals = {cur: sum(max(r["balances"][cur], 0) for r in debtors) for cur in db.CURRENCIES}
         return {"ok": True, "count": len(debtors), "debtors": debtors[:limit], "totals": totals}
 
+    # ----- suppliers -----
+
+    def tool_find_supplier(self, query):
+        matches = self._matches(query, "supplier")
+        return {"ok": True, "ledger": "supplier", "count": len(matches), "matches": matches}
+
+    def tool_add_supplier(self, name, phone=None):
+        return self._add_party(name, phone, "supplier")
+
+    def tool_record_purchase(self, supplier_id, amount, currency="IQD", note=None, confirmed=False):
+        return self._record("debt", supplier_id, amount, currency, note, confirmed, kind="supplier")
+
+    def tool_record_supplier_payment(self, supplier_id, amount, currency="IQD", note=None, confirmed=False):
+        return self._record("payment", supplier_id, amount, currency, note, confirmed, kind="supplier")
+
+    def tool_get_supplier_balance(self, supplier_id):
+        supplier, err = self._party_or_error(supplier_id, "supplier")
+        if err:
+            return err
+        return {"ok": True, "ledger": "supplier", "supplier_id": supplier["id"],
+                "supplier_name": supplier["name"],
+                "balance_owed_by_me": db.get_balance(self.conn, supplier["id"])}
+
+    def tool_list_suppliers(self, limit=10):
+        limit = max(1, min(_as_int(limit) or 10, 100))
+        rows = [r for r in db.all_balances(self.conn, "supplier")
+                if any(v > 0 for v in r["balances"].values())]
+        rows.sort(key=lambda r: (r["balances"]["IQD"], r["balances"]["USD"]), reverse=True)
+        totals = {cur: sum(max(r["balances"][cur], 0) for r in rows) for cur in db.CURRENCIES}
+        return {"ok": True, "ledger": "supplier", "count": len(rows), "suppliers": rows[:limit],
+                "total_owed_by_me": totals}
+
     def tool_undo_last(self):
         while self.session_tx_ids:
             tx_id = self.session_tx_ids.pop()
@@ -286,11 +408,14 @@ class DebtTools:
             if tx and not tx["undone"]:
                 db.mark_undone(self.conn, tx_id)
                 customer = db.get_customer(self.conn, tx["customer_id"])
+                supplier = customer.get("kind") == "supplier"
                 return {
                     "ok": True,
                     "undone": {
                         "transaction_id": tx_id,
-                        "type": tx["type"],
+                        "ledger": "supplier" if supplier else "customer",
+                        "type": ({"debt": "purchase", "payment": "supplier_payment"}[tx["type"]]
+                                 if supplier else tx["type"]),
                         "customer_name": customer["name"],
                         "amount": tx["amount"],
                         "currency": tx["currency"],

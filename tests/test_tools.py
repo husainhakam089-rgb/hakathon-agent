@@ -201,3 +201,77 @@ def test_add_customer_needs_a_later_turn(tools, conn):
     assert tools.execute("add_customer", {"name": "سَعد"})["ok"]  # same name, normalized
     tools.turn = 3
     assert tools.execute("add_customer", {"name": "كريم"})["error"] == "ask_first"  # new name, new question
+
+
+# ---------- suppliers ledger (stage 10) ----------
+
+@pytest.fixture
+def zain(conn):
+    return db.add_customer(conn, "شركة الزين", kind="supplier")
+
+
+def test_ledgers_are_separate(tools, conn, zain, abu_ali):
+    db.add_customer(conn, "أبو علي", kind="supplier")  # same name, the other ledger
+    assert [m["name"] for m in tools.execute("find_customer", {"query": "ابو علي"})["matches"]] == ["أبو علي"]
+    assert tools.execute("find_customer", {"query": "الزين"})["count"] == 0
+    sup = tools.execute("find_supplier", {"query": "ابو علي"})["matches"]
+    assert len(sup) == 1 and sup[0]["id"] != abu_ali
+    assert tools.execute("find_supplier", {"query": "الزين"})["matches"][0]["id"] == zain
+
+
+def test_tools_refuse_the_other_ledger(tools, zain, abu_ali):
+    assert tools.execute("record_debt", {"customer_id": zain, "amount": 1000, "currency": "IQD"})["error"] == "customer_not_found"
+    assert tools.execute("record_payment", {"customer_id": zain, "amount": 1000, "currency": "IQD"})["error"] == "customer_not_found"
+    assert tools.execute("get_balance", {"customer_id": zain})["error"] == "customer_not_found"
+    assert tools.execute("record_purchase", {"supplier_id": abu_ali, "amount": 1000, "currency": "IQD"})["error"] == "supplier_not_found"
+    assert tools.execute("get_supplier_balance", {"supplier_id": abu_ali})["error"] == "supplier_not_found"
+
+
+def test_purchase_and_supplier_payment(tools, conn, zain):
+    r = tools.execute("record_purchase", {"supplier_id": zain, "amount": 500000, "currency": "IQD"})
+    assert r["ok"] and r["type"] == "purchase" and r["balance_owed_by_me"]["IQD"] == 500000
+    r = tools.execute("record_supplier_payment", {"supplier_id": zain, "amount": 200000, "currency": "IQD"})
+    assert r["type"] == "supplier_payment" and r["balance_owed_by_me"]["IQD"] == 300000
+    r = tools.execute("record_supplier_payment", {"supplier_id": zain, "amount": 400000, "currency": "IQD"})
+    assert r["overpayment"] and r["overpaid_by"] == 100000  # now the supplier owes the shop
+    assert tools.execute("get_supplier_balance", {"supplier_id": zain})["balance_owed_by_me"]["IQD"] == -100000
+
+
+def test_supplier_large_amount_needs_confirmation(tools, zain):
+    r = tools.execute("record_purchase", {"supplier_id": zain, "amount": 3_000_000, "currency": "IQD"})
+    assert r["error"] == "confirmation_required"
+    assert tools.execute("record_purchase", {"supplier_id": zain, "amount": 3_000_000, "currency": "IQD",
+                                             "confirmed": True})["ok"]
+
+
+def test_list_suppliers_and_customers_dont_mix(tools, conn, zain, abu_ali):
+    pepsi = db.add_customer(conn, "مندوب البيبسي", kind="supplier")
+    tools.execute("record_purchase", {"supplier_id": zain, "amount": 500000, "currency": "IQD"})
+    tools.execute("record_purchase", {"supplier_id": pepsi, "amount": 150000, "currency": "IQD"})
+    tools.execute("record_purchase", {"supplier_id": pepsi, "amount": 40, "currency": "USD"})
+    tools.execute("record_debt", {"customer_id": abu_ali, "amount": 25000, "currency": "IQD"})
+    s = tools.execute("list_suppliers", {})
+    assert [x["name"] for x in s["suppliers"]] == ["شركة الزين", "مندوب البيبسي"]
+    assert s["total_owed_by_me"] == {"IQD": 650000, "USD": 40}
+    d = tools.execute("list_debtors", {})
+    assert [x["name"] for x in d["debtors"]] == ["أبو علي"] and d["totals"]["IQD"] == 25000
+
+
+def test_add_supplier_asks_first_and_is_separate_from_customers(tools, conn):
+    tools.turn = 1
+    assert tools.execute("find_supplier", {"query": "سعد"})["count"] == 0
+    assert tools.execute("add_supplier", {"name": "سعد"})["error"] == "ask_first"
+    tools.turn = 2
+    r = tools.execute("add_supplier", {"name": "سعد"})
+    assert r["ok"] and db.get_customer(conn, r["supplier_id"])["kind"] == "supplier"
+    assert tools.execute("add_customer", {"name": "سعد"})["error"] == "ask_first"  # a customer سعد is new
+    tools.turn = 3
+    assert tools.execute("add_customer", {"name": "سعد"})["ok"]
+    assert tools.execute("add_supplier", {"name": "سعد"})["error"] == "supplier_exists"
+
+
+def test_undo_last_supplier_entry(tools, zain):
+    tools.execute("record_purchase", {"supplier_id": zain, "amount": 500000, "currency": "IQD"})
+    r = tools.execute("undo_last", {})
+    assert r["undone"]["ledger"] == "supplier" and r["undone"]["type"] == "purchase"
+    assert r["undone"]["customer_name"] == "شركة الزين" and r["balance"]["IQD"] == 0
