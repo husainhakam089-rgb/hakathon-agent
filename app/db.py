@@ -38,6 +38,21 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tx_customer ON transactions(customer_id);
+
+-- Stage 11: money taken out of the shop's income (generator, rent, personal...).
+-- No other party: nobody pays it back. Never deleted, only undone.
+CREATE TABLE IF NOT EXISTS withdrawals (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  amount            INTEGER NOT NULL CHECK (amount > 0),
+  currency          TEXT NOT NULL DEFAULT 'IQD' CHECK (currency IN ('IQD','USD')),
+  reason            TEXT NOT NULL,          -- as the owner said it: مولدة، إيجار، شخصي...
+  reason_key        TEXT NOT NULL,          -- normalized, to add up the same reason
+  note              TEXT,
+  source_message    TEXT,
+  source            TEXT NOT NULL DEFAULT 'chat',
+  undone            INTEGER NOT NULL DEFAULT 0,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
 """
 
 # Columns added after v0: (name, definition) added to older databases on connect.
@@ -119,6 +134,70 @@ def get_transaction(conn, tx_id: int):
 def mark_undone(conn, tx_id: int) -> None:
     conn.execute("UPDATE transactions SET undone = 1 WHERE id = ?", (tx_id,))
     conn.commit()
+
+
+# ---------- withdrawals (stage 11) ----------
+
+PERIODS = ("today", "month", "all")
+_PERIOD_SQL = {
+    "today": "date(created_at) = date('now','localtime')",
+    "month": "strftime('%Y-%m', created_at) = strftime('%Y-%m','now','localtime')",
+    "all": "1 = 1",
+}
+
+
+def reason_key(reason: str) -> str:
+    """Same reason, different spelling: "المولدة" = "مولده" = "مولدة"."""
+    key = normalize(reason or "")
+    if key.startswith("ال") and len(key) > 4:
+        key = key[2:]
+    return key
+
+
+def add_withdrawal(conn, amount: int, currency: str, reason: str, note=None,
+                   source_message=None, source="chat") -> int:
+    cur = conn.execute(
+        """INSERT INTO withdrawals (amount, currency, reason, reason_key, note, source_message, source)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (amount, currency, reason.strip(), reason_key(reason), note, source_message, source),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_withdrawal(conn, wd_id: int):
+    row = conn.execute("SELECT * FROM withdrawals WHERE id = ?", (wd_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def mark_withdrawal_undone(conn, wd_id: int) -> None:
+    conn.execute("UPDATE withdrawals SET undone = 1 WHERE id = ?", (wd_id,))
+    conn.commit()
+
+
+def withdrawals_summary(conn, period: str = "month", reason: str | None = None, recent: int = 10) -> dict:
+    """Totals per currency, per reason, and the latest entries, for a period."""
+    where = _PERIOD_SQL[period if period in PERIODS else "month"] + " AND undone = 0"
+    args: list = []
+    if reason:
+        where += " AND reason_key = ?"
+        args.append(reason_key(reason))
+    totals = {c: 0 for c in CURRENCIES}
+    for r in conn.execute(f"SELECT currency, SUM(amount) s FROM withdrawals WHERE {where} GROUP BY currency", args):
+        totals[r["currency"]] = r["s"]
+    by_reason: dict[str, dict] = {}
+    for r in conn.execute(
+            f"""SELECT reason_key, currency, SUM(amount) s, MAX(created_at) last, MAX(reason) reason
+                FROM withdrawals WHERE {where} GROUP BY reason_key, currency""", args):
+        entry = by_reason.setdefault(r["reason_key"], {"reason": r["reason"], "totals": {c: 0 for c in CURRENCIES},
+                                                       "last": r["last"]})
+        entry["totals"][r["currency"]] = r["s"]
+        entry["last"] = max(entry["last"], r["last"])
+    reasons = sorted(by_reason.values(), key=lambda e: (e["totals"]["IQD"], e["totals"]["USD"]), reverse=True)
+    latest = [dict(r) for r in conn.execute(
+        f"""SELECT id, amount, currency, reason, created_at FROM withdrawals WHERE {where}
+            ORDER BY id DESC LIMIT ?""", (*args, recent))]
+    return {"period": period, "totals": totals, "by_reason": reasons, "latest": latest}
 
 
 # ---------- batches (imports) ----------

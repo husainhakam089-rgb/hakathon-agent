@@ -275,3 +275,44 @@ def test_undo_last_supplier_entry(tools, zain):
     r = tools.execute("undo_last", {})
     assert r["undone"]["ledger"] == "supplier" and r["undone"]["type"] == "purchase"
     assert r["undone"]["customer_name"] == "شركة الزين" and r["balance"]["IQD"] == 0
+
+
+# ---------- direction checks on the owner's words (stage 10) ----------
+
+from app.tools import _OWNER_PAID, _OWNER_TOOK  # noqa: E402
+
+
+@pytest.mark.parametrize("message, owner_paid", [
+    ("دفعت لأبو علي 10 آلاف", True), ("دفعت لشركة الزين 200 ألف", True), ("سددت للمندوب", True),
+    ("أعطيت المندوب 50", True), ("اني دفعت للشركة مليون", True), ("اليوم دفعت لابو علي", True),
+    ("ابو علي دفع عشرة", False), ("أبو علي دفعلي 10", False),
+    ("ام حسين دفعت عشرين", False),            # "دفعت" = she paid
+    ("دفعت لي ام حسين عشرين", False), ("دفعتلي ام حسين", False), ("الحجي دفع", False),
+])
+def test_owner_paid_pattern(message, owner_paid):
+    assert bool(_OWNER_PAID.search(message)) == owner_paid
+
+
+@pytest.mark.parametrize("message, owner_took", [
+    ("أخذت من شركة الزين بضاعة بمليون", True), ("اخذت بضاعة من المندوب", True),
+    ("أخذت من أبو علي 10 آلاف", True), ("خذيت من الشركة", True),
+    ("ام حسين اخذت بضاعة بعشرين", False),     # "أخذت" = she took
+    ("ابو علي اخذ بضاعة", False), ("أخذت من عندي ام حسين", False), ("سجل على ابو علي", False),
+])
+def test_owner_took_pattern(message, owner_took):
+    assert bool(_OWNER_TOOK.search(message)) == owner_took
+
+
+def test_owner_paid_is_never_a_customer_payment(tools, abu_ali):
+    tools.source_message = "دفعت لأبو علي 10 آلاف"
+    r = tools.execute("record_payment", {"customer_id": abu_ali, "amount": 10000, "currency": "IQD"})
+    assert r["error"] == "wrong_ledger"
+    tools.source_message = "ام حسين دفعت عشرين"  # a customer paying: allowed
+    assert tools.execute("record_payment", {"customer_id": abu_ali, "amount": 20000, "currency": "IQD"})["ok"]
+
+
+def test_owner_took_is_never_a_customer_debt(tools, abu_ali):
+    tools.source_message = "أخذت من أبو علي بضاعة بعشرة"
+    assert tools.execute("record_debt", {"customer_id": abu_ali, "amount": 10000, "currency": "IQD"})["error"] == "wrong_ledger"
+    tools.source_message = "أخذت من أبو علي 10 آلاف"  # he paid me: a payment is fine
+    assert tools.execute("record_payment", {"customer_id": abu_ali, "amount": 10000, "currency": "IQD"})["ok"]

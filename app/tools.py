@@ -6,6 +6,7 @@ Every tool returns a JSON-serializable dict with an `ok` field.
 
 import json
 import os
+import re
 import sys
 
 from app import db
@@ -184,6 +185,18 @@ TOOL_SCHEMAS = [
 ]
 
 
+# Direction checks (stage 10), on the owner's own words. When the owner talks about
+# himself the message STARTS with the verb ("دفعت لأبو علي"); about a customer it starts
+# with the name ("أم حسين دفعت عشرين" = she paid: Arabic "دفعت/أخذت" is also "she ...").
+# So only a leading verb counts:
+#   "دفعت لـ X" / "سددت لـ X" / "أعطيت X"  -> the owner paid X: never record_payment
+#   "أخذت من X ..." / "أخذت بضاعة ..."      -> the owner took or bought: never record_debt
+# ("أخذت من X 10 آلاف" can be a customer paying, so record_payment stays allowed.)
+_LEAD = r"^\s*(?:(?:اني|إني|انا|أنا|اليوم|هسه|هسة|توني|و)\s+)*"
+_OWNER_PAID = re.compile(_LEAD + r"(?:(?:دفعت|سددت|سدّدت|سلمت|سلّمت)\s*(?:لـ?(?!ي(?:\s|$))|الى|إلى)|(?:اعطيت|أعطيت)\s)")
+_OWNER_TOOK = re.compile(_LEAD + r"(?:اخذت|أخذت|خذيت)\s+(?:من(?!\s*(?:عندي|عندنا))|بضاعة)")
+
+
 def _error(code: str, message: str, **extra) -> dict:
     return {"ok": False, "error": code, "message": message, **extra}
 
@@ -341,9 +354,16 @@ class DebtTools:
         return self._add_party(name, phone, "customer")
 
     def tool_record_debt(self, customer_id, amount, currency="IQD", note=None, confirmed=False):
+        if _OWNER_TOOK.search(self.source_message or ""):
+            return _error("wrong_ledger", "صاحب المحل هو اللي أخذ (أخذت من...)، فهذا مو دين على زبون. "
+                          "إذا أخذ بضاعة من مورد استعمل record_purchase، وإذا مو واضح اسأله.")
         return self._record("debt", customer_id, amount, currency, note, confirmed)
 
     def tool_record_payment(self, customer_id, amount, currency="IQD", note=None, confirmed=False):
+        if _OWNER_PAID.search(self.source_message or ""):
+            return _error("wrong_ledger", "صاحب المحل هو اللي دفع (دفعت لـ...)، فهذا مو تسديد من زبون. "
+                          "إذا دفع لمورد استعمل record_supplier_payment، وإذا الاسم بالدفترين اسأله "
+                          "'تقصد الزبون لو المورد؟'.")
         return self._record("payment", customer_id, amount, currency, note, confirmed)
 
     def tool_get_balance(self, customer_id):
