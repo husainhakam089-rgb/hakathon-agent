@@ -160,6 +160,12 @@ form .mic-btn.on { background: #e11d48; border-color: #e11d48; animation: pulse 
 .review .btn.no { background: var(--card); border: 1px solid var(--border); }
 .review .btn:disabled { opacity: .5; cursor: not-allowed; }
 .review .errors { color: var(--bad); margin: 8px 0 0; padding-inline-start: 18px; }
+.mapping .roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 8px 0 12px; }
+.mapping .roles label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
+.mapping .roles label b { color: var(--text); font-size: 13px; }
+.mapping .sample th { color: var(--muted); }
+.mapping .sample td { color: var(--text); white-space: nowrap; }
+.attachment .sheet { width: 44px; height: 44px; border-radius: 8px; display: grid; place-items: center; background: var(--card-strong); font-size: 20px; }
 
 /* ---------- debtors ---------- */
 .debtors { display: flex; flex-direction: column; min-height: 0; }
@@ -231,8 +237,8 @@ tr.flash td { animation: flash 1.6s ease-out; }
       <form id="form" autocomplete="off">
         <!-- No capture attribute: on phones it would open the camera only; without it
              the phone offers camera or gallery. -->
-        <input type="file" id="file" accept="image/*,application/pdf" hidden>
-        <button type="button" class="attach-btn" id="attach" title="صوّر صفحة من الدفتر أو اختار ملف">📎</button>
+        <input type="file" id="file" accept="image/*,application/pdf,.csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+        <button type="button" class="attach-btn" id="attach" title="صوّر صفحة من الدفتر، أو اختار صورة / PDF / Excel / CSV">📎</button>
         <button type="button" class="mic-btn" id="mic" title="احچي (دوس مرة تبدي، ومرة توگف)">🎤</button>
         <input id="input" placeholder="اكتب رسالتك هنا..." maxlength="2000">
         <button id="send" type="submit">إرسال</button>
@@ -526,9 +532,10 @@ $('file').onchange = async () => {
   const file = $('file').files[0];
   if (!file) return;
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  const isSheet = /\.(csv|xlsx)$/i.test(file.name);
   let blob = file;
   try {
-    if (!isPdf) blob = await shrinkImage(file);
+    if (!isPdf && !isSheet) blob = await shrinkImage(file);
   } catch (e) {
     addAgent('ما گدرت أفتح هاي الصورة. جرب صورة ثانية (jpg أو png).', [], true);
     return clearAttachment();
@@ -538,10 +545,12 @@ $('file').onchange = async () => {
     return clearAttachment();
   }
   clearAttachment();
-  attachment = {blob, name: file.name, isPdf, previewUrl: isPdf ? null : URL.createObjectURL(blob)};
-  $('attThumb').innerHTML = isPdf ? '<div class="pdf">PDF</div>' : `<img src="${attachment.previewUrl}" alt="">`;
+  const isImage = !isPdf && !isSheet;
+  attachment = {blob, name: file.name, isPdf, isSheet, previewUrl: isImage ? URL.createObjectURL(blob) : null};
+  $('attThumb').innerHTML = isSheet ? '<div class="sheet">📊</div>' : isPdf ? '<div class="pdf">PDF</div>'
+    : `<img src="${attachment.previewUrl}" alt="">`;
   $('attName').textContent = file.name;
-  $('attSize').textContent = fmtSize(blob.size) + (isPdf ? '' : ' بعد التصغير');
+  $('attSize').textContent = fmtSize(blob.size) + (isImage ? ' بعد التصغير' : '');
   $('attachment').classList.add('show');
   $('input').focus();
 };
@@ -566,7 +575,7 @@ async function sendAttachment(note) {
     img.src = att.previewUrl;  // kept alive for the bubble
     bubble.appendChild(img);
   } else {
-    bubble.appendChild(document.createTextNode('📄 ' + att.name + '\n'));
+    bubble.appendChild(document.createTextNode((att.isSheet ? '📊 ' : '📄 ') + att.name + '\n'));
   }
   if (note) bubble.appendChild(document.createTextNode(note));
   $('messages').appendChild(bubble);
@@ -577,10 +586,13 @@ async function sendAttachment(note) {
 
   setBusy(true);
   try {
-    const up = await fetch('/upload', {method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body: att.blob});
+    // Headers are ASCII only: the (often Arabic) file name goes URL-encoded.
+    const up = await fetch('/upload', {method: 'POST', body: att.blob,
+      headers: {'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(att.name)}});
     let upData = {};
     try { upData = await up.json(); } catch (e) {}
     if (!up.ok) { setBusy(false); return addAgent(upData.message || 'ما گدرت أرفع الملف.', [], true); }
+    if (upData.kind === 'xlsx' || upData.kind === 'csv') return importSheet(upData.file_id);
     $('thinking') && ($('thinking').firstChild.textContent = 'دا أقرا الصفحة');
     const ex = await postJson('/extract', {file_id: upData.file_id, note: note || null});
     setBusy(false);
@@ -755,6 +767,7 @@ function renderReview(data) {
         session_id: sessionId,
         file_id: data.file_id,
         migrated: card.querySelector('.o-migrated').checked,
+        source_kind: data.source_kind || 'image',
         rows: picked.map(r => ({name: r.name, customer_id: r.customer_id, amount: r.amount, currency: r.currency, type: r.type})),
       });
       if (!res.ok) {
@@ -771,6 +784,86 @@ function renderReview(data) {
   };
 
   update();
+  scrollDown();
+}
+
+/* ---------- Excel / CSV (stage 7) ----------
+   Read by the server's code. Known column names map directly; otherwise the model
+   suggests from names + 3 rows and the owner confirms the columns first. */
+const ROLE_LABELS = {name: 'اسم الزبون', amount: 'المبلغ', currency: 'العملة', type: 'دين لو تسديد'};
+const ROLE_MISSING = {name: 'اختار...', amount: 'اختار...', currency: 'ما موجود (دينار)', type: 'ما موجود (دين)'};
+
+async function importSheet(fileId) {
+  $('thinking') && ($('thinking').firstChild.textContent = 'دا أقرا الملف');
+  try {
+    const info = await postJson('/import/file', {file_id: fileId});
+    if (!info.ok) { setBusy(false); return addAgent(info.data.message || 'ما گدرت أقرا الملف.', [], true); }
+    if (!info.data.needs_confirmation) return loadSheetRows(fileId, info.data.mapping);
+    setBusy(false);
+    renderMapping(info.data);
+  } catch (e) {
+    setBusy(false);
+    addAgent('ما گدرت أوصل للسيرفر. تأكد إن البرنامج بعده شغال بالطرفية.', [], true);
+  }
+}
+
+async function loadSheetRows(fileId, mapping) {
+  if (!busy) setBusy(true);
+  try {
+    const res = await postJson('/import/file/rows', {file_id: fileId, mapping});
+    setBusy(false);
+    if (!res.ok) { addAgent(res.data.message || 'ما گدرت أقرا الملف.', [], true); return false; }
+    renderReview(res.data);
+    return true;
+  } catch (e) {
+    setBusy(false);
+    addAgent('ما گدرت أوصل للسيرفر. تأكد إن البرنامج بعده شغال بالطرفية.', [], true);
+    return false;
+  }
+}
+
+function renderMapping(info) {
+  const wrap = document.createElement('div');
+  wrap.className = 'agent-wrap review-wrap';
+  const card = document.createElement('div');
+  card.className = 'review mapping';
+  wrap.appendChild(card);
+  $('messages').appendChild(wrap);
+  const lead = info.mapping_source === 'model'
+    ? 'أسماء الأعمدة مو معروفة عندي، فاقترحت يا عمود هو شنو. تأكد منها وغيّر إذا تحتاج، وبعدين كمّل.'
+    : 'ما گدرت أعرف الأعمدة وحدي. اختار يا عمود هو الاسم ويا عمود المبلغ.';
+  const select = role => `<label><b>${ROLE_LABELS[role]}</b><select class="m-${role}">
+      <option value="">${ROLE_MISSING[role]}</option>
+      ${info.headers.map(h => `<option ${info.mapping[role] === h ? 'selected' : ''}>${esc(h)}</option>`).join('')}
+    </select></label>`;
+  card.innerHTML = `
+    <p class="lead">📊 الملف بيه ${fmt(info.total_rows)} سطر. ${lead}</p>
+    <div class="roles">${['name', 'amount', 'currency', 'type'].map(select).join('')}</div>
+    <div class="scroll"><table class="sample">
+      <thead><tr>${info.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${info.sample.map(r => `<tr>${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>
+    <ul class="errors"></ul>
+    <div class="foot"><span class="sum">أول ${info.sample.length} أسطر من الملف، حتى تتأكد.</span>
+      <button class="btn no">إلغاء</button><button class="btn go">تمام، كمّل</button></div>`;
+  const finish = text => {
+    card.classList.add('done');
+    card.querySelectorAll('select, button').forEach(el => el.disabled = true);
+    card.querySelector('.foot').innerHTML = `<span class="sum">${esc(text)}</span>`;
+  };
+  card.querySelector('.btn.no').onclick = () => { finish('انلغى.'); addAgent('تمام، ما سجلت شي من الملف.', []); };
+  card.querySelector('.btn.go').onclick = async () => {
+    const mapping = {};
+    ['name', 'amount', 'currency', 'type'].forEach(r => mapping[r] = card.querySelector('.m-' + r).value || null);
+    const used = Object.values(mapping).filter(Boolean);
+    const problems = [];
+    if (!mapping.name || !mapping.amount) problems.push('لازم تختار عمود الاسم وعمود المبلغ.');
+    if (new Set(used).size !== used.length) problems.push('نفس العمود مختار لأكثر من شي.');
+    card.querySelector('.errors').innerHTML = problems.map(p => `<li>${esc(p)}</li>`).join('');
+    if (problems.length) return;
+    finish('تمام ✓');
+    if (!(await loadSheetRows(info.file_id, mapping))) renderMapping(info);  // let them fix it
+  };
   scrollDown();
 }
 

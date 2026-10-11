@@ -4,8 +4,6 @@ Run only these:   py -m pytest tests/test_match_extracted_rows.py -v
 Skipped until the function is written.
 """
 
-import copy
-
 import pytest
 
 from app import db
@@ -13,6 +11,8 @@ from app.extraction import match_extracted_rows
 
 
 @pytest.fixture
+
+
 def shop(conn):
     ids = {n: db.add_customer(conn, n) for n in ["أبو علي", "أحمد علي", "أحمد حسن", "سعد"]}
     return conn, ids

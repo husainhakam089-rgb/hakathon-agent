@@ -4,6 +4,8 @@ uvicorn>=0.29
 # Model providers (stage 2) - pick one with LLM_PROVIDER in .env
 anthropic>=0.40
 google-genai>=1.0
+# Reads Excel (.xlsx) files for import (stage 7)
+openpyxl>=3.1
 # Loads settings from .env
 python-dotenv>=1.0
 # Tests

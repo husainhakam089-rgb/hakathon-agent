@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 load_dotenv()
 
 from app import db  # noqa: E402  (after load_dotenv: DB_PATH comes from .env)
-from app import extraction  # noqa: E402
+from app import extraction, spreadsheet  # noqa: E402
 from app.agent import Agent  # noqa: E402
 from app.llm import LLMError  # noqa: E402
 
@@ -27,7 +27,9 @@ MIGRATED_NOTE = "رصيد منقول من الدفتر"
 APP_VERSION = "6"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
-FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf"}
+FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
+              "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "csv": "text/csv"}
+SHEET_KINDS = {"xlsx", "csv"}
 FILE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 app = FastAPI(title="دفتر الديون")
@@ -82,7 +84,20 @@ def _sniff(head: bytes) -> str | None:
         return "webp"
     if head.startswith(b"%PDF"):
         return "pdf"
+    if head.startswith(b"PK\x03\x04"):
+        return "zip"  # maybe xlsx: checked in _is_xlsx
     return None
+
+
+def _is_xlsx(data: bytes) -> bool:
+    import io
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            return "xl/workbook.xml" in z.namelist()
+    except zipfile.BadZipFile:
+        return False
 
 
 def _pdf_pages(data: bytes) -> int:
@@ -109,8 +124,16 @@ async def upload(request: Request):
         if len(data) > MAX_UPLOAD_BYTES:
             return _error(413, "الملف أكبر من 10 ميگا.")
     kind = _sniff(bytes(data[:16]))
+    if kind == "zip":
+        kind = "xlsx" if _is_xlsx(bytes(data)) else None
+    elif kind is None:
+        # CSV has no signature: trust the .csv name only for text without NUL bytes.
+        from urllib.parse import unquote
+        name = unquote(request.headers.get("x-file-name", "")).lower()
+        if name.endswith(".csv") and data and b"\x00" not in data[:4096]:
+            kind = "csv"
     if kind is None:
-        return _error(415, "نوع الملف مو مدعوم. دز صورة (jpg أو png أو webp) أو pdf.")
+        return _error(415, "نوع الملف مو مدعوم. دز صورة (jpg أو png أو webp) أو pdf، أو ملف Excel (xlsx) أو CSV.")
     if kind == "pdf" and _pdf_pages(bytes(data)) > MAX_PDF_PAGES:
         return _error(413, f"الـ PDF بيه أكثر من {MAX_PDF_PAGES} صفحات.")
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -131,6 +154,8 @@ def extract(req: ExtractRequest):
     if not found:
         return _error(404, "ما لگيت الملف، ارفعه من جديد.")
     path, mime = found
+    if path.suffix[1:] in SHEET_KINDS:
+        return _error(400, "هذا ملف جدول، مو صورة.")
     try:
         result = extraction.extract_file(agent.get_llm(), path.read_bytes(), mime, req.note)
         with agent.lock:
@@ -143,6 +168,77 @@ def extract(req: ExtractRequest):
     except LLMError as e:
         return _error(502, e.user_message)
     return {"ok": True, "file_id": req.file_id, **review}
+
+
+# ---------- stage 7: Excel / CSV ----------
+
+class FileRequest(BaseModel):
+    file_id: str = Field(min_length=1, max_length=64)
+
+
+def _sheet(file_id: str):
+    found = _uploaded_file(file_id)
+    if not found or found[0].suffix[1:] not in SHEET_KINDS:
+        return None
+    path, _ = found
+    return spreadsheet.read_table(path.read_bytes(), path.suffix[1:])
+
+
+@app.post("/import/file")
+def import_file(req: FileRequest):
+    """Columns + first rows + which column is which. Known names map directly;
+    otherwise the model suggests (from names + 3 rows) and the owner must confirm."""
+    try:
+        table = _sheet(req.file_id)
+    except spreadsheet.SpreadsheetError as e:
+        return _error(422, e.message)
+    if table is None:
+        return _error(404, "ما لگيت الملف، ارفعه من جديد.")
+    headers, rows = table
+    mapping = spreadsheet.guess_mapping(headers)
+    source = "known"
+    if not spreadsheet.is_complete(mapping):
+        source = "model"
+        try:
+            mapping = spreadsheet.suggest_mapping(agent.get_llm(), headers, rows)
+        except LLMError:
+            source = "none"  # the owner picks the columns by hand
+    return {"ok": True, "file_id": req.file_id, "headers": headers,
+            "sample": spreadsheet.sample(headers, rows), "total_rows": len(rows),
+            "mapping": mapping, "mapping_source": source,
+            "needs_confirmation": source != "known"}
+
+
+class FileRowsRequest(BaseModel):
+    file_id: str = Field(min_length=1, max_length=64)
+    mapping: dict[str, str | None]
+
+
+@app.post("/import/file/rows")
+def import_file_rows(req: FileRowsRequest):
+    """The confirmed mapping -> the review table (same as photos). Writes nothing."""
+    try:
+        table = _sheet(req.file_id)
+    except spreadsheet.SpreadsheetError as e:
+        return _error(422, e.message)
+    if table is None:
+        return _error(404, "ما لگيت الملف، ارفعه من جديد.")
+    headers, rows = table
+    mapping = {role: req.mapping.get(role) or None for role in spreadsheet.ROLES}
+    if any(h is not None and h not in headers for h in mapping.values()):
+        return _error(422, "عمود مو موجود بالملف.")
+    used = [h for h in mapping.values() if h]
+    if len(used) != len(set(used)):
+        return _error(422, "نفس العمود مختار لأكثر من شي.")
+    if not spreadsheet.is_complete(mapping):
+        return _error(422, "لازم تختار عمود الاسم وعمود المبلغ.")
+    result = spreadsheet.rows_from_table(headers, rows, mapping)
+    try:
+        with agent.lock:
+            review = extraction.build_review(agent.conn, result)
+    except NotImplementedError:
+        return _error(409, "لازم تنكتب مطابقة الأسماء (match_extracted_rows) أول.")
+    return {"ok": True, "file_id": req.file_id, "source_kind": "file", **review}
 
 
 class CommitRow(BaseModel):
@@ -158,6 +254,7 @@ class CommitRequest(BaseModel):
     file_id: str | None = Field(default=None, max_length=64)
     rows: list[CommitRow] = Field(max_length=extraction.MAX_ROWS)
     migrated: bool = False  # "these are balances carried over from the old notebook"
+    source_kind: Literal["image", "file"] = "image"
 
 
 def _money(amount: int, currency: str) -> str:
@@ -174,7 +271,7 @@ def import_commit(req: CommitRequest):
         if errors:
             return _error(422, "صلّح هالصفوف وعيد:", errors=errors)
         batch_id = uuid.uuid4().hex[:12]
-        source = f"image:{req.file_id}" if req.file_id else "image"
+        source = f"{req.source_kind}:{req.file_id}" if req.file_id else req.source_kind
         db.import_batch(agent.conn, rows, batch_id, source, MIGRATED_NOTE if req.migrated else None)
 
     totals: dict[tuple[str, str], int] = {}
@@ -185,7 +282,8 @@ def import_commit(req: CommitRequest):
         parts.append(("ديون " if tx_type == "debt" else "تسديدات ") + _money(amount, cur))
     reply = (f"سجلت {len(rows)} قيد: {'، '.join(parts)}. "
              "إذا شي غلط گلي 'ألغِ آخر دفعة'.")
-    agent.record_event(req.session_id, "(رفعت صورة من الدفتر وراجعت الجدول وسجلته)",
+    what = "رفعت ملف Excel/CSV" if req.source_kind == "file" else "رفعت صورة من الدفتر"
+    agent.record_event(req.session_id, f"({what} وراجعت الجدول وسجلته)",
                        f"{reply} (batch_id: {batch_id})")
     return {"ok": True, "batch_id": batch_id, "count": len(rows), "reply": reply}
 

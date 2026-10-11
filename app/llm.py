@@ -110,23 +110,23 @@ class AnthropicLLM:
         calls = [ToolCall(b.id, b.name, dict(b.input)) for b in response.content if b.type == "tool_use"]
         return LLMResponse(text=text, tool_calls=calls, raw=list(response.content))
 
-    def extract(self, system: str, text: str, file_bytes: bytes, mime: str, tool: dict) -> dict:
-        """One-shot extraction from an image or PDF: the model must answer by calling
-        `tool` (and nothing else). Returns that tool call's input."""
+    def extract(self, system: str, text: str, file_bytes: bytes | None, mime: str | None, tool: dict) -> dict:
+        """One-shot extraction from an image or PDF (or from text alone when file_bytes is
+        None): the model must answer by calling `tool` (and nothing else). Returns its input."""
         import base64
 
-        data = base64.standard_b64encode(file_bytes).decode()
-        kind = "document" if mime == "application/pdf" else "image"
+        content = [{"type": "text", "text": text}]
+        if file_bytes is not None:
+            data = base64.standard_b64encode(file_bytes).decode()
+            kind = "document" if mime == "application/pdf" else "image"
+            content.insert(0, {"type": kind, "source": {"type": "base64", "media_type": mime, "data": data}})
         params = dict(
             model=self.model,
             max_tokens=self.max_tokens,
             system=system,
             tools=[tool],
             tool_choice={"type": "tool", "name": tool["name"]},
-            messages=[{"role": "user", "content": [
-                {"type": kind, "source": {"type": "base64", "media_type": mime, "data": data}},
-                {"type": "text", "text": text},
-            ]}],
+            messages=[{"role": "user", "content": content}],
         )
         response = self._create(params)
         if response.stop_reason == "refusal":
@@ -349,9 +349,9 @@ class GeminiLLM:
                 calls.append(ToolCall(call_id, fc.name, dict(fc.args or {})))
         return LLMResponse(text=text, tool_calls=calls, raw=candidate.content)
 
-    def extract(self, system: str, text: str, file_bytes: bytes, mime: str, tool: dict) -> dict:
-        """One-shot extraction from an image or PDF: the model must answer by calling
-        `tool` (and nothing else). Returns that tool call's arguments."""
+    def extract(self, system: str, text: str, file_bytes: bytes | None, mime: str | None, tool: dict) -> dict:
+        """One-shot extraction from an image or PDF (or from text alone when file_bytes is
+        None): the model must answer by calling `tool` (and nothing else). Returns its args."""
         t = self.types
         config = t.GenerateContentConfig(
             system_instruction=system,
@@ -362,8 +362,10 @@ class GeminiLLM:
             max_output_tokens=self.max_tokens,
             thinking_config=t.ThinkingConfig(thinking_level=self.thinking) if self.thinking else None,
         )
-        contents = [t.Content(role="user", parts=[
-            t.Part.from_bytes(data=file_bytes, mime_type=mime), t.Part(text=text)])]
+        parts = [t.Part(text=text)]
+        if file_bytes is not None:
+            parts.insert(0, t.Part.from_bytes(data=file_bytes, mime_type=mime))
+        contents = [t.Content(role="user", parts=parts)]
         response = self._safe_generate(contents, config, can_switch=True)
         candidate = response.candidates[0] if response.candidates else None
         if candidate is None:
