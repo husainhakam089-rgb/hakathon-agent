@@ -234,6 +234,7 @@ def test_purchase_and_supplier_payment(tools, conn, zain):
     assert r["type"] == "supplier_payment" and r["balance_owed_by_me"]["IQD"] == 300000
     r = tools.execute("record_supplier_payment", {"supplier_id": zain, "amount": 400000, "currency": "IQD"})
     assert r["overpayment"] and r["overpaid_by"] == 100000  # now the supplier owes the shop
+    assert r["meaning"] == "المورد صار هو المطلوب لصاحب المحل 100,000 دينار"
     assert tools.execute("get_supplier_balance", {"supplier_id": zain})["balance_owed_by_me"]["IQD"] == -100000
 
 

@@ -346,6 +346,13 @@ class DebtTools:
         if tx_type == "payment" and value > before[currency]:
             result["overpayment"] = True
             result["overpaid_by"] = value - max(before[currency], 0)
+        if kind == "supplier":
+            # Spell the direction out: models flip it when the balance goes negative.
+            owed = after[currency]
+            word = "دولار" if currency == "USD" else "دينار"
+            result["meaning"] = (f"صاحب المحل عليه للمورد {owed:,} {word}" if owed > 0 else
+                                 f"المورد صار هو المطلوب لصاحب المحل {-owed:,} {word}" if owed < 0 else
+                                 "ما عليه شي للمورد، الحساب صفر")
         return result
 
     def _matches(self, query, kind):
