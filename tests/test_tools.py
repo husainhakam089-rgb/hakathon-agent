@@ -316,3 +316,50 @@ def test_owner_took_is_never_a_customer_debt(tools, abu_ali):
     assert tools.execute("record_debt", {"customer_id": abu_ali, "amount": 10000, "currency": "IQD"})["error"] == "wrong_ledger"
     tools.source_message = "أخذت من أبو علي 10 آلاف"  # he paid me: a payment is fine
     assert tools.execute("record_payment", {"customer_id": abu_ali, "amount": 10000, "currency": "IQD"})["ok"]
+
+
+# ---------- withdrawals (stage 11) ----------
+
+def test_withdrawals_record_list_and_undo(tools, conn):
+    r = tools.execute("record_withdrawal", {"amount": 50000, "currency": "IQD", "reason": "المولدة"})
+    assert r["ok"] and r["today_total"]["IQD"] == 50000
+    tools.execute("record_withdrawal", {"amount": 25000, "currency": "IQD", "reason": "مولده"})  # same reason
+    tools.execute("record_withdrawal", {"amount": 200000, "currency": "IQD", "reason": "إيجار"})
+    tools.execute("record_withdrawal", {"amount": 20, "currency": "USD", "reason": "شخصي"})
+    s = tools.execute("list_withdrawals", {"period": "month"})
+    assert s["totals"] == {"IQD": 275000, "USD": 20}
+    assert [(x["totals"]["IQD"], x["totals"]["USD"]) for x in s["by_reason"]] == [(200000, 0), (75000, 0), (0, 20)]
+    assert tools.execute("list_withdrawals", {"period": "today", "reason": "مولدة"})["totals"]["IQD"] == 75000
+
+    u = tools.execute("undo_last", {})
+    assert u["undone"]["ledger"] == "withdrawal" and u["undone"]["reason"] == "شخصي"
+    assert tools.execute("list_withdrawals", {"period": "all"})["totals"] == {"IQD": 275000, "USD": 0}
+    # withdrawals never touch the customers or suppliers ledgers
+    assert db.all_balances(conn) == [] and conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+
+
+def test_withdrawal_checks(tools):
+    assert tools.execute("record_withdrawal", {"amount": 5000, "currency": "IQD"})["error"] == "reason_required"
+    assert tools.execute("record_withdrawal", {"amount": 0, "currency": "IQD", "reason": "x"})["error"] == "invalid_amount"
+    r = tools.execute("record_withdrawal", {"amount": 2_000_000, "currency": "IQD", "reason": "إيجار"})
+    assert r["error"] == "confirmation_required"
+    assert tools.execute("record_withdrawal", {"amount": 2_000_000, "currency": "IQD", "reason": "إيجار",
+                                               "confirmed": True})["ok"]
+
+
+def test_undo_last_mixes_ledgers_in_order(tools, abu_ali):
+    tools.execute("record_debt", {"customer_id": abu_ali, "amount": 25000, "currency": "IQD"})
+    tools.execute("record_withdrawal", {"amount": 50000, "currency": "IQD", "reason": "مولدة"})
+    assert tools.execute("undo_last", {})["undone"]["ledger"] == "withdrawal"
+    assert tools.execute("undo_last", {})["undone"]["customer_name"] == "أبو علي"
+    assert tools.execute("undo_last", {})["error"] == "nothing_to_undo"
+
+
+def test_withdrawal_periods(conn):
+    db.add_withdrawal(conn, 1000, "IQD", "مولدة")
+    old = db.add_withdrawal(conn, 9000, "IQD", "مولدة")
+    conn.execute("UPDATE withdrawals SET created_at = '2020-01-15 10:00:00' WHERE id = ?", (old,))
+    conn.commit()
+    assert db.withdrawals_summary(conn, "today")["totals"]["IQD"] == 1000
+    assert db.withdrawals_summary(conn, "month")["totals"]["IQD"] == 1000
+    assert db.withdrawals_summary(conn, "all")["totals"]["IQD"] == 10000

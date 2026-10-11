@@ -238,6 +238,8 @@ tr.flash td { animation: flash 1.6s ease-out; }
         <button class="chip">منو أكثر واحد عليه دين؟</button>
         <button class="chip">أخذت من شركة الزين بضاعة بمليون</button>
         <button class="chip">شكد عليّ للشركات؟</button>
+        <button class="chip">سحبت 50 ألف للمولدة</button>
+        <button class="chip">شكد سحبت هالشهر؟</button>
         <button class="chip">شطب آخر وحدة</button>
       </div>
       <div class="attachment" id="attachment">
@@ -263,6 +265,7 @@ tr.flash td { animation: flash 1.6s ease-out; }
         <div class="tabs" id="tabs">
           <button class="tab on" data-tab="customer" title="ديون إلك على الزبائن">الزبائن (إلي)</button>
           <button class="tab" data-tab="supplier" title="ديون عليك للشركات والموردين والمندوبين">الموردين (عليّ)</button>
+          <button class="tab" data-tab="withdrawal" title="فلوس طلعت من دخل المحل">السحوبات</button>
         </div>
         <small id="updated"></small>
       </div>
@@ -274,7 +277,7 @@ tr.flash td { animation: flash 1.6s ease-out; }
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>الاسم</th><th>دينار</th><th>دولار</th><th>آخر حركة</th></tr></thead>
+          <thead><tr><th id="nameHead">الاسم</th><th>دينار</th><th>دولار</th><th>آخر حركة</th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
         <div class="empty" id="empty">ما كو ديون بعد.</div>
@@ -323,6 +326,8 @@ const TOOL_LABELS = {
   record_supplier_payment: 'سجّل دفعة لمورد',
   get_supplier_balance: 'شاف رصيد المورد',
   list_suppliers: 'جاب قائمة الموردين',
+  record_withdrawal: 'سجّل سحب',
+  list_withdrawals: 'جاب مجموع السحوبات',
 };
 
 function scrollDown() { const m = $('messages'); m.scrollTop = m.scrollHeight; }
@@ -406,11 +411,13 @@ async function send(text) {
     addAgent(data.reply, data.tool_calls);
     const okCalls = (data.tool_calls || []).filter(c => c.result && c.result.ok);
     const wrote = okCalls.some(c => ['record_debt', 'record_payment', 'add_customer', 'undo_last', 'undo_batch',
-      'record_purchase', 'record_supplier_payment', 'add_supplier'].includes(c.tool));
+      'record_purchase', 'record_supplier_payment', 'add_supplier', 'record_withdrawal'].includes(c.tool));
+    const withdrawalWrite = okCalls.some(c => c.tool === 'record_withdrawal'
+      || (c.tool === 'undo_last' && c.result.undone && c.result.undone.ledger === 'withdrawal'));
     const supplierWrite = okCalls.some(c => ['record_purchase', 'record_supplier_payment', 'add_supplier'].includes(c.tool)
       || (c.tool === 'undo_last' && c.result.undone && c.result.undone.ledger === 'supplier'));
     const customerWrite = okCalls.some(c => ['record_debt', 'record_payment', 'add_customer'].includes(c.tool));
-    loadDebtors(wrote, supplierWrite ? 'supplier' : customerWrite ? 'customer' : null);
+    loadDebtors(wrote, withdrawalWrite ? 'withdrawal' : supplierWrite ? 'supplier' : customerWrite ? 'customer' : null);
   } catch (e) {
     setBusy(false);
     addAgent('ما گدرت أوصل للسيرفر. تأكد إن البرنامج بعده شغال بالطرفية.', [], true);
@@ -926,13 +933,16 @@ $('newChat').onclick = () => {
 
 /* ---------- ledgers: customers (owed to me) / suppliers (I owe) ---------- */
 let lastSnapshot = {};
-let ledgers = {customer: null, supplier: null};
-let activeTab = store.get('debt_tab') === 'supplier' ? 'supplier' : 'customer';
+let ledgers = {customer: null, supplier: null, withdrawal: null};
+const TABS = ['customer', 'supplier', 'withdrawal'];
+let activeTab = TABS.includes(store.get('debt_tab')) ? store.get('debt_tab') : 'customer';
 const TAB_TEXT = {
   customer: {iqd: 'مجموع الديون بالدينار', usd: 'مجموع الديون بالدولار', count: 'عدد الزبائن',
              empty: 'ما كو ديون على الزبائن.', credit: 'إله', creditTitle: 'إله عندك'},
   supplier: {iqd: 'عليّ للموردين بالدينار', usd: 'عليّ للموردين بالدولار', count: 'عدد الموردين',
              empty: 'ما عليك شي للموردين.', credit: 'إلي', creditTitle: 'المورد صار مطلوب إلك'},
+  withdrawal: {iqd: 'سحوبات هالشهر بالدينار', usd: 'سحوبات هالشهر بالدولار', count: 'سحوبات اليوم (دينار)',
+               empty: 'ما كو سحوبات هالشهر.', name: 'السبب', credit: '', creditTitle: ''},
 };
 
 function balanceCell(v, tab = 'customer') {
@@ -975,7 +985,8 @@ function renderLedger(flash) {
   $('empty').textContent = text.empty;
   $('totalIqd').textContent = fmt(data.totals.IQD);
   $('totalUsd').textContent = fmt(data.totals.USD);
-  $('count').textContent = fmt(rows.length);
+  $('count').textContent = fmt(activeTab === 'withdrawal' ? data.today.IQD : rows.length);
+  $('nameHead').textContent = text.name || 'الاسم';
   $('empty').style.display = rows.length ? 'none' : 'block';
   $('rows').innerHTML = rows.map(r => {
     const changed = flash && lastSnapshot[activeTab + ':' + r.id] !== r.balances.IQD + '|' + r.balances.USD;
@@ -993,8 +1004,8 @@ function shortDate(s) {
 // showTab: switch to the ledger that just changed (e.g. after a supplier entry)
 async function loadDebtors(flash, showTab) {
   try {
-    const [c, s] = await Promise.all([fetch('/debtors'), fetch('/suppliers')]);
-    ledgers = {customer: await c.json(), supplier: await s.json()};
+    const [c, s, w] = await Promise.all([fetch('/debtors'), fetch('/suppliers'), fetch('/withdrawals')]);
+    ledgers = {customer: await c.json(), supplier: await s.json(), withdrawal: await w.json()};
     if (showTab && showTab !== activeTab) {
       activeTab = showTab;
       store.set('debt_tab', showTab);
@@ -1003,7 +1014,7 @@ async function loadDebtors(flash, showTab) {
     renderNet();
     renderLedger(flash);
     const snapshot = {};
-    for (const tab of ['customer', 'supplier']) {
+    for (const tab of TABS) {
       for (const r of ledgers[tab].debtors || []) snapshot[tab + ':' + r.id] = r.balances.IQD + '|' + r.balances.USD;
     }
     lastSnapshot = snapshot;

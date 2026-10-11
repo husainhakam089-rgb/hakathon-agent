@@ -101,3 +101,13 @@ def test_suppliers_endpoint_is_its_own_ledger(client, conn):
     d, s = c.get("/debtors").json(), c.get("/suppliers").json()
     assert [x["name"] for x in d["debtors"]] == ["أبو علي"] and d["totals"] == {"IQD": 25000, "USD": 0}
     assert [x["name"] for x in s["debtors"]] == ["شركة الزين"] and s["totals"] == {"IQD": 500000, "USD": 40}
+
+
+def test_withdrawals_endpoint(client, conn):
+    db.add_withdrawal(conn, 50000, "IQD", "مولدة")
+    db.add_withdrawal(conn, 25000, "IQD", "المولدة")
+    db.add_withdrawal(conn, 200000, "IQD", "إيجار")
+    db.add_withdrawal(conn, 20, "USD", "شخصي")
+    w = client().get("/withdrawals").json()
+    assert w["totals"] == {"IQD": 275000, "USD": 20} and w["today"] == {"IQD": 275000, "USD": 20}
+    assert [(r["balances"]["IQD"], r["balances"]["USD"]) for r in w["debtors"]] == [(200000, 0), (75000, 0), (0, 20)]

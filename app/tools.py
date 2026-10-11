@@ -182,6 +182,34 @@ TOOL_SCHEMAS = [
             "properties": {"limit": {"type": "integer", "default": 10}},
         },
     },
+    # ----- withdrawals (stage 11): money taken out of the income -----
+    {
+        "name": "record_withdrawal",
+        "description": "سحب: فلوس طلعت من دخل المحل (مولدة، إيجار، كهرباء، رواتب، شخصي...). ما إله طرف يرجّعه. يرجع مجموع اليوم والشهر.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "amount": {"type": "integer", "description": "عدد صحيح موجب، بالوحدة الكاملة"},
+                "currency": {"type": "string", "enum": ["IQD", "USD"]},
+                "reason": {"type": "string", "description": "على شنو أو منو سحبها، بكلمة أو كلمتين مثل ما گالها: مولدة، إيجار، شخصي"},
+                "note": {"type": "string"},
+                "confirmed": {"type": "boolean", "description": "true فقط بعد ما المستخدم يأكد مبلغ كبير"},
+            },
+            "required": ["amount", "currency", "reason"],
+        },
+    },
+    {
+        "name": "list_withdrawals",
+        "description": "مجموع السحوبات لفترة (today = اليوم، month = هالشهر، all = الكل)، لكل عملة ولكل سبب، وآخر السحوبات. reason اختياري: سحوبات سبب واحد بس.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period": {"type": "string", "enum": ["today", "month", "all"]},
+                "reason": {"type": "string"},
+            },
+            "required": ["period"],
+        },
+    },
 ]
 
 
@@ -221,8 +249,9 @@ class DebtTools:
             large_amount_iqd if large_amount_iqd is not None
             else _int_env("LARGE_AMOUNT_IQD", 1_000_000)
         )
-        # Transactions recorded in this session, for undo_last.
-        self.session_tx_ids: list[int] = []
+        # Entries recorded in this session, newest last, for undo_last: a transaction id
+        # (int) or ("withdrawal", id).
+        self.session_tx_ids: list = []
         # Set by the agent before each turn so every entry keeps its original message
         # and where it came from ("chat" typed, "voice" dictated).
         self.source_message: str | None = None
@@ -421,9 +450,49 @@ class DebtTools:
         return {"ok": True, "ledger": "supplier", "count": len(rows), "suppliers": rows[:limit],
                 "total_owed_by_me": totals}
 
+    # ----- withdrawals -----
+
+    def tool_record_withdrawal(self, amount, currency="IQD", reason=None, note=None, confirmed=False):
+        reason = str(reason or "").strip()
+        if not reason:
+            return _error("reason_required", "اسأل صاحب المحل: سحبتهن على شنو؟ (مثل مولدة، إيجار، شخصي)")
+        value = _as_int(amount)
+        if value is None or value <= 0:
+            return _error("invalid_amount", "المبلغ لازم يكون رقم صحيح أكبر من صفر")
+        currency = (currency or "IQD").upper()
+        if currency not in db.CURRENCIES:
+            return _error("invalid_currency", "العملة لازم تكون IQD أو USD")
+        limit = self.large_amount_iqd if currency == "IQD" else USD_LARGE_AMOUNT
+        if value > limit and not confirmed:
+            return _error("confirmation_required",
+                          "المبلغ كبير، لازم تأكد ويا المستخدم وبعدين تعيد الاستدعاء بـ confirmed=true",
+                          reason=reason, amount=value, currency=currency, limit=limit)
+        wd_id = db.add_withdrawal(self.conn, value, currency, reason, note=note,
+                                  source_message=self.source_message, source=self.source)
+        self.session_tx_ids.append(("withdrawal", wd_id))
+        return {"ok": True, "ledger": "withdrawal", "withdrawal_id": wd_id, "amount": value,
+                "currency": currency, "reason": reason,
+                "today_total": db.withdrawals_summary(self.conn, "today")["totals"],
+                "month_total": db.withdrawals_summary(self.conn, "month")["totals"]}
+
+    def tool_list_withdrawals(self, period="month", reason=None):
+        period = period if period in db.PERIODS else "month"
+        summary = db.withdrawals_summary(self.conn, period, reason or None)
+        return {"ok": True, "ledger": "withdrawal", **summary}
+
     def tool_undo_last(self):
         while self.session_tx_ids:
-            tx_id = self.session_tx_ids.pop()
+            entry = self.session_tx_ids.pop()
+            if isinstance(entry, tuple):  # ("withdrawal", id)
+                wd = db.get_withdrawal(self.conn, entry[1])
+                if wd and not wd["undone"]:
+                    db.mark_withdrawal_undone(self.conn, wd["id"])
+                    return {"ok": True, "undone": {"ledger": "withdrawal", "type": "withdrawal",
+                                                   "withdrawal_id": wd["id"], "reason": wd["reason"],
+                                                   "amount": wd["amount"], "currency": wd["currency"]},
+                            "month_total": db.withdrawals_summary(self.conn, "month")["totals"]}
+                continue
+            tx_id = entry
             tx = db.get_transaction(self.conn, tx_id)
             if tx and not tx["undone"]:
                 db.mark_undone(self.conn, tx_id)

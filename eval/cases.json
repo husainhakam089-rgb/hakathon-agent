@@ -1,5 +1,5 @@
 {
-  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes.",
+  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes. Withdrawals (stage 11): setup.withdrawals [amount, currency, reason, in_session?]; expect.withdrawals [amount, currency, a word the reason must contain]; expect.withdrawals_undone: how many seeded ones end up undone.",
   "base_setup": {
     "customers": [
       "أبو علي",
@@ -47,6 +47,18 @@
     "suppliers": [
       "شركة الزين",
       "مندوب البيبسي"
+    ],
+    "withdrawals": [
+      [
+        75000,
+        "IQD",
+        "مولدة"
+      ],
+      [
+        200000,
+        "IQD",
+        "إيجار"
+      ]
     ]
   },
   "cases": [
@@ -302,7 +314,8 @@
           ]
         ],
         "tools_not_called": [
-          "record_payment"
+          "record_payment",
+          "record_withdrawal"
         ],
         "reply_has_any": [
           "300,000",
@@ -379,6 +392,76 @@
         ],
         "tools_not_called": [
           "record_payment"
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "message": "سحبت 50 ألف للمولدة",
+      "expect": {
+        "transactions": [],
+        "withdrawals": [
+          [
+            50000,
+            "IQD",
+            "مولد"
+          ]
+        ],
+        "reply_has_any": [
+          "50,000"
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "message": "شكد سحبت هالشهر؟",
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "list_withdrawals"
+        ],
+        "reply_has_any": [
+          "275,000",
+          "275000"
+        ]
+      }
+    },
+    {
+      "id": 22,
+      "message": "شكد صرفنا على المولدة؟",
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "list_withdrawals"
+        ],
+        "reply_has_any": [
+          "75,000",
+          "75000"
+        ]
+      }
+    },
+    {
+      "id": 23,
+      "message": "شطب آخر وحدة",
+      "setup": {
+        "withdrawals": [
+          [
+            30000,
+            "IQD",
+            "شخصي",
+            true
+          ]
+        ]
+      },
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "undo_last"
+        ],
+        "withdrawals_undone": 1,
+        "reply_has_any": [
+          "30,000",
+          "شخصي"
         ]
       }
     }

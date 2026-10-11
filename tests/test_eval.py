@@ -28,7 +28,7 @@ class Script:
 
 
 def test_cases_file_is_complete():
-    assert [c["id"] for c in CASES["cases"]] == list(range(1, 20))  # 1-13 customers, 14-19 suppliers
+    assert [c["id"] for c in CASES["cases"]] == list(range(1, 24))  # 1-13 customers, 14-19 suppliers, 20-23 withdrawals
 
 
 def test_correct_debt_passes():
@@ -77,3 +77,18 @@ def test_supplier_case_checks_the_right_ledger():
 def test_ambiguous_case_accepts_asking():
     r = run_eval.run_case(case(19), BASE, Script(LLMResponse(text="تقصد الزبون لو المورد؟")))
     assert r["passed"], r["failures"]
+
+
+def test_withdrawal_cases():
+    ok = run_eval.run_case(case(20), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "record_withdrawal", {"amount": 50000, "currency": "IQD", "reason": "المولدة"})]),
+        LLMResponse(text="تمام، سجلت سحب 50,000 دينار للمولدة."),
+    ))
+    assert ok["passed"], ok["failures"]
+    wrong = run_eval.run_case(case(20), BASE, Script(LLMResponse(text="تمام، سجلت 50,000.")))
+    assert not wrong["passed"]  # said it, recorded nothing
+    undo = run_eval.run_case(case(23), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "undo_last", {})]),
+        LLMResponse(text="لغيت سحب 30,000 دينار (شخصي)."),
+    ))
+    assert undo["passed"], undo["failures"]

@@ -47,9 +47,12 @@ def _with_done_note(reply: str, tool_log: list[dict]) -> str:
             done.append(f"سجلت إنك دفعت لـ {r['supplier_name']} {_money(r['amount'], r['currency'])}")
         elif entry["tool"] == "add_supplier":
             done.append(f"أضفت المورد {r['name']}")
+        elif entry["tool"] == "record_withdrawal":
+            done.append(f"سجلت سحب {_money(r['amount'], r['currency'])} ({r['reason']})")
         elif entry["tool"] == "undo_last":
             u = r["undone"]
-            done.append(f"لغيت آخر قيد ({u['customer_name']} {_money(u['amount'], u['currency'])})")
+            who = u.get("customer_name") or u.get("reason", "")
+            done.append(f"لغيت آخر قيد ({who} {_money(u['amount'], u['currency'])})")
     if not done:
         return reply
     return f"{reply}\nبس انتبه، هذا انحفظ قبل المشكلة: " + "، و".join(done) + ". لا تعيده."

@@ -46,6 +46,11 @@ def build_db(base: dict, extra: dict):
         tx_id = db.add_transaction(conn, ids[name], tx_type, amount, currency)
         if rest and rest[0]:
             session_txs.append(tx_id)
+    for row in base.get("withdrawals", []) + extra.get("withdrawals", []):
+        amount, currency, reason, *rest = row
+        wd_id = db.add_withdrawal(conn, amount, currency, reason)
+        if rest and rest[0]:
+            session_txs.append(("withdrawal", wd_id))
     return conn, ids, session_txs
 
 
@@ -66,10 +71,27 @@ def check(case: dict, result: dict, conn, ids: dict, before_max_id: int, seeded:
         shown = " أو ".join(str(w or "ولا قيد") for w in wanted)
         failures.append(f"القيود: المتوقع {shown}، الموجود {got or 'ولا قيد'}")
 
+    # withdrawals (stage 11): [amount, currency, word the reason must contain]
+    before_wd = case.get("_before_wd", 0)
+    new_wd = conn.execute("SELECT amount, currency, reason_key FROM withdrawals WHERE id > ? AND undone = 0 ORDER BY id",
+                          (before_wd,)).fetchall()
+    want_wd = exp.get("withdrawals", [])
+    got_ok = len(new_wd) == len(want_wd) and all(
+        r["amount"] == a and r["currency"] == c and db.reason_key(w) in r["reason_key"]
+        for r, (a, c, w) in zip(new_wd, want_wd))
+    if not got_ok:
+        got = [[r["amount"], r["currency"], r["reason_key"]] for r in new_wd]
+        failures.append(f"السحوبات: المتوقع {want_wd or 'ولا سحب'}، الموجود {got or 'ولا سحب'}")
+    if "withdrawals_undone" in exp:
+        n = conn.execute("SELECT COUNT(*) FROM withdrawals WHERE id <= ? AND undone = 1", (before_wd,)).fetchone()[0]
+        if n != exp["withdrawals_undone"]:
+            failures.append(f"السحوبات الملغية: المتوقع {exp['withdrawals_undone']}، الموجود {n}")
+
+    seeded_tx = [x for x in seeded if not isinstance(x, tuple)]
     for name in exp.get("undone", []):
         undone = conn.execute(
             "SELECT COUNT(*) FROM transactions WHERE id IN ({}) AND customer_id = ? AND undone = 1".format(
-                ",".join("?" * len(seeded)) or "NULL"), (*seeded, ids[name])).fetchone()[0]
+                ",".join("?" * len(seeded_tx)) or "NULL"), (*seeded_tx, ids[name])).fetchone()[0]
         if not undone:
             failures.append(f"قيد {name} ما انلغى")
 
@@ -97,6 +119,7 @@ def run_case(case: dict, base: dict, llm) -> dict:
     session = agent.session("eval")
     session.tools.session_tx_ids = list(seeded)
     before_max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM transactions").fetchone()[0]
+    case = {**case, "_before_wd": conn.execute("SELECT COALESCE(MAX(id), 0) FROM withdrawals").fetchone()[0]}
 
     started = time.perf_counter()
     result = agent.chat("eval", case["message"])

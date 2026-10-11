@@ -79,6 +79,17 @@ def suppliers():
     return _ledger("supplier")
 
 
+@app.get("/withdrawals")
+def withdrawals():
+    """This month by reason (same shape as the ledgers, for the same table) + today's total."""
+    with agent.lock:
+        month = db.withdrawals_summary(agent.conn, "month")
+        today = db.withdrawals_summary(agent.conn, "today")
+    rows = [{"id": r["reason"], "name": r["reason"], "balances": r["totals"], "last_activity": r["last"]}
+            for r in month["by_reason"]]
+    return {"debtors": rows, "totals": month["totals"], "today": today["totals"], "latest": month["latest"]}
+
+
 # ---------- stage 6: photos of the notebook ----------
 
 def _error(status: int, message: str, **extra):
