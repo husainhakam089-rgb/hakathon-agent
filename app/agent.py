@@ -7,8 +7,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from app import db
 from app.llm import LLMError, make_llm
-from app.prompts import SYSTEM_PROMPT
+from app.prompts import SYSTEM_PROMPT, memory_block
 from app.tools import TOOL_SCHEMAS, DebtTools
 
 log = logging.getLogger("debt_agent")
@@ -47,6 +48,10 @@ def _with_done_note(reply: str, tool_log: list[dict]) -> str:
             done.append(f"سجلت إنك دفعت لـ {r['supplier_name']} {_money(r['amount'], r['currency'])}")
         elif entry["tool"] == "add_supplier":
             done.append(f"أضفت المورد {r['name']}")
+        elif entry["tool"] == "remember":
+            done.append(f"حفظت بالذاكرة: {r['fact']}")
+        elif entry["tool"] == "forget":
+            done.append(f"مسحت من الذاكرة: {r['forgot']['text']}")
         elif entry["tool"] == "record_withdrawal":
             done.append(f"سجلت سحب {_money(r['amount'], r['currency'])} ({r['reason']})")
         elif entry["tool"] == "undo_last":
@@ -124,7 +129,9 @@ class Agent:
         try:
             llm = self.get_llm()
             for _ in range(MAX_ITERATIONS):
-                response = llm.complete(SYSTEM_PROMPT, session.history() + turn, TOOL_SCHEMAS)
+                # Re-read every call: a remember/forget earlier in this turn shows up at once.
+                system = SYSTEM_PROMPT + memory_block(db.list_memories(self.conn))
+                response = llm.complete(system, session.history() + turn, TOOL_SCHEMAS)
                 if response.refused:
                     reply = REFUSED_REPLY
                     break

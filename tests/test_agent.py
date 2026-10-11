@@ -169,3 +169,24 @@ def test_new_customer_is_only_added_after_the_owner_answers(make_agent, conn):
     second = a.chat("s", "إي")
     assert second["tool_calls"][0]["result"]["ok"]
     assert [c["name"] for c in db.all_customers(conn)] == ["سعد"]
+
+
+def test_memories_are_in_the_instructions_every_turn(conn, tmp_path):
+    class Spy:
+        def __init__(self):
+            self.systems = []
+
+        def complete(self, system, messages, tools):
+            self.systems.append(system)
+            if len(self.systems) == 1:
+                return LLMResponse(text="", tool_calls=[ToolCall("r", "remember", {"fact": "الورقة = 10,000 دينار"})])
+            return LLMResponse(text="تمام")
+
+    spy = Spy()
+    a = Agent(conn, llm=spy, log_path=tmp_path / "l.jsonl")
+    a.chat("s", "تذكر إن الورقة يعني 10 آلاف")
+    entry = "- [1] الورقة = 10,000 دينار"  # as listed in the memory block
+    assert entry not in spy.systems[0]
+    assert entry in spy.systems[1]  # right after remember, same turn
+    a.chat("other-session", "سجل على ابو علي ورقة")
+    assert entry in spy.systems[2]  # every conversation sees it

@@ -46,6 +46,8 @@ def build_db(base: dict, extra: dict):
         tx_id = db.add_transaction(conn, ids[name], tx_type, amount, currency)
         if rest and rest[0]:
             session_txs.append(tx_id)
+    for text in base.get("memories", []) + extra.get("memories", []):
+        db.add_memory(conn, text)
     for row in base.get("withdrawals", []) + extra.get("withdrawals", []):
         amount, currency, reason, *rest = row
         wd_id = db.add_withdrawal(conn, amount, currency, reason)
@@ -87,6 +89,11 @@ def check(case: dict, result: dict, conn, ids: dict, before_max_id: int, seeded:
         if n != exp["withdrawals_undone"]:
             failures.append(f"السحوبات الملغية: المتوقع {exp['withdrawals_undone']}، الموجود {n}")
 
+    if "memories_added" in exp:
+        added = conn.execute("SELECT COUNT(*) FROM memories WHERE active = 1").fetchone()[0] - case.get("_before_mem", 0)
+        if added != exp["memories_added"]:
+            failures.append(f"الذاكرة: المتوقع ينحفظ {exp['memories_added']}، انحفظ {added}")
+
     seeded_tx = [x for x in seeded if not isinstance(x, tuple)]
     for name in exp.get("undone", []):
         undone = conn.execute(
@@ -119,7 +126,8 @@ def run_case(case: dict, base: dict, llm) -> dict:
     session = agent.session("eval")
     session.tools.session_tx_ids = list(seeded)
     before_max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM transactions").fetchone()[0]
-    case = {**case, "_before_wd": conn.execute("SELECT COALESCE(MAX(id), 0) FROM withdrawals").fetchone()[0]}
+    case = {**case, "_before_wd": conn.execute("SELECT COALESCE(MAX(id), 0) FROM withdrawals").fetchone()[0],
+            "_before_mem": conn.execute("SELECT COUNT(*) FROM memories WHERE active = 1").fetchone()[0]}
 
     started = time.perf_counter()
     result = agent.chat("eval", case["message"])

@@ -1,5 +1,5 @@
 {
-  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes. Withdrawals (stage 11): setup.withdrawals [amount, currency, reason, in_session?]; expect.withdrawals [amount, currency, a word the reason must contain]; expect.withdrawals_undone: how many seeded ones end up undone.",
+  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes. Withdrawals (stage 11): setup.withdrawals [amount, currency, reason, in_session?]; expect.withdrawals [amount, currency, a word the reason must contain]; expect.withdrawals_undone: how many seeded ones end up undone. Memory (stage 12): setup.memories [text]; expect.memories_added: how many new memories.",
   "base_setup": {
     "customers": [
       "أبو علي",
@@ -462,6 +462,61 @@
         "reply_has_any": [
           "30,000",
           "شخصي"
+        ]
+      }
+    },
+    {
+      "id": 24,
+      "message": "تذكر إن الورقة يعني 10 آلاف دينار",
+      "expect": {
+        "transactions": [],
+        "memories_added": 1,
+        "tools_called": [
+          "remember"
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "message": "سجل على ابو علي ورقة",
+      "setup": {
+        "memories": [
+          "الورقة = 10,000 دينار"
+        ]
+      },
+      "expect": {
+        "transactions": [
+          [
+            "أبو علي",
+            "debt",
+            10000,
+            "IQD"
+          ]
+        ],
+        "reply_has_any": [
+          "10,000"
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "message": "سجل على علي النجار 5 آلاف",
+      "setup": {
+        "memories": [
+          "أبو علي نفسه علي النجار"
+        ]
+      },
+      "expect": {
+        "transactions": [
+          [
+            "أبو علي",
+            "debt",
+            5000,
+            "IQD"
+          ]
+        ],
+        "tools_not_called": [
+          "add_customer"
         ]
       }
     }

@@ -364,3 +364,37 @@ def test_withdrawal_periods(conn):
     assert db.withdrawals_summary(conn, "today")["totals"]["IQD"] == 1000
     assert db.withdrawals_summary(conn, "month")["totals"]["IQD"] == 1000
     assert db.withdrawals_summary(conn, "all")["totals"]["IQD"] == 10000
+
+
+# ---------- memory (stage 12) ----------
+
+def test_remember_list_forget(tools, conn):
+    tools.source_message = "تذكر إن الورقة يعني 10 آلاف"
+    r = tools.execute("remember", {"fact": "الورقة = 10,000 دينار"})
+    assert r["ok"]
+    assert tools.execute("remember", {"fact": "الورقه = 10,000 دينار"})["error"] == "already_known"
+    mems = tools.execute("list_memories", {})["memories"]
+    assert [m["text"] for m in mems] == ["الورقة = 10,000 دينار"]
+    assert tools.execute("forget", {"memory_id": r["memory_id"]})["forgot"]["text"] == "الورقة = 10,000 دينار"
+    assert tools.execute("list_memories", {})["count"] == 0
+    assert tools.execute("forget", {"memory_id": r["memory_id"]})["error"] == "memory_not_found"
+    # forgetting never deletes the row
+    assert conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 1
+
+
+def test_remember_only_when_the_owner_teaches(tools):
+    tools.source_message = "سجل على ابو علي 25 الف"
+    assert tools.execute("remember", {"fact": "أبو علي يحب يسجل بالدين"})["error"] == "ask_first"
+    for message in ["من هسه الدفتر يعني مية ألف", "أبو علي نفسه علي النجار", "احفظ إن المندوب يجي الخميس"]:
+        tools.source_message = message
+        assert tools.execute("remember", {"fact": message})["ok"], message
+
+
+def test_memory_limits(tools, conn, monkeypatch):
+    tools.source_message = "تذكر"
+    assert tools.execute("remember", {"fact": "x" * 201})["error"] == "too_long"
+    assert tools.execute("remember", {"fact": "  "})["error"] == "invalid_fact"
+    monkeypatch.setattr("app.tools.MAX_MEMORIES", 2)
+    tools.execute("remember", {"fact": "أ"})
+    tools.execute("remember", {"fact": "ب"})
+    assert tools.execute("remember", {"fact": "ج"})["error"] == "memory_full"

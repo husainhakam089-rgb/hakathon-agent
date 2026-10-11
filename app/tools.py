@@ -13,6 +13,8 @@ from app import db
 from app.arabic import normalize
 
 USD_LARGE_AMOUNT = 1000  # treated as equivalent to LARGE_AMOUNT_IQD (no FX conversion in v0)
+MAX_MEMORIES = 50
+MAX_MEMORY_CHARS = 200
 
 
 def _int_env(name: str, default: int) -> int:
@@ -210,6 +212,30 @@ TOOL_SCHEMAS = [
             "required": ["period"],
         },
     },
+    # ----- memory (stage 12): things the owner teaches -----
+    {
+        "name": "remember",
+        "description": "يحفظ شي علّمه صاحب المحل حتى تتذكره بكل المحادثات: معنى كلمة (الورقة = 10,000 دينار)، لقب زبون (أبو علي نفسه علي النجار)، ملاحظة. بس لما صاحب المحل يطلب صراحة.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"fact": {"type": "string", "description": "جملة قصيرة وواضحة، مثل: الورقة = 10,000 دينار"}},
+            "required": ["fact"],
+        },
+    },
+    {
+        "name": "forget",
+        "description": "يمسح شي من الذاكرة برقمه (من list_memories).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"memory_id": {"type": "integer"}},
+            "required": ["memory_id"],
+        },
+    },
+    {
+        "name": "list_memories",
+        "description": "كل اللي علّمه صاحب المحل ومحفوظ بالذاكرة، ويا أرقامها.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -223,6 +249,12 @@ TOOL_SCHEMAS = [
 _LEAD = r"^\s*(?:(?:اني|إني|انا|أنا|اليوم|هسه|هسة|توني|و)\s+)*"
 _OWNER_PAID = re.compile(_LEAD + r"(?:(?:دفعت|سددت|سدّدت|سلمت|سلّمت)\s*(?:لـ?(?!ي(?:\s|$))|الى|إلى)|(?:اعطيت|أعطيت)\s)")
 _OWNER_TOOK = re.compile(_LEAD + r"(?:اخذت|أخذت|خذيت)\s+(?:من(?!\s*(?:عندي|عندنا))|بضاعة)")
+
+
+# remember() only when the owner's own message teaches or asks to remember (stage 12):
+# the model must not decide by itself what to keep.
+_TEACHING = re.compile(r"تذكر|تذكّر|احفظ|احفض|خلي\s*(?:ب|في)\s*بالك|من\s*هسه|من\s*الآن|من\s*الان|اعتبر|يعني|نفسه|نفسها|"
+                       r"هو\s+نفس|هي\s+نفس|لا\s*تنسى|انتبه\s+إن|انتبه\s+ان|سجل\s+ببالك|عندنا\s+.+\s+معناها")
 
 
 def _error(code: str, message: str, **extra) -> dict:
@@ -486,6 +518,34 @@ class DebtTools:
         period = period if period in db.PERIODS else "month"
         summary = db.withdrawals_summary(self.conn, period, reason or None)
         return {"ok": True, "ledger": "withdrawal", **summary}
+
+    # ----- memory -----
+
+    def tool_remember(self, fact):
+        fact = " ".join(str(fact or "").split())
+        if not fact:
+            return _error("invalid_fact", "شنو تريدني أتذكر؟")
+        if len(fact) > MAX_MEMORY_CHARS:
+            return _error("too_long", f"خليها أقصر من {MAX_MEMORY_CHARS} حرف")
+        if not _TEACHING.search(self.source_message or ""):
+            return _error("ask_first", "صاحب المحل ما طلب تتذكر شي. إذا تشوفها مفيدة، اسأله: 'أحفظها بذاكرتي؟'")
+        if db.find_memory(self.conn, fact):
+            return _error("already_known", "هاي محفوظة من قبل")
+        if len(db.list_memories(self.conn)) >= MAX_MEMORIES:
+            return _error("memory_full", f"الذاكرة مليانة ({MAX_MEMORIES}). امسح شي قديم أول.")
+        mem_id = db.add_memory(self.conn, fact, self.source_message)
+        return {"ok": True, "memory_id": mem_id, "fact": fact}
+
+    def tool_forget(self, memory_id):
+        mid = _as_int(memory_id)
+        gone = db.forget_memory(self.conn, mid) if mid is not None else None
+        if gone is None:
+            return _error("memory_not_found", "ما لگيت هالشي بالذاكرة. شوف list_memories.")
+        return {"ok": True, "forgot": gone}
+
+    def tool_list_memories(self):
+        memories = db.list_memories(self.conn)
+        return {"ok": True, "count": len(memories), "memories": memories}
 
     def tool_undo_last(self):
         while self.session_tx_ids:

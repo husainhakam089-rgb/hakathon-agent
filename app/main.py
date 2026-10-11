@@ -79,6 +79,21 @@ def suppliers():
     return _ledger("supplier")
 
 
+@app.get("/memories")
+def memories():
+    with agent.lock:
+        return {"memories": db.list_memories(agent.conn)}
+
+
+@app.delete("/memories/{memory_id}")
+def forget_memory(memory_id: int):
+    with agent.lock:
+        gone = db.forget_memory(agent.conn, memory_id)
+    if gone is None:
+        return _error(404, "ما لگيت هالشي بالذاكرة.")
+    return {"ok": True, "forgot": gone}
+
+
 @app.get("/withdrawals")
 def withdrawals():
     """This month by reason (same shape as the ledgers, for the same table) + today's total."""

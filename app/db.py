@@ -53,6 +53,17 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   undone            INTEGER NOT NULL DEFAULT 0,
   created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
+
+-- Stage 12: things the owner taught the agent ("الورقة = 10,000"، "أبو علي نفسه علي النجار").
+-- Added to the agent's instructions every turn. Forgetting switches active off.
+CREATE TABLE IF NOT EXISTS memories (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  text              TEXT NOT NULL,
+  text_key          TEXT NOT NULL,
+  source_message    TEXT,
+  active            INTEGER NOT NULL DEFAULT 1,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
 """
 
 # Columns added after v0: (name, definition) added to older databases on connect.
@@ -198,6 +209,35 @@ def withdrawals_summary(conn, period: str = "month", reason: str | None = None, 
         f"""SELECT id, amount, currency, reason, created_at FROM withdrawals WHERE {where}
             ORDER BY id DESC LIMIT ?""", (*args, recent))]
     return {"period": period, "totals": totals, "by_reason": reasons, "latest": latest}
+
+
+# ---------- memories (stage 12) ----------
+
+def add_memory(conn, text: str, source_message: str | None = None) -> int:
+    cur = conn.execute("INSERT INTO memories (text, text_key, source_message) VALUES (?, ?, ?)",
+                       (text.strip(), normalize(text), source_message))
+    conn.commit()
+    return cur.lastrowid
+
+
+def list_memories(conn) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        "SELECT id, text, created_at FROM memories WHERE active = 1 ORDER BY id")]
+
+
+def find_memory(conn, text: str):
+    row = conn.execute("SELECT id, text FROM memories WHERE active = 1 AND text_key = ?",
+                       (normalize(text),)).fetchone()
+    return dict(row) if row else None
+
+
+def forget_memory(conn, memory_id: int) -> dict | None:
+    row = conn.execute("SELECT id, text FROM memories WHERE id = ? AND active = 1", (memory_id,)).fetchone()
+    if row is None:
+        return None
+    conn.execute("UPDATE memories SET active = 0 WHERE id = ?", (memory_id,))
+    conn.commit()
+    return dict(row)
 
 
 # ---------- batches (imports) ----------

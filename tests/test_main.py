@@ -111,3 +111,12 @@ def test_withdrawals_endpoint(client, conn):
     w = client().get("/withdrawals").json()
     assert w["totals"] == {"IQD": 275000, "USD": 20} and w["today"] == {"IQD": 275000, "USD": 20}
     assert [(r["balances"]["IQD"], r["balances"]["USD"]) for r in w["debtors"]] == [(200000, 0), (75000, 0), (0, 20)]
+
+
+def test_memories_endpoints(client, conn):
+    mid = db.add_memory(conn, "الورقة = 10,000 دينار")
+    c = client()
+    assert [m["text"] for m in c.get("/memories").json()["memories"]] == ["الورقة = 10,000 دينار"]
+    assert c.delete(f"/memories/{mid}").json()["ok"]
+    assert c.get("/memories").json()["memories"] == []
+    assert c.delete(f"/memories/{mid}").status_code == 404

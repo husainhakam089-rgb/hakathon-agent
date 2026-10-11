@@ -100,6 +100,25 @@ form button:disabled { opacity: .5; cursor: wait; }
 form .attach-btn { background: var(--card-strong); color: inherit; border: 1px solid var(--border); padding: 0 14px; font-size: 18px; font-weight: 400; }
 form .attach-btn:hover { border-color: var(--accent-border); }
 
+/* ---------- side panel (memory, old conversations) ---------- */
+.drawer-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; z-index: 20; }
+.drawer-bg.show { display: block; }
+.drawer { position: fixed; top: 0; bottom: 0; inset-inline-start: 0; width: min(420px, 92vw); z-index: 21;
+  background: var(--bg); border-inline-end: 1px solid var(--border); transform: translateX(110%);
+  transition: transform .2s ease; display: flex; flex-direction: column; }
+.drawer.show { transform: none; }
+.drawer header { border: none; border-bottom: 1px solid var(--border-soft); border-radius: 0; padding: 14px 16px; }
+.drawer .body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.drawer .hint { color: var(--muted); font-size: 13px; line-height: 1.8; }
+.drawer .item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 12px; background: var(--card); font-size: 14px; line-height: 1.7; }
+.drawer .item .txt { flex: 1; min-width: 0; word-wrap: break-word; }
+.drawer .item small { display: block; color: var(--faint); font-size: 11px; }
+.drawer .item button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 2px 6px; }
+.drawer .item button:hover { color: var(--bad); }
+.drawer .item.click { cursor: pointer; }
+.drawer .item.click:hover, .drawer .item.on { border-color: var(--accent-border); background: var(--accent-soft); }
+
 /* ---------- ledgers tabs (stage 10) ---------- */
 .ledger-head { justify-content: space-between; flex-wrap: wrap; }
 .tabs { display: flex; gap: 6px; }
@@ -205,6 +224,8 @@ tr.flash td { animation: flash 1.6s ease-out; }
   .chat { height: 72vh; }
   .debtors { min-height: 300px; }
   header p { display: none; }
+  header { gap: 8px; padding: 10px 12px; }
+  header .lbl { display: none; }  /* icons only on phones */
   .msg, .agent-wrap { max-width: 92%; }
 }
 </style>
@@ -218,7 +239,8 @@ tr.flash td { animation: flash 1.6s ease-out; }
       <p>اكتب مثل ما تحچي: "سجل على ابو علي 25 الف"</p>
     </div>
     <div class="spacer"></div>
-    <button class="icon-btn" id="newChat" title="محادثة جديدة (البيانات تبقى)">محادثة جديدة</button>
+    <button class="icon-btn" id="memoryBtn" title="الأشياء اللي علّمتها للوكيل">🧠<span class="lbl"> الذاكرة</span></button>
+    <button class="icon-btn" id="newChat" title="محادثة جديدة (البيانات تبقى)">＋<span class="lbl"> محادثة جديدة</span></button>
     <button class="icon-btn" id="theme" title="فاتح / غامق">☀︎</button>
   </header>
 
@@ -286,6 +308,13 @@ tr.flash td { animation: flash 1.6s ease-out; }
   </main>
 </div>
 
+<div class="drawer-bg" id="drawerBg"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <header><h1 id="drawerTitle" style="font-size:16px"></h1><div class="spacer"></div>
+    <button class="icon-btn" id="drawerClose" title="سد">✕</button></header>
+  <div class="body" id="drawerBody"></div>
+</aside>
+
 <script>
 /* ---------- small helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -328,6 +357,9 @@ const TOOL_LABELS = {
   list_suppliers: 'جاب قائمة الموردين',
   record_withdrawal: 'سجّل سحب',
   list_withdrawals: 'جاب مجموع السحوبات',
+  remember: 'حفظ بالذاكرة',
+  forget: 'مسح من الذاكرة',
+  list_memories: 'شاف الذاكرة',
 };
 
 function scrollDown() { const m = $('messages'); m.scrollTop = m.scrollHeight; }
@@ -418,6 +450,7 @@ async function send(text) {
       || (c.tool === 'undo_last' && c.result.undone && c.result.undone.ledger === 'supplier'));
     const customerWrite = okCalls.some(c => ['record_debt', 'record_payment', 'add_customer'].includes(c.tool));
     loadDebtors(wrote, withdrawalWrite ? 'withdrawal' : supplierWrite ? 'supplier' : customerWrite ? 'customer' : null);
+    if (drawerKind === 'memory' && okCalls.some(c => c.tool === 'remember' || c.tool === 'forget')) renderMemory();
   } catch (e) {
     setBusy(false);
     addAgent('ما گدرت أوصل للسيرفر. تأكد إن البرنامج بعده شغال بالطرفية.', [], true);
@@ -930,6 +963,49 @@ $('newChat').onclick = () => {
   sessionId = newId();
   $('messages').innerHTML = '<div class="welcome" id="welcome">بدينا محادثة جديدة. البيانات محفوظة مثل ما هي.</div>';
 };
+
+/* ---------- side panel ---------- */
+let drawerKind = null;  // which list is open: 'memory' | 'sessions'
+function openDrawer(kind, title) {
+  drawerKind = kind;
+  $('drawerTitle').textContent = title;
+  $('drawer').classList.add('show');
+  $('drawerBg').classList.add('show');
+  $('drawer').setAttribute('aria-hidden', 'false');
+}
+function closeDrawer() {
+  drawerKind = null;
+  $('drawer').classList.remove('show');
+  $('drawerBg').classList.remove('show');
+  $('drawer').setAttribute('aria-hidden', 'true');
+}
+$('drawerClose').onclick = closeDrawer;
+$('drawerBg').onclick = closeDrawer;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawerKind) closeDrawer(); });
+
+/* ---------- memory (stage 12): what the owner taught the agent ---------- */
+async function renderMemory() {
+  const body = $('drawerBody');
+  try {
+    const data = await (await fetch('/memories')).json();
+    const items = data.memories || [];
+    body.innerHTML = `<p class="hint">هذي أشياء علّمتها للوكيل، ويتذكرها بكل المحادثات. علّمه من المحادثة،
+      مثل: <b>تذكر إن الورقة يعني 10 آلاف</b> أو <b>أبو علي نفسه علي النجار</b>. وتمسح أي شي بـ ✕.</p>` +
+      (items.length ? items.map(m => `<div class="item"><div class="txt">${esc(m.text)}<small>${esc(shortDate(m.created_at))}</small></div>
+        <button data-forget="${m.id}" title="امسح من الذاكرة">✕</button></div>`).join('')
+        : '<p class="hint">الذاكرة فارغة.</p>');
+  } catch (e) {
+    body.innerHTML = '<p class="hint">ما گدرت أجيب الذاكرة.</p>';
+  }
+}
+$('memoryBtn').onclick = () => { openDrawer('memory', '🧠 ذاكرة الوكيل'); renderMemory(); };
+$('drawerBody').addEventListener('click', async e => {
+  const id = e.target.dataset && e.target.dataset.forget;
+  if (!id) return;
+  e.target.disabled = true;
+  await fetch('/memories/' + id, {method: 'DELETE'});
+  renderMemory();
+});
 
 /* ---------- ledgers: customers (owed to me) / suppliers (I owe) ---------- */
 let lastSnapshot = {};
