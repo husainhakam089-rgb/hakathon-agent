@@ -49,7 +49,7 @@ button, input, select { font: inherit; color: inherit; }
 
 /* ---------- layout ---------- */
 .app { height: 100%; display: flex; flex-direction: column; max-width: 1400px; margin: 0 auto; padding: 16px; gap: 16px; }
-header { display: flex; align-items: center; gap: 12px; padding: 12px 18px; }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 18px; position: relative; z-index: 15; }
 .logo { width: 40px; height: 40px; border-radius: 12px; background: var(--accent); display: grid; place-items: center;
   color: #0f172a; font-size: 20px; font-weight: 700; flex-shrink: 0; }
 header h1 { margin: 0; font-size: 18px; }
@@ -217,12 +217,44 @@ tr.flash td { animation: flash 1.6s ease-out; }
 @keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } }
 .empty { text-align: center; color: var(--faint); padding: 30px 0; font-size: 13px; }
 
+/* ---------- accounts panel: opened and closed with the 📒 button ---------- */
+/* ---------- ☰ menu: every header button lives in it ---------- */
+.menu-wrap { position: relative; }
+#menuBtn, #ledgerBtn { position: relative; }
+#menuBtn { font-size: 16px; }
+.menu { position: absolute; top: calc(100% + 8px); inset-inline-end: 0; z-index: 30; min-width: 220px; padding: 6px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 12px 30px rgba(0,0,0,.35);
+  display: none; flex-direction: column; gap: 2px; }
+.menu.show { display: flex; }
+.menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 12px; border: none; border-radius: 10px;
+  background: none; color: var(--text); font: inherit; font-size: 14px; cursor: pointer; text-align: start; }
+.menu button:hover { background: var(--accent-soft); color: var(--accent-text); }
+.menu .ic { width: 22px; text-align: center; }
+#ledgerBtn.on { color: var(--accent-text); }
+#menuBtn .dot, #ledgerBtn .dot { position: absolute; top: -3px; inset-inline-end: -3px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--bg); display: none; }
+#menuBtn.changed .dot, #ledgerBtn.changed .dot { display: block; }
+#ledgerBtn .dot { position: static; margin-inline-start: auto; }  /* in the menu: at the row's end */
+.ledger-top { display: none; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border-soft); font-size: 16px; }
+main.ledger-off { grid-template-columns: minmax(0, 1fr); }
+main.ledger-off .debtors { display: none; }
+.ledger-bg { display: none; }
+
 /* ---------- mobile ---------- */
 @media (max-width: 860px) {
   .app { height: auto; min-height: 100%; padding: 10px; gap: 10px; }
   main { grid-template-columns: minmax(0, 1fr); }
-  .chat { height: 72vh; }
-  .debtors { min-height: 300px; }
+  .app { height: 100dvh; min-height: 0; }
+  main { min-height: 0; }
+  .chat { min-height: 0; }
+  /* on phones the accounts slide in over the chat, so the chat gets the whole screen */
+  .debtors, main.ledger-off .debtors { display: flex; position: fixed; top: 0; bottom: 0; inset-inline-end: 0;
+    width: min(520px, 100vw); z-index: 21; border-radius: 0; background: var(--bg);
+    transform: translateX(-110%); transition: transform .2s ease; visibility: hidden; }
+  main.ledger-on .debtors { transform: none; visibility: visible; }
+  main.ledger-on .ledger-bg { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; }
+  .ledger-top { display: flex; }
+  header h1 { white-space: nowrap; font-size: 16px; }
   header p { display: none; }
   header { gap: 8px; padding: 10px 12px; }
   header .lbl { display: none; }  /* icons only on phones */
@@ -239,13 +271,20 @@ tr.flash td { animation: flash 1.6s ease-out; }
       <p>اكتب مثل ما تحچي: "سجل على ابو علي 25 الف"</p>
     </div>
     <div class="spacer"></div>
-    <button class="icon-btn" id="sessionsBtn" title="المحادثات القديمة">🗂<span class="lbl"> المحادثات</span></button>
-    <button class="icon-btn" id="memoryBtn" title="الأشياء اللي علّمتها للوكيل">🧠<span class="lbl"> الذاكرة</span></button>
-    <button class="icon-btn" id="newChat" title="محادثة جديدة (البيانات تبقى)">＋<span class="lbl"> محادثة جديدة</span></button>
-    <button class="icon-btn" id="theme" title="فاتح / غامق">☀︎</button>
+    <div class="menu-wrap">
+      <button class="icon-btn" id="menuBtn" title="القائمة" aria-haspopup="true" aria-expanded="false">☰<span class="lbl"> القائمة</span><i class="dot"></i></button>
+      <div class="menu" id="menu" role="menu">
+        <button role="menuitem" id="ledgerBtn" aria-expanded="false"><span class="ic">📒</span><span id="ledgerLbl">افتح الحسابات</span><i class="dot"></i></button>
+        <button role="menuitem" id="sessionsBtn"><span class="ic">🗂</span>المحادثات القديمة</button>
+        <button role="menuitem" id="memoryBtn"><span class="ic">🧠</span>ذاكرة الوكيل</button>
+        <button role="menuitem" id="newChat"><span class="ic">＋</span>محادثة جديدة</button>
+        <button role="menuitem" id="theme"><span class="ic" id="themeIcon">☀︎</span><span id="themeLbl">الوضع الفاتح</span></button>
+      </div>
+    </div>
   </header>
 
-  <main>
+  <main id="main">
+    <div class="ledger-bg" id="ledgerBg"></div>
     <section class="chat glass">
       <div class="section-title">المحادثة</div>
       <div class="messages" id="messages">
@@ -284,6 +323,8 @@ tr.flash td { animation: flash 1.6s ease-out; }
     </section>
 
     <section class="debtors glass">
+      <div class="ledger-top"><b>📒 الحسابات</b><div class="spacer"></div>
+        <button class="icon-btn" id="ledgerClose" title="سد الحسابات">✕</button></div>
       <div class="section-title ledger-head">
         <div class="tabs" id="tabs">
           <button class="tab on" data-tab="customer" title="ديون إلك على الزبائن">الزبائن (إلي)</button>
@@ -330,7 +371,8 @@ const newId = () => (crypto.randomUUID ? crypto.randomUUID() : 'id_' + Date.now(
 /* ---------- theme (same idea as the engineering office app) ---------- */
 function applyTheme(mode) {
   document.documentElement.classList.toggle('light', mode === 'light');
-  $('theme').textContent = mode === 'light' ? '☾' : '☀︎';
+  $('themeIcon').textContent = mode === 'light' ? '☾' : '☀︎';
+  $('themeLbl').textContent = mode === 'light' ? 'الوضع الغامق' : 'الوضع الفاتح';
   store.set('debt_theme', mode);
 }
 applyTheme(store.get('debt_theme') || 'dark');
@@ -987,6 +1029,37 @@ $('drawerClose').onclick = closeDrawer;
 $('drawerBg').onclick = closeDrawer;
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawerKind) closeDrawer(); });
 
+/* ---------- ☰ menu ---------- */
+function showMenu(open) {
+  $('menu').classList.toggle('show', open);
+  $('menuBtn').setAttribute('aria-expanded', String(open));
+}
+$('menuBtn').onclick = e => { e.stopPropagation(); showMenu(!$('menu').classList.contains('show')); };
+$('menu').addEventListener('click', () => showMenu(false));  // a choice closes it (its own handler still runs)
+document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap')) showMenu(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') showMenu(false); });
+
+/* ---------- accounts panel: open / close ---------- */
+const phone = matchMedia('(max-width: 860px)');
+// Phones start with it closed (the chat gets the screen); computers remember the last choice.
+let ledgerOpen = phone.matches ? false : store.get('debt_ledger') !== 'off';
+function showLedger(open) {
+  ledgerOpen = open;
+  $('main').classList.toggle('ledger-on', open);
+  $('main').classList.toggle('ledger-off', !open);
+  $('ledgerBtn').classList.toggle('on', open);
+  $('ledgerBtn').setAttribute('aria-expanded', String(open));
+  $('ledgerLbl').textContent = open ? 'سد الحسابات' : 'افتح الحسابات';
+  if (open) for (const b of ['ledgerBtn', 'menuBtn']) $(b).classList.remove('changed');
+  if (!phone.matches) store.set('debt_ledger', open ? 'on' : 'off');
+}
+showLedger(ledgerOpen);
+$('ledgerBtn').onclick = () => showLedger(!ledgerOpen);
+$('ledgerClose').onclick = () => showLedger(false);
+$('ledgerBg').onclick = () => showLedger(false);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && ledgerOpen && phone.matches) showLedger(false); });
+phone.addEventListener('change', () => showLedger(phone.matches ? false : store.get('debt_ledger') !== 'off'));
+
 /* ---------- old conversations (stage 13) ---------- */
 function sessionTime(s) {
   return shortDate(s);
@@ -1140,6 +1213,10 @@ async function loadDebtors(flash, showTab) {
     const snapshot = {};
     for (const tab of TABS) {
       for (const r of ledgers[tab].debtors || []) snapshot[tab + ':' + r.id] = r.balances.IQD + '|' + r.balances.USD;
+    }
+    // something changed while the accounts are closed: a dot on 📒
+    if (flash && !ledgerOpen && JSON.stringify(snapshot) !== JSON.stringify(lastSnapshot)) {
+      for (const b of ['ledgerBtn', 'menuBtn']) $(b).classList.add('changed');
     }
     lastSnapshot = snapshot;
     $('updated').textContent = '· تحدث ' + new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'});
