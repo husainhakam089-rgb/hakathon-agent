@@ -496,8 +496,12 @@ function startVoice() {
 }
 
 if (!SpeechRec) {
-  disableVoice('الصوت يحتاج Chrome (أو Edge). بهذا المتصفح اكتب بالكيبورد.');
+  disableVoice('الصوت يحتاج Chrome. بهذا المتصفح اكتب بالكيبورد.');
 } else {
+  // Edge has the API but often returns no text (especially Arabic): say so up front.
+  if (/Edg\//.test(navigator.userAgent)) {
+    voiceHint('بـ Edge الصوت غالبًا ما يطلع نص. للصوت افتح البرنامج بـ Chrome على 127.0.0.1:8000');
+  }
   $('mic').onclick = () => (recording ? stopVoice() : startVoice());
 }
 $('input').addEventListener('input', () => {
