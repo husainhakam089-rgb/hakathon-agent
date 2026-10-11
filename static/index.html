@@ -439,17 +439,22 @@ function startVoice() {
   r.interimResults = true;
   r.continuous = true;
   r.maxAlternatives = 1;
-  let heard = false;
+  // Status line so the owner can tell where it stops: mic -> voice -> text.
+  let heard = false, audio = false, speech = false, failed = false;
+  r.onaudiostart = () => { audio = true; voiceHint('🎙️ المايك شغال، احچي هسه...'); };
+  r.onspeechstart = () => { speech = true; voiceHint('👂 دا أسمع صوتك...'); };
   r.onresult = e => {
     if (r !== rec) return;  // late result after the message was sent
     let text = '';
     for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
     heard = true;
+    voiceHint('');
     fromVoice = true;
     $('input').value = (before ? before + ' ' : '') + text.trim();
     setVoicePreview(true);
   };
   r.onerror = e => {
+    failed = true;
     if (e.error === 'language-not-supported' && voiceLang !== 'ar') {
       voiceLang = 'ar';  // no Iraqi Arabic here: plain Arabic
       recording = false;
@@ -460,7 +465,8 @@ function startVoice() {
     }
     if (e.error === 'no-speech') return voiceHint('ما سمعت شي، دوس 🎤 وعيد.');
     if (e.error === 'network') return voiceHint('تحويل الصوت لنص يحتاج إنترنت.');
-    if (e.error !== 'aborted') voiceHint('صار خلل بالمايك، جرب مرة ثانية.');
+    if (e.error === 'audio-capture') return voiceHint('ما لگيت مايك شغال. تأكد إن المايك موصول ومختار بإعدادات الويندوز.');
+    if (e.error !== 'aborted') voiceHint(`صار خلل بالصوت (${e.error})، جرب مرة ثانية.`);
   };
   r.onend = () => {
     if (rec !== r && rec !== null) return;  // an older recognizer ending late
@@ -470,6 +476,12 @@ function startVoice() {
     $('mic').textContent = '🎤';
     $('input').placeholder = 'اكتب رسالتك هنا...';
     if (heard) $('input').focus();
+    else if (!failed && r === rec) {
+      // Ended without text and without an error: say which step never happened.
+      if (!audio) voiceHint('المايك ما اشتغل. اضغط القفل يم عنوان الصفحة وتأكد إن Microphone مسموح، وحدّث الصفحة.');
+      else if (!speech) voiceHint('المايك شغال بس ما وصلني صوت. يمكن Chrome مختار مايك ثاني: اضغط القفل يم العنوان ← Site settings، أو من إعدادات الصوت بالويندوز.');
+      else voiceHint('سمعت صوت بس ما طلع نص. احچي أوضح وأقرب للمايك، أو جرّب مرة ثانية.');
+    }
   };
   try {
     r.start();
