@@ -487,14 +487,8 @@ async function send(text) {
     setBusy(false);
     addAgent(data.reply, data.tool_calls);
     const okCalls = (data.tool_calls || []).filter(c => c.result && c.result.ok);
-    const wrote = okCalls.some(c => ['record_debt', 'record_payment', 'add_customer', 'undo_last', 'undo_batch',
-      'record_purchase', 'record_supplier_payment', 'add_supplier', 'record_withdrawal'].includes(c.tool));
-    const withdrawalWrite = okCalls.some(c => c.tool === 'record_withdrawal'
-      || (c.tool === 'undo_last' && c.result.undone && c.result.undone.ledger === 'withdrawal'));
-    const supplierWrite = okCalls.some(c => ['record_purchase', 'record_supplier_payment', 'add_supplier'].includes(c.tool)
-      || (c.tool === 'undo_last' && c.result.undone && c.result.undone.ledger === 'supplier'));
-    const customerWrite = okCalls.some(c => ['record_debt', 'record_payment', 'add_customer'].includes(c.tool));
-    loadDebtors(wrote, withdrawalWrite ? 'withdrawal' : supplierWrite ? 'supplier' : customerWrite ? 'customer' : null);
+    const wrote = okCalls.some(c => WRITE_TOOLS.includes(c.tool));
+    loadDebtors(wrote, ledgerOf(okCalls));
     if (drawerKind === 'memory' && okCalls.some(c => c.tool === 'remember' || c.tool === 'forget')) renderMemory();
   } catch (e) {
     setBusy(false);
@@ -1028,6 +1022,26 @@ function closeDrawer() {
 $('drawerClose').onclick = closeDrawer;
 $('drawerBg').onclick = closeDrawer;
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawerKind) closeDrawer(); });
+
+/* ---------- which accounts tab goes with what the owner asked ---------- */
+const WRITE_TOOLS = ['record_debt', 'record_payment', 'add_customer', 'undo_last', 'undo_batch',
+  'record_purchase', 'record_supplier_payment', 'add_supplier', 'record_withdrawal'];
+const TOOL_LEDGER = {
+  find_customer: 'customer', add_customer: 'customer', record_debt: 'customer', record_payment: 'customer',
+  get_balance: 'customer', get_history: 'customer', list_debtors: 'customer', undo_batch: 'customer',
+  find_supplier: 'supplier', add_supplier: 'supplier', record_purchase: 'supplier', record_supplier_payment: 'supplier',
+  get_supplier_balance: 'supplier', list_suppliers: 'supplier',
+  record_withdrawal: 'withdrawal', list_withdrawals: 'withdrawal',
+};
+// Asked about customers -> the customers tab, suppliers -> suppliers, withdrawals -> withdrawals.
+// What was recorded beats what was only looked up; otherwise the last thing it looked at.
+// Null (e.g. a memory question) leaves the tab as it is. The tabs still change by hand.
+function ledgerOf(calls) {
+  const tabOf = c => (c.result && c.result.undone && c.result.undone.ledger) || (c.result && c.result.ledger) || TOOL_LEDGER[c.tool];
+  const writes = calls.filter(c => WRITE_TOOLS.includes(c.tool));
+  const pick = (writes.length ? writes : calls).map(tabOf).filter(t => TABS.includes(t));
+  return pick.length ? pick[pick.length - 1] : null;
+}
 
 /* ---------- ☰ menu ---------- */
 function showMenu(open) {
