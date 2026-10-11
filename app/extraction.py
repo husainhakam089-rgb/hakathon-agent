@@ -11,7 +11,8 @@ Three parts are Hussein's to write (PLAN_v1_media.md, section 1), marked "HUSSEI
     1. EXTRACTION_PROMPT           -> app/prompts.py
     2. SUBMIT_EXTRACTION_SCHEMA    -> this file
     3. match_extracted_rows()      -> this file
-Until they are written, the image feature answers with a clear "not ready" message.
+Written by Hussein (October 2026). If one is emptied again, the image feature
+answers with a clear "not ready" message.
 
 Contract the rest of the code relies on (the review table in static/index.html reads
 these field names; if you rename one, rename it there too):
@@ -66,7 +67,31 @@ class ExtractionNotReady(Exception):
 #   - "enum" for page_type, currency, type and confidence keeps the model honest.
 #   - "description" on each field is read by the model: it is part of the prompt.
 #   - amount: integer or null. amount_as_written: string, exactly as on the paper.
-SUBMIT_EXTRACTION_SCHEMA: dict | None = None
+ROW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "raw_text": {"type": "string", "description": "السطر مثل ما مكتوب بالصورة"},
+        "name": {"type": ["string", "null"], "description": "اسم الزبون، أو null إذا ما واضح"},
+        "amount": {"type": ["integer", "null"], "description": "المبلغ كرقم صحيح كامل. إذا بالدفتر رقم صغير مثل 25 فهو بالآلاف: اكتب 25000. null إذا الرقم ما واضح"},
+        "amount_as_written": {"type": ["string", "null"], "description": "الرقم مثل ما مكتوب حرفيًا، مثل 25"},
+        "currency": {"type": "string", "enum": ["IQD", "USD", "unknown"]},
+        "type": {"type": "string", "enum": ["debt", "payment", "unknown"]},
+        "date": {"type": ["string", "null"], "description": "التاريخ YYYY-MM-DD إذا مكتوب"},
+        "crossed_out": {"type": "boolean", "description": "هل السطر مشطوب؟"},
+        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+    },
+    "required": ["raw_text", "name", "amount", "currency", "type", "crossed_out", "confidence"],
+}
+SUBMIT_EXTRACTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "page_type": {"type": "string", "enum": ["debt_notebook", "receipt", "list", "other"]},
+        "rows": {"type": "array", "items": ROW_SCHEMA},
+        "unreadable_lines": {"type": "array", "items": {"type": "string"}},
+        "notes": {"type": "string"},
+    },
+    "required": ["page_type", "rows", "unreadable_lines"],
+}
 
 
 # =====================================================================
@@ -83,7 +108,20 @@ def match_extracted_rows(conn, rows: list[dict]) -> list[dict]:
     "أبو علي"). Should one exact match win over several partial ones?
     Return the same rows (same order) with "match" added. Don't write to the database.
     """
-    raise NotImplementedError
+    for row in rows:
+        name = row.get("name")
+        if not name:
+            row["match"] = {"status": "new"}
+            continue
+        found = db.find_customers(conn, name)
+        if len(found) == 1:
+            row["match"] = {"status": "existing", "customer_id": found[0]["id"]}
+        elif len(found) > 1:
+            row["match"] = {"status": "ambiguous",
+                            "candidates": [{"id": c["id"], "name": c["name"]} for c in found]}
+        else:
+            row["match"] = {"status": "new"}
+    return rows
 
 
 # =====================================================================

@@ -1,7 +1,7 @@
 """Stage 6 pipeline: upload -> extract -> review -> commit -> undo_batch.
 
-Hussein's three parts are empty on purpose (PLAN_v1_media.md section 1), so these
-tests swap in throwaway stand-ins. They test the plumbing around those parts, not them.
+Hussein's three parts are swapped for simple stand-ins here, so these tests check the
+plumbing around them; tests/test_match_extracted_rows.py checks his matching itself.
 """
 
 import pytest
@@ -109,7 +109,8 @@ def test_upload_rejects_other_files(client):
 
 # ---------- extract ----------
 
-def test_extract_says_not_ready_until_hussein_writes_his_parts(client, conn):
+def test_extract_says_not_ready_when_a_part_is_empty(client, conn, monkeypatch):
+    monkeypatch.setattr(prompts, "EXTRACTION_PROMPT", "")
     c = client(FakeLLM(PAGE))
     file_id = upload(c).json()["file_id"]
     r = c.post("/extract", json={"file_id": file_id})
