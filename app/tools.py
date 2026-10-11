@@ -288,6 +288,7 @@ class DebtTools:
         # and where it came from ("chat" typed, "voice" dictated).
         self.source_message: str | None = None
         self.source: str = "chat"
+        self.session_id: str | None = None  # the conversation; set by the agent (stage 13)
         # Chat turn counter (the agent bumps it) and, per new name, the turn it first
         # came up: add_customer only works in a LATER turn, i.e. after the owner was
         # asked "أضيفه؟" and answered. Enforced here, not only in the prompt.
@@ -348,6 +349,7 @@ class DebtTools:
         tx_id = db.add_transaction(
             self.conn, customer["id"], tx_type, value, currency,
             note=note, source_message=self.source_message, source=self.source,
+            session_id=self.session_id,
         )
         self.session_tx_ids.append(tx_id)
         after = db.get_balance(self.conn, customer["id"])
@@ -507,7 +509,8 @@ class DebtTools:
                           "المبلغ كبير، لازم تأكد ويا المستخدم وبعدين تعيد الاستدعاء بـ confirmed=true",
                           reason=reason, amount=value, currency=currency, limit=limit)
         wd_id = db.add_withdrawal(self.conn, value, currency, reason, note=note,
-                                  source_message=self.source_message, source=self.source)
+                                  source_message=self.source_message, source=self.source,
+                                  session_id=self.session_id)
         self.session_tx_ids.append(("withdrawal", wd_id))
         return {"ok": True, "ledger": "withdrawal", "withdrawal_id": wd_id, "amount": value,
                 "currency": currency, "reason": reason,

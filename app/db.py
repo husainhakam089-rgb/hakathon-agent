@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   source_message    TEXT,
   source            TEXT NOT NULL DEFAULT 'chat',
   undone            INTEGER NOT NULL DEFAULT 0,
-  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  session_id        TEXT
 );
 
 -- Stage 12: things the owner taught the agent ("الورقة = 10,000"، "أبو علي نفسه علي النجار").
@@ -64,12 +65,31 @@ CREATE TABLE IF NOT EXISTS memories (
   active            INTEGER NOT NULL DEFAULT 1,
   created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
+
+-- Stage 13: saved conversations, so the owner can go back to an old one.
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id                TEXT PRIMARY KEY,
+  title             TEXT NOT NULL,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id        TEXT NOT NULL REFERENCES chat_sessions(id),
+  role              TEXT NOT NULL CHECK (role IN ('user','assistant')),
+  text              TEXT NOT NULL,
+  tool_calls        TEXT,                    -- JSON, for "شنو سوّى الوكيل؟"
+  source            TEXT NOT NULL DEFAULT 'chat',
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_msg_session ON chat_messages(session_id);
 """
 
 # Columns added after v0: (name, definition) added to older databases on connect.
 _MIGRATIONS = [
     ("batch_id", "TEXT"),
     ("source", "TEXT NOT NULL DEFAULT 'chat'"),
+    ("session_id", "TEXT"),  # stage 13: the conversation it was recorded in (undo_last later)
 ]
 
 
@@ -91,6 +111,8 @@ def _migrate(conn) -> None:
             conn.execute(f"ALTER TABLE transactions ADD COLUMN {name} {definition}")
     if "kind" not in {r["name"] for r in conn.execute("PRAGMA table_info(customers)")}:
         conn.execute("ALTER TABLE customers ADD COLUMN kind TEXT NOT NULL DEFAULT 'customer'")
+    if "session_id" not in {r["name"] for r in conn.execute("PRAGMA table_info(withdrawals)")}:
+        conn.execute("ALTER TABLE withdrawals ADD COLUMN session_id TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_batch ON transactions(batch_id)")
     conn.commit()
 
@@ -125,12 +147,12 @@ def find_customers(conn, query: str, kind: str = "customer") -> list[dict]:
 
 def add_transaction(conn, customer_id, tx_type, amount, currency="IQD",
                     note=None, source_message=None, batch_id=None, source="chat",
-                    commit: bool = True) -> int:
+                    commit: bool = True, session_id: str | None = None) -> int:
     cur = conn.execute(
         """INSERT INTO transactions (customer_id, type, amount, currency, note, source_message,
-                                     batch_id, source)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (customer_id, tx_type, amount, currency, note, source_message, batch_id, source),
+                                     batch_id, source, session_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (customer_id, tx_type, amount, currency, note, source_message, batch_id, source, session_id),
     )
     if commit:
         conn.commit()
@@ -166,11 +188,12 @@ def reason_key(reason: str) -> str:
 
 
 def add_withdrawal(conn, amount: int, currency: str, reason: str, note=None,
-                   source_message=None, source="chat") -> int:
+                   source_message=None, source="chat", session_id: str | None = None) -> int:
     cur = conn.execute(
-        """INSERT INTO withdrawals (amount, currency, reason, reason_key, note, source_message, source)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (amount, currency, reason.strip(), reason_key(reason), note, source_message, source),
+        """INSERT INTO withdrawals (amount, currency, reason, reason_key, note, source_message, source,
+                                    session_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (amount, currency, reason.strip(), reason_key(reason), note, source_message, source, session_id),
     )
     conn.commit()
     return cur.lastrowid
@@ -238,6 +261,56 @@ def forget_memory(conn, memory_id: int) -> dict | None:
     conn.execute("UPDATE memories SET active = 0 WHERE id = ?", (memory_id,))
     conn.commit()
     return dict(row)
+
+
+# ---------- saved conversations (stage 13) ----------
+
+TITLE_CHARS = 60
+
+
+def save_turn(conn, session_id: str, user_text: str, reply: str, tool_calls: list | None = None,
+              source: str = "chat") -> None:
+    """One exchange: the owner's message and the agent's reply (+ what it did)."""
+    import json
+
+    title = " ".join(user_text.split())[:TITLE_CHARS] or "محادثة"
+    conn.execute("INSERT OR IGNORE INTO chat_sessions (id, title) VALUES (?, ?)", (session_id, title))
+    conn.execute("UPDATE chat_sessions SET updated_at = datetime('now','localtime') WHERE id = ?", (session_id,))
+    conn.execute("INSERT INTO chat_messages (session_id, role, text, source) VALUES (?, 'user', ?, ?)",
+                 (session_id, user_text, source))
+    conn.execute("INSERT INTO chat_messages (session_id, role, text, tool_calls) VALUES (?, 'assistant', ?, ?)",
+                 (session_id, reply, json.dumps(tool_calls or [], ensure_ascii=False)))
+    conn.commit()
+
+
+def list_sessions(conn, limit: int = 100) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        """SELECT s.id, s.title, s.created_at, s.updated_at, COUNT(m.id) AS messages
+           FROM chat_sessions s LEFT JOIN chat_messages m ON m.session_id = s.id
+           GROUP BY s.id ORDER BY s.updated_at DESC, s.rowid DESC LIMIT ?""", (limit,))]
+
+
+def get_messages(conn, session_id: str, last: int | None = None) -> list[dict]:
+    import json
+
+    sql = "SELECT role, text, tool_calls, created_at FROM chat_messages WHERE session_id = ? ORDER BY id"
+    rows = [dict(r) for r in conn.execute(sql, (session_id,))]
+    if last is not None:
+        rows = rows[-last:]
+    for r in rows:
+        r["tool_calls"] = json.loads(r["tool_calls"]) if r["tool_calls"] else []
+    return rows
+
+
+def session_entries(conn, session_id: str) -> list:
+    """What this conversation recorded and is not undone yet, oldest first, in the form
+    undo_last expects: a transaction id, or ("withdrawal", id)."""
+    rows = conn.execute(
+        """SELECT 'tx' AS kind, id, created_at FROM transactions WHERE session_id = ? AND undone = 0
+           UNION ALL
+           SELECT 'wd', id, created_at FROM withdrawals WHERE session_id = ? AND undone = 0
+           ORDER BY created_at, kind, id""", (session_id, session_id))
+    return [r["id"] if r["kind"] == "tx" else ("withdrawal", r["id"]) for r in rows]
 
 
 # ---------- batches (imports) ----------

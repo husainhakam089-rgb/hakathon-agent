@@ -79,6 +79,20 @@ def suppliers():
     return _ledger("supplier")
 
 
+@app.get("/sessions")
+def sessions():
+    """Saved conversations, newest first (stage 13)."""
+    with agent.lock:
+        return {"sessions": db.list_sessions(agent.conn)}
+
+
+@app.get("/sessions/{session_id}")
+def session_messages(session_id: str):
+    with agent.lock:
+        messages = db.get_messages(agent.conn, session_id)
+    return {"id": session_id, "messages": messages}
+
+
 @app.get("/memories")
 def memories():
     with agent.lock:
@@ -320,7 +334,7 @@ def import_commit(req: CommitRequest):
              "إذا شي غلط گلي 'ألغِ آخر دفعة'.")
     what = "رفعت ملف Excel/CSV" if req.source_kind == "file" else "رفعت صورة من الدفتر"
     agent.record_event(req.session_id, f"({what} وراجعت الجدول وسجلته)",
-                       f"{reply} (batch_id: {batch_id})")
+                       f"{reply} (batch_id: {batch_id})", shown=reply)
     return {"ok": True, "batch_id": batch_id, "count": len(rows), "reply": reply}
 
 

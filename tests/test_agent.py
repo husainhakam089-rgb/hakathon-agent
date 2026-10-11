@@ -190,3 +190,50 @@ def test_memories_are_in_the_instructions_every_turn(conn, tmp_path):
     assert entry in spy.systems[1]  # right after remember, same turn
     a.chat("other-session", "سجل على ابو علي ورقة")
     assert entry in spy.systems[2]  # every conversation sees it
+
+
+# ---------- saved conversations (stage 13) ----------
+
+def test_conversation_survives_a_restart(conn, tmp_path):
+    cid = db.add_customer(conn, "أبو علي")
+    debt = LLMResponse(text="", tool_calls=[call("record_debt", customer_id=cid, amount=25000, currency="IQD")])
+    a1 = Agent(conn, llm=FakeLLM(debt, LLMResponse(text="سجلت 25,000.")), log_path=None)
+    a1.chat("s1", "سجل على ابو علي 25 الف", source="voice")
+
+    # a new Agent = the app was closed and opened again
+    a2 = Agent(conn, llm=FakeLLM(LLMResponse(text="", tool_calls=[call("undo_last")]),
+                                 LLMResponse(text="لغيته.")), log_path=None)
+    out = a2.chat("s1", "شطب آخر وحدة")
+    assert out["tool_calls"][0]["result"]["ok"]  # undo still works in the reopened conversation
+    assert db.get_balance(conn, cid)["IQD"] == 0
+    sent = a2.llm.calls[0]
+    assert [m["role"] for m in sent] == ["user", "assistant", "user"]
+    assert sent[0]["text"] == "سجل على ابو علي 25 الف" and sent[1]["text"] == "سجلت 25,000."
+
+    msgs = db.get_messages(conn, "s1")
+    assert [(m["role"], m["text"]) for m in msgs] == [
+        ("user", "سجل على ابو علي 25 الف"), ("assistant", "سجلت 25,000."),
+        ("user", "شطب آخر وحدة"), ("assistant", "لغيته.")]
+    assert msgs[1]["tool_calls"][0]["tool"] == "record_debt"
+    assert conn.execute("SELECT source FROM chat_messages ORDER BY id").fetchone()[0] == "voice"
+    sessions = db.list_sessions(conn)
+    assert [(s["id"], s["title"], s["messages"]) for s in sessions] == [("s1", "سجل على ابو علي 25 الف", 4)]
+
+
+def test_undo_in_one_conversation_never_touches_another(conn):
+    cid = db.add_customer(conn, "أبو علي")
+    debt = LLMResponse(text="", tool_calls=[call("record_debt", customer_id=cid, amount=1000, currency="IQD")])
+    a = Agent(conn, llm=FakeLLM(debt, LLMResponse(text="تمام")), log_path=None)
+    a.chat("A", "سجل على ابو علي الف")
+    b = Agent(conn, llm=FakeLLM(LLMResponse(text="", tool_calls=[call("undo_last")]), LLMResponse(text="ما كو")),
+              log_path=None)
+    assert b.chat("B", "شطب آخر وحدة")["tool_calls"][0]["result"]["error"] == "nothing_to_undo"
+    assert db.get_balance(conn, cid)["IQD"] == 1000
+
+
+def test_history_is_capped_when_restoring(conn):
+    for i in range(30):
+        db.save_turn(conn, "long", f"سؤال {i}", f"جواب {i}")
+    s = Agent(conn, llm=None, log_path=None).session("long")
+    texts = [m["text"] for m in s.history()]
+    assert len(texts) == agent_mod.MAX_HISTORY_MESSAGES and texts[0] == "سؤال 20" and texts[-1] == "جواب 29"

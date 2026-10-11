@@ -120,3 +120,14 @@ def test_memories_endpoints(client, conn):
     assert c.delete(f"/memories/{mid}").json()["ok"]
     assert c.get("/memories").json()["memories"] == []
     assert c.delete(f"/memories/{mid}").status_code == 404
+
+
+def test_sessions_endpoints(client, conn):
+    db.save_turn(conn, "old", "سجل على ابو علي 25 الف", "تمام", [{"tool": "record_debt", "input": {}, "result": {"ok": True}}])
+    db.save_turn(conn, "new", "شكد مجموع الديون؟", "65,000")
+    c = client()
+    s = c.get("/sessions").json()["sessions"]
+    assert [x["id"] for x in s] == ["new", "old"] and s[1]["title"] == "سجل على ابو علي 25 الف"
+    m = c.get("/sessions/old").json()["messages"]
+    assert [x["role"] for x in m] == ["user", "assistant"] and m[1]["tool_calls"][0]["tool"] == "record_debt"
+    assert c.get("/sessions/nothing").json()["messages"] == []

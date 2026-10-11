@@ -64,10 +64,24 @@ def _with_done_note(reply: str, tool_log: list[dict]) -> str:
 
 
 class Session:
-    def __init__(self, conn):
+    def __init__(self, conn, session_id: str | None = None):
         self.tools = DebtTools(conn)
+        self.tools.session_id = session_id  # stamped on every entry it records
         # Completed turns; each turn is a list of neutral messages (see llm.py).
         self.turns: list[list[dict]] = []
+        if session_id:
+            self._restore(conn, session_id)
+
+    def _restore(self, conn, session_id: str) -> None:
+        """Back to a saved conversation (stage 13): its last messages as history (text
+        only), and what it recorded and can still undo."""
+        messages = db.get_messages(conn, session_id, last=MAX_HISTORY_MESSAGES)
+        if messages and messages[0]["role"] == "assistant":
+            messages = messages[1:]  # history must start with the owner
+        for user, reply in zip(messages[0::2], messages[1::2]):
+            self.turns.append([{"role": "user", "text": user["text"]},
+                               {"role": "assistant", "text": reply["text"], "tool_calls": []}])
+        self.tools.session_tx_ids = db.session_entries(conn, session_id)
 
     def history(self) -> list[dict]:
         return [m for turn in self.turns for m in turn]
@@ -97,10 +111,16 @@ class Agent:
 
     def session(self, session_id: str) -> Session:
         if session_id not in self.sessions:
-            self.sessions[session_id] = Session(self.conn)
+            self.sessions[session_id] = Session(self.conn, session_id)
         return self.sessions[session_id]
 
-    def record_event(self, session_id: str, what_happened: str, reply: str) -> None:
+    def _save(self, session_id: str, user_text: str, reply: str, tool_log: list, source: str) -> None:
+        try:
+            db.save_turn(self.conn, session_id, user_text, reply, tool_log, source)
+        except Exception:  # saving the chat must never break the chat
+            log.exception("Could not save the conversation")
+
+    def record_event(self, session_id: str, what_happened: str, reply: str, shown: str | None = None) -> None:
         """Put something done outside the chat (e.g. an image import) into the
         session history, so the agent can refer to it ("ألغِ آخر دفعة")."""
         with self.lock:
@@ -108,6 +128,7 @@ class Agent:
                 {"role": "user", "text": what_happened},
                 {"role": "assistant", "text": reply, "tool_calls": []},
             ])
+            self._save(session_id, what_happened, shown or reply, [], "import")
 
     def reset(self, session_id: str) -> None:
         self.sessions.pop(session_id, None)
@@ -160,6 +181,7 @@ class Agent:
 
         turn.append({"role": "assistant", "text": reply, "tool_calls": []})
         session.commit(turn)
+        self._save(session_id, message, reply, tool_log, source)
         return {"reply": reply, "tool_calls": tool_log}
 
     def _run_tool(self, session: Session, session_id: str, message: str, call) -> dict:

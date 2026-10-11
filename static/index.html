@@ -239,6 +239,7 @@ tr.flash td { animation: flash 1.6s ease-out; }
       <p>اكتب مثل ما تحچي: "سجل على ابو علي 25 الف"</p>
     </div>
     <div class="spacer"></div>
+    <button class="icon-btn" id="sessionsBtn" title="المحادثات القديمة">🗂<span class="lbl"> المحادثات</span></button>
     <button class="icon-btn" id="memoryBtn" title="الأشياء اللي علّمتها للوكيل">🧠<span class="lbl"> الذاكرة</span></button>
     <button class="icon-btn" id="newChat" title="محادثة جديدة (البيانات تبقى)">＋<span class="lbl"> محادثة جديدة</span></button>
     <button class="icon-btn" id="theme" title="فاتح / غامق">☀︎</button>
@@ -336,7 +337,9 @@ applyTheme(store.get('debt_theme') || 'dark');
 $('theme').onclick = () => applyTheme(document.documentElement.classList.contains('light') ? 'dark' : 'light');
 
 /* ---------- chat ---------- */
-let sessionId = newId();
+// The current conversation; kept across page refreshes (stage 13).
+let sessionId = store.get('debt_session') || newId();
+store.set('debt_session', sessionId);
 let busy = false;
 
 const TOOL_LABELS = {
@@ -961,6 +964,7 @@ $('chips').onclick = e => { if (e.target.classList.contains('chip')) send(e.targ
 $('newChat').onclick = () => {
   if (busy) return;
   sessionId = newId();
+  store.set('debt_session', sessionId);
   $('messages').innerHTML = '<div class="welcome" id="welcome">بدينا محادثة جديدة. البيانات محفوظة مثل ما هي.</div>';
 };
 
@@ -983,6 +987,44 @@ $('drawerClose').onclick = closeDrawer;
 $('drawerBg').onclick = closeDrawer;
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawerKind) closeDrawer(); });
 
+/* ---------- old conversations (stage 13) ---------- */
+function sessionTime(s) {
+  return shortDate(s);
+}
+
+async function openConversation(id, quiet) {
+  try {
+    const data = await (await fetch('/sessions/' + encodeURIComponent(id))).json();
+    const msgs = data.messages || [];
+    if (!msgs.length && quiet) return;  // a fresh conversation: keep the welcome
+    sessionId = id;
+    store.set('debt_session', id);
+    $('messages').innerHTML = '';
+    for (const m of msgs) {
+      if (m.role === 'user') addUser(m.text);
+      else addAgent(m.text, m.tool_calls || []);
+    }
+    if (!msgs.length) $('messages').innerHTML = '<div class="welcome" id="welcome">محادثة فارغة.</div>';
+  } catch (e) {
+    if (!quiet) addAgent('ما گدرت أفتح المحادثة.', [], true);
+  }
+}
+
+async function renderSessions() {
+  const body = $('drawerBody');
+  try {
+    const data = await (await fetch('/sessions')).json();
+    const items = data.sessions || [];
+    body.innerHTML = `<p class="hint">كل محادثة محفوظة. اضغط وحدة حتى ترجع بيها وتكمّل، و"شطب آخر وحدة" تشتغل بيها حتى بعد أيام.</p>` +
+      (items.length ? items.map(s => `<div class="item click ${s.id === sessionId ? 'on' : ''}" data-session="${esc(s.id)}">
+          <div class="txt">${esc(s.title)}<small>${esc(sessionTime(s.updated_at))} · ${fmt(Math.ceil(s.messages / 2))} رسالة${s.id === sessionId ? ' · <b>هسه</b>' : ''}</small></div></div>`).join('')
+        : '<p class="hint">ما كو محادثات محفوظة بعد.</p>');
+  } catch (e) {
+    body.innerHTML = '<p class="hint">ما گدرت أجيب المحادثات.</p>';
+  }
+}
+$('sessionsBtn').onclick = () => { openDrawer('sessions', '🗂 المحادثات'); renderSessions(); };
+
 /* ---------- memory (stage 12): what the owner taught the agent ---------- */
 async function renderMemory() {
   const body = $('drawerBody');
@@ -1000,6 +1042,12 @@ async function renderMemory() {
 }
 $('memoryBtn').onclick = () => { openDrawer('memory', '🧠 ذاكرة الوكيل'); renderMemory(); };
 $('drawerBody').addEventListener('click', async e => {
+  const conv = e.target.closest('[data-session]');
+  if (conv) {
+    if (busy) return;
+    closeDrawer();
+    return openConversation(conv.dataset.session);
+  }
   const id = e.target.dataset && e.target.dataset.forget;
   if (!id) return;
   e.target.disabled = true;
@@ -1101,6 +1149,7 @@ async function loadDebtors(flash, showTab) {
 }
 
 loadDebtors(false);
+openConversation(sessionId, true);  // after a refresh, the conversation is still there
 $('input').focus();
 </script>
 </body>
