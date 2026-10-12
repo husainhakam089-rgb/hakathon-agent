@@ -117,6 +117,14 @@ form .attach-btn:hover { border-color: var(--accent-border); }
 .drawer .item button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 2px 6px; }
 .drawer .item button:hover { color: var(--bad); }
 .drawer .item.click { cursor: pointer; }
+.drawer .item a.dl { color: var(--accent-text); text-decoration: none; font-size: 13px; white-space: nowrap; align-self: center; }
+.drawer .actions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.drawer .actions .big { display: block; text-align: center; padding: 12px; border-radius: 12px; font: inherit; font-size: 14px;
+  font-weight: 600; cursor: pointer; text-decoration: none; border: 1px solid var(--accent-border); }
+.drawer .actions .primary { background: var(--accent); color: #0f172a; border-color: var(--accent); }
+.drawer .actions .secondary { background: var(--accent-soft); color: var(--accent-text); }
+.drawer .ok { color: var(--good); font-size: 13px; }
+.drawer .folder { direction: ltr; text-align: left; font-size: 12px; color: var(--faint); word-break: break-all; }
 .drawer .item.click:hover, .drawer .item.on { border-color: var(--accent-border); background: var(--accent-soft); }
 
 /* ---------- ledgers tabs (stage 10) ---------- */
@@ -277,6 +285,7 @@ main.ledger-off .debtors { display: none; }
         <button role="menuitem" id="ledgerBtn" aria-expanded="false"><span class="ic">📒</span><span id="ledgerLbl">افتح الحسابات</span><i class="dot"></i></button>
         <button role="menuitem" id="sessionsBtn"><span class="ic">🗂</span>المحادثات القديمة</button>
         <button role="menuitem" id="memoryBtn"><span class="ic">🧠</span>ذاكرة الوكيل</button>
+        <button role="menuitem" id="backupBtn"><span class="ic">💾</span>نسخة احتياطية و Excel</button>
         <button role="menuitem" id="newChat"><span class="ic">＋</span>محادثة جديدة</button>
         <button role="menuitem" id="theme"><span class="ic" id="themeIcon">☀︎</span><span id="themeLbl">الوضع الفاتح</span></button>
       </div>
@@ -1140,6 +1149,41 @@ $('drawerBody').addEventListener('click', async e => {
   e.target.disabled = true;
   await fetch('/memories/' + id, {method: 'DELETE'});
   renderMemory();
+});
+
+/* ---------- backups and Excel ---------- */
+async function renderBackups(note) {
+  const body = $('drawerBody');
+  try {
+    const data = await (await fetch('/backups')).json();
+    const items = data.backups || [];
+    body.innerHTML = `<p class="hint">البرنامج يسوي <b>نسخة من دفترك كل يوم وحده</b>، ويخلي آخر 30 يوم.
+      إذا خربت الحاسبة أو انمسح الدفتر، ترجعه من نسخة. الأحسن تنقل نسخة لفلاشة أو لموبايلك كل أسبوع.</p>
+      <div class="actions">
+        <button class="big primary" id="backupNow">💾 سوّي نسخة هسه</button>
+        <a class="big secondary" href="/export.xlsx" download>📊 نزّل الحسابات Excel</a>
+      </div>
+      ${note || ''}
+      <p class="hint">النسخ محفوظة بـ:</p><p class="folder">${esc(data.folder)}</p>` +
+      (items.length ? items.map(b => `<div class="item"><div class="txt">${esc(shortDate(b.created_at))}
+          <small>${b.manual ? 'يدوية' : 'يومية'} · ${fmtSize(b.size)}</small></div>
+          <a class="dl" href="/backups/${encodeURIComponent(b.name)}" download title="نزّل هالنسخة">⬇ نزّل</a></div>`).join('')
+        : '<p class="hint">ما كو نسخ بعد.</p>');
+  } catch (e) {
+    body.innerHTML = '<p class="hint">ما گدرت أجيب النسخ.</p>';
+  }
+}
+$('backupBtn').onclick = () => { openDrawer('backups', '💾 النسخ الاحتياطية'); renderBackups(); };
+$('drawerBody').addEventListener('click', async e => {
+  if (e.target.id !== 'backupNow') return;
+  e.target.disabled = true;
+  e.target.textContent = 'دا أسوي نسخة...';
+  try {
+    const data = await (await fetch('/backups', {method: 'POST'})).json();
+    renderBackups(data.ok ? '<p class="ok">✓ انحفظت نسخة جديدة.</p>' : `<p class="hint">${esc(data.message || 'ما گدرت أسوي النسخة.')}</p>`);
+  } catch (err) {
+    renderBackups('<p class="hint">ما گدرت أسوي النسخة.</p>');
+  }
 });
 
 /* ---------- ledgers: customers (owed to me) / suppliers (I owe) ---------- */

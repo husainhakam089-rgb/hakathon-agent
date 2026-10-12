@@ -2,19 +2,21 @@
 
 import os
 import re
+import threading
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 load_dotenv()
 
 from app import db  # noqa: E402  (after load_dotenv: DB_PATH comes from .env)
-from app import extraction, spreadsheet  # noqa: E402
+from app import backup, export, extraction, spreadsheet  # noqa: E402
 from app.agent import Agent  # noqa: E402
 from app.llm import LLMError  # noqa: E402
 
@@ -24,7 +26,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "8"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "9"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -32,7 +34,33 @@ FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pd
 SHEET_KINDS = {"xlsx", "csv"}
 FILE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
-app = FastAPI(title="دفتر الديون")
+BACKUP_CHECK_SECONDS = 3600
+
+
+def _daily_backups(stop: threading.Event) -> None:
+    """Today's copy of the notebook when the program starts, then checked every hour
+    (so a program left running for days still makes one each day)."""
+    while True:
+        try:
+            with agent.lock:
+                made = backup.ensure_daily(agent.conn)
+            if made:
+                print(f"نسخة احتياطية: {made}")
+        except Exception as e:  # a full disk or a missing USB stick must not stop the shop
+            print(f"ما گدرت أسوي نسخة احتياطية: {e}")
+        if stop.wait(BACKUP_CHECK_SECONDS):
+            return
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    stop = threading.Event()
+    threading.Thread(target=_daily_backups, args=(stop,), daemon=True).start()
+    yield
+    stop.set()
+
+
+app = FastAPI(title="دفتر الديون", lifespan=lifespan)
 agent = Agent(db.connect())
 
 
@@ -117,6 +145,42 @@ def withdrawals():
     rows = [{"id": r["reason"], "name": r["reason"], "balances": r["totals"], "last_activity": r["last"]}
             for r in month["by_reason"]]
     return {"debtors": rows, "totals": month["totals"], "today": today["totals"], "latest": month["latest"]}
+
+
+# ---------- backups and Excel export ----------
+
+@app.get("/backups")
+def backups():
+    return {"folder": str(backup.backup_dir()), "backups": backup.list_backups()}
+
+
+@app.post("/backups")
+def backup_now():
+    try:
+        with agent.lock:
+            path = backup.make_backup(agent.conn)
+    except OSError as e:
+        return _error(500, f"ما گدرت أسوي النسخة: {e}")
+    return {"ok": True, "name": path.name, "folder": str(path.parent)}
+
+
+@app.get("/backups/{name}")
+def download_backup(name: str):
+    path = backup.backup_path(name)
+    if not path:
+        return _error(404, "ما لگيت هالنسخة.")
+    return FileResponse(path, media_type="application/octet-stream", filename=name)
+
+
+@app.get("/export.xlsx")
+def export_excel():
+    from datetime import date
+
+    with agent.lock:
+        data = export.build_workbook(agent.conn)
+    name = f"debt-{date.today():%Y-%m-%d}.xlsx"
+    return Response(data, media_type=FILE_KINDS["xlsx"],
+                    headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
 # ---------- stage 6: photos of the notebook ----------
