@@ -158,6 +158,25 @@ CREATE TABLE IF NOT EXISTS sale_lines (
   line_total        INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sale_lines_sale ON sale_lines(sale_id);
+
+-- Stage 19: the agent reminds by itself. Settings are small key/values.
+CREATE TABLE IF NOT EXISTS settings (
+  key               TEXT PRIMARY KEY,
+  value             TEXT NOT NULL
+);
+-- Fixed monthly expenses (rent, generator, salaries): on their day the owner is asked
+-- "record it?"; nothing is recorded without a yes. done_month: 'YYYY-MM' recorded or skipped.
+CREATE TABLE IF NOT EXISTS recurring_expenses (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  reason            TEXT NOT NULL,
+  amount            INTEGER NOT NULL CHECK (amount > 0),
+  currency          TEXT NOT NULL DEFAULT 'IQD' CHECK (currency IN ('IQD','USD')),
+  day_of_month      INTEGER NOT NULL CHECK (day_of_month BETWEEN 1 AND 31),
+  from_drawer       INTEGER NOT NULL DEFAULT 1,
+  done_month        TEXT,
+  active            INTEGER NOT NULL DEFAULT 1,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
 """
 
 # Columns added after v0: (name, definition) added to older databases on connect.
@@ -766,6 +785,119 @@ def sales_summary(conn, period: str = "month", item_id: int | None = None) -> di
         by_payment[r["payment"]][r["currency"]] = r["s"]
     totals = {c: sum(by_payment[p][c] for p in by_payment) for c in CURRENCIES}
     return {"period": period, "items": items, "by_payment": by_payment, "totals": totals}
+
+
+# ---------- reminders and alerts (stage 19) ----------
+
+DEFAULT_SETTINGS = {"drawer_hour": "21", "overdue_days": "30"}
+
+
+def get_setting(conn, key: str) -> str:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else DEFAULT_SETTINGS[key]
+
+
+def set_setting(conn, key: str, value) -> None:
+    conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                 (key, str(value)))
+    conn.commit()
+
+
+def _now(now=None):
+    from datetime import datetime
+    return now or datetime.now()
+
+
+def add_recurring(conn, reason: str, amount: int, currency: str, day: int, from_drawer: bool = True) -> int:
+    cur = conn.execute(
+        "INSERT INTO recurring_expenses (reason, amount, currency, day_of_month, from_drawer) VALUES (?, ?, ?, ?, ?)",
+        (reason.strip(), amount, currency, day, int(bool(from_drawer))))
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_recurring(conn, rec_id: int):
+    row = conn.execute("SELECT * FROM recurring_expenses WHERE id = ?", (rec_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_recurring(conn) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        "SELECT * FROM recurring_expenses WHERE active = 1 ORDER BY day_of_month, id")]
+
+
+def remove_recurring(conn, rec_id: int) -> None:
+    conn.execute("UPDATE recurring_expenses SET active = 0 WHERE id = ?", (rec_id,))
+    conn.commit()
+
+
+def mark_recurring_done(conn, rec_id: int, now=None) -> None:
+    conn.execute("UPDATE recurring_expenses SET done_month = ? WHERE id = ?", (_now(now).strftime("%Y-%m"), rec_id))
+    conn.commit()
+
+
+def recurring_due(conn, now=None) -> list[dict]:
+    """Fixed expenses whose day has come this month and that were not recorded or skipped
+    yet. Day 31 in a 30-day month is the last day."""
+    import calendar
+    now = _now(now)
+    last_day = calendar.monthrange(now.year, now.month)[1]
+    month = now.strftime("%Y-%m")
+    return [r for r in list_recurring(conn)
+            if min(r["day_of_month"], last_day) <= now.day and r["done_month"] != month]
+
+
+def overdue_debts(conn, days: int | None = None, now=None) -> list[dict]:
+    """Customers who owe money and paid nothing for `days` days (counted from their last
+    payment, or from their first unpaid debt if they never paid). Oldest first."""
+    days = int(days if days is not None else get_setting(conn, "overdue_days"))
+    now = _now(now)
+    out = []
+    for c in all_balances(conn, "customer"):
+        if not any(v > 0 for v in c["balances"].values()):
+            continue
+        row = conn.execute(
+            """SELECT MAX(CASE WHEN type = 'payment' THEN created_at END) last_payment,
+                      MIN(CASE WHEN type = 'debt' THEN created_at END) first_debt
+               FROM transactions WHERE customer_id = ? AND undone = 0""", (c["id"],)).fetchone()
+        since = row["last_payment"] or row["first_debt"]
+        if not since:
+            continue
+        from datetime import datetime
+        waited = (now - datetime.fromisoformat(since)).days
+        if waited >= days:
+            out.append({"id": c["id"], "name": c["name"], "balance": c["balances"], "days": waited,
+                        "last_payment": row["last_payment"]})
+    out.sort(key=lambda r: r["days"], reverse=True)
+    return out
+
+
+def drawer_counted_today(conn, now=None) -> bool:
+    day = _now(now).strftime("%Y-%m-%d")
+    return conn.execute("SELECT 1 FROM drawer_counts WHERE undone = 0 AND kind = 'close' AND date(created_at) = ?",
+                        (day,)).fetchone() is not None
+
+
+def recent_duplicate(conn, customer_id: int, tx_type: str, amount: int, currency: str, minutes: int = 10):
+    """The same entry for the same party within the last few minutes (a message sent twice)."""
+    row = conn.execute(
+        f"""SELECT id, created_at FROM transactions WHERE customer_id = ? AND type = ? AND amount = ? AND currency = ?
+            AND undone = 0 AND created_at >= datetime('now','localtime','-{int(minutes)} minutes')
+            ORDER BY id DESC LIMIT 1""", (customer_id, tx_type, amount, currency)).fetchone()
+    return dict(row) if row else None
+
+
+def alerts(conn, now=None) -> dict:
+    """Everything the agent should bring up by itself, worked out by code."""
+    now = _now(now)
+    hour = int(get_setting(conn, "drawer_hour"))
+    return {
+        "drawer_not_counted": now.hour >= hour and not drawer_counted_today(conn, now),
+        "drawer_hour": hour,
+        "recurring_due": recurring_due(conn, now),
+        "overdue": overdue_debts(conn, None, now),
+        "overdue_days": int(get_setting(conn, "overdue_days")),
+    }
 
 
 # ---------- batches (imports) ----------

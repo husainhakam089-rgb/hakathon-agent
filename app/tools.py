@@ -355,6 +355,57 @@ TOOL_SCHEMAS = [
             "properties": {"limit": {"type": "integer", "default": 7}},
         },
     },
+    # ----- reminders and alerts (stage 19) -----
+    {
+        "name": "get_alerts",
+        "description": "شنو لازم ينتبهله صاحب المحل هسه: الجرار ما انعد بعد الساعة المحددة، صرفيات ثابتة موعدها اليوم "
+                       "أو فات وما انسجلت، وزبائن عليهم دين وما سددوا من مدة.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "add_recurring_expense",
+        "description": "صرفية ثابتة كل شهر (إيجار، مولدة، راتب عامل): بيومها يذكّر صاحب المحل ويسأله أسجلها؟ "
+                       "بس لما صاحب المحل يطلبها: \"الإيجار 250 ألف كل شهر يوم 1\".",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reason": {"type": "string"},
+                "amount": {"type": "integer"},
+                "currency": {"type": "string", "enum": ["IQD", "USD"]},
+                "day_of_month": {"type": "integer", "description": "يوم الشهر 1-31"},
+                "from_drawer": {"type": "boolean", "description": "false إذا گال يدفعها مو من الجرار"},
+            },
+            "required": ["reason", "amount", "currency", "day_of_month"],
+        },
+    },
+    {
+        "name": "list_recurring_expenses",
+        "description": "الصرفيات الثابتة الشهرية ويا أرقامها، وأي وحدة انسجلت هالشهر.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "remove_recurring_expense",
+        "description": "يشيل صرفية ثابتة من القائمة برقمها (ما يمسح السحوبات اللي انسجلت قبل).",
+        "input_schema": {"type": "object", "properties": {"recurring_id": {"type": "integer"}}, "required": ["recurring_id"]},
+    },
+    {
+        "name": "record_recurring_expense",
+        "description": "يسجل صرفية ثابتة لهالشهر كسحب، بس بعد ما صاحب المحل يگول اي (\"اي سجل الإيجار\"). skip=true = مو هالشهر.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"recurring_id": {"type": "integer"}, "skip": {"type": "boolean"}},
+            "required": ["recurring_id"],
+        },
+    },
+    {
+        "name": "set_reminders",
+        "description": "يغير إعدادات التنبيه: drawer_hour = الساعة اللي بعدها يذكّر بعدّ الجرار (0-23)، "
+                       "overdue_days = بعد كم يوم بدون تسديد يعتبر الدين متأخر.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"drawer_hour": {"type": "integer"}, "overdue_days": {"type": "integer"}},
+        },
+    },
     # ----- memory (stage 12): things the owner teaches -----
     {
         "name": "remember",
@@ -399,6 +450,9 @@ _OWNER_TOOK = re.compile(_LEAD + r"(?:اخذت|أخذت|خذيت)\s+(?:من(?!\s
 _TEACHING = re.compile(r"تذكر|تذكّر|احفظ|احفض|خلي\s*(?:ب|في)\s*بالك|من\s*هسه|من\s*الآن|من\s*الان|اعتبر|يعني|نفسه|نفسها|"
                        r"هو\s+نفس|هي\s+نفس|لا\s*تنسى|انتبه\s+إن|انتبه\s+ان|سجل\s+ببالك|عندنا\s+.+\s+معناها")
 
+
+# add_recurring_expense only when the owner's message says it repeats (stage 19).
+_MONTHLY = re.compile(r"كل\s*شهر|شهري|شهرية|بالشهر|ثابت|ثابتة|ذكرني|ذكّرني|تذكرني")
 
 # add_item right away only when the owner's own message asks to add an item (stage 17).
 _ADD_ITEM = re.compile(r"ضيف|اضف|أضف|إضافة|اضافة|سجل\s+مادة|مادة\s+جديدة|صنف\s+جديد|نزل\s+مادة")
@@ -460,6 +514,9 @@ class DebtTools:
         # asked "أضيفه؟" and answered. Enforced here, not only in the prompt.
         self.turn = 0
         self._new_name_turn: dict[str, int] = {}
+        # Entries made in this message: two equal lines in ONE message ("دفع 10 ودفع 10") are
+        # not a resent message. The agent clears it each turn.
+        self._turn_entries: set[int] = set()
 
     # ----- dispatcher -----
 
@@ -503,6 +560,14 @@ class DebtTools:
         if currency not in db.CURRENCIES:
             return _error("invalid_currency", "العملة لازم تكون IQD أو USD")
 
+        if not confirmed:
+            dup = db.recent_duplicate(self.conn, customer["id"], tx_type, value, currency)
+            if dup and dup["id"] not in self._turn_entries:
+                return _error(
+                    "possible_duplicate",
+                    f"نفس القيد ({customer['name']}، {value:,}) انسجل قبل دقايق ({dup['created_at'][11:16]}). لا تسجل. "
+                    "اسأل صاحب المحل: 'سجلتها قبل شوية، هاي دفعة ثانية لو نفسها؟' وإذا گال ثانية عيد بـ confirmed=true.",
+                    customer_name=customer["name"], amount=value, currency=currency, earlier_at=dup["created_at"])
         limit = self.large_amount_iqd if currency == "IQD" else USD_LARGE_AMOUNT
         if value > limit and not confirmed:
             return _error(
@@ -518,6 +583,7 @@ class DebtTools:
             session_id=self.session_id, from_drawer=from_drawer is not False,
         )
         self.session_tx_ids.append(tx_id)
+        self._turn_entries.add(tx_id)
         after = db.get_balance(self.conn, customer["id"])
 
         if kind == "supplier":
@@ -881,6 +947,79 @@ class DebtTools:
     def tool_drawer_history(self, limit=7):
         limit = max(1, min(_as_int(limit) or 7, 60))
         return {"ok": True, "ledger": "drawer", "closes": db.drawer_closes(self.conn, limit)}
+
+    # ----- reminders and alerts -----
+
+    def tool_get_alerts(self):
+        a = db.alerts(self.conn)
+        return {"ok": True, **a, "overdue": a["overdue"][:10], "overdue_count": len(a["overdue"])}
+
+    def tool_add_recurring_expense(self, reason, amount, currency="IQD", day_of_month=1, from_drawer=True):
+        reason = " ".join(str(reason or "").split())
+        value, day = _as_int(amount), _as_int(day_of_month)
+        if not reason:
+            return _error("reason_required", "على شنو هالصرفية؟")
+        if value is None or value <= 0:
+            return _error("invalid_amount", "المبلغ لازم يكون رقم صحيح أكبر من صفر")
+        if day is None or not 1 <= day <= 31:
+            return _error("invalid_day", "يوم الشهر لازم يكون من 1 لـ 31")
+        currency = (currency or "IQD").upper()
+        if currency not in db.CURRENCIES:
+            return _error("invalid_currency", "العملة لازم تكون IQD أو USD")
+        if not _MONTHLY.search(self.source_message or ""):
+            return _error("ask_first", "صاحب المحل ما طلب صرفية ثابتة. اسأله: 'أخليها صرفية ثابتة كل شهر وأذكّرك بيها؟'")
+        rec_id = db.add_recurring(self.conn, reason, value, currency, day, from_drawer is not False)
+        return {"ok": True, "recurring_id": rec_id, "reason": reason, "amount": value, "currency": currency,
+                "day_of_month": day, "due_now": any(r["id"] == rec_id for r in db.recurring_due(self.conn))}
+
+    def tool_list_recurring_expenses(self):
+        from datetime import datetime
+        month = datetime.now().strftime("%Y-%m")
+        rows = [{**{k: r[k] for k in ("id", "reason", "amount", "currency", "day_of_month")},
+                 "done_this_month": r["done_month"] == month} for r in db.list_recurring(self.conn)]
+        return {"ok": True, "count": len(rows), "recurring": rows}
+
+    def tool_remove_recurring_expense(self, recurring_id):
+        rec = db.get_recurring(self.conn, _as_int(recurring_id)) if _as_int(recurring_id) is not None else None
+        if not rec or not rec["active"]:
+            return _error("recurring_not_found", "ما لگيت هالصرفية. شوف list_recurring_expenses.")
+        db.remove_recurring(self.conn, rec["id"])
+        return {"ok": True, "removed": {"id": rec["id"], "reason": rec["reason"], "amount": rec["amount"]}}
+
+    def tool_record_recurring_expense(self, recurring_id, skip=False):
+        from datetime import datetime
+        rec = db.get_recurring(self.conn, _as_int(recurring_id)) if _as_int(recurring_id) is not None else None
+        if not rec or not rec["active"]:
+            return _error("recurring_not_found", "ما لگيت هالصرفية. شوف list_recurring_expenses.")
+        if rec["done_month"] == datetime.now().strftime("%Y-%m"):
+            return _error("already_done", f"{rec['reason']} انسجلت (أو انتركت) هالشهر من قبل.")
+        if skip:
+            db.mark_recurring_done(self.conn, rec["id"])
+            return {"ok": True, "skipped": True, "reason": rec["reason"]}
+        result = self.tool_record_withdrawal(rec["amount"], rec["currency"], rec["reason"],
+                                             note="صرفية ثابتة", confirmed=True, from_drawer=bool(rec["from_drawer"]))
+        if result.get("ok"):
+            db.mark_recurring_done(self.conn, rec["id"])
+            result["recurring_id"] = rec["id"]
+        return result
+
+    def tool_set_reminders(self, drawer_hour=None, overdue_days=None):
+        changed = {}
+        if drawer_hour is not None:
+            h = _as_int(drawer_hour)
+            if h is None or not 0 <= h <= 23:
+                return _error("invalid_hour", "الساعة لازم تكون من 0 لـ 23 (مثلًا 21 = 9 بالليل)")
+            db.set_setting(self.conn, "drawer_hour", h)
+            changed["drawer_hour"] = h
+        if overdue_days is not None:
+            d = _as_int(overdue_days)
+            if d is None or not 1 <= d <= 365:
+                return _error("invalid_days", "عدد الأيام لازم يكون من 1 لـ 365")
+            db.set_setting(self.conn, "overdue_days", d)
+            changed["overdue_days"] = d
+        if not changed:
+            return _error("nothing_to_change", "شنو أغير؟ ساعة تذكير الجرار لو أيام الدين المتأخر؟")
+        return {"ok": True, **changed}
 
     # ----- memory -----
 

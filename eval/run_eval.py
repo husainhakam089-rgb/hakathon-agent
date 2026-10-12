@@ -59,6 +59,16 @@ def build_db(base: dict, extra: dict):
         wd_id = db.add_withdrawal(conn, amount, currency, reason)
         if rest and rest[0]:
             session_txs.append(("withdrawal", wd_id))
+    # The seeded entries are the notebook's past, not something typed a minute ago (else the
+    # stage 19 duplicate check would see "سجل على ابو علي 25 الف" as a resent message).
+    conn.execute("UPDATE transactions SET created_at = datetime('now','localtime','-2 days')")
+    # stage 19: customers who paid nothing for long; entries made a minute ago (a resent message?)
+    for name in extra.get("overdue", []):
+        conn.execute("UPDATE transactions SET created_at = datetime('now','localtime','-45 days') WHERE customer_id = ?",
+                     (ids[name],))
+    conn.commit()
+    for name, tx_type, amount, currency in extra.get("just_now", []):
+        db.add_transaction(conn, ids[name], tx_type, amount, currency)
     # stage 15: a day at the drawer. The opening covers everything above (old balances),
     # then the day's own entries, then optionally a close.
     day = extra.get("drawer_day")
@@ -139,6 +149,10 @@ def check(case: dict, result: dict, conn, ids: dict, before_max_id: int, seeded:
             got_sales.append([sale["payment"], sale["total"], who, {l["name"]: l["qty"] for l in sale["lines"]}])
         if got_sales != exp["sales"]:
             failures.append(f"البيع: المتوقع {exp['sales'] or 'ولا بيعة'}، الموجود {got_sales or 'ولا بيعة'}")
+    if "recurring_added" in exp:
+        n = conn.execute("SELECT COUNT(*) FROM recurring_expenses WHERE active = 1").fetchone()[0]
+        if n != exp["recurring_added"]:
+            failures.append(f"الصرفيات الثابتة: المتوقع {exp['recurring_added']}، الموجود {n}")
     if "items_added" in exp:
         n = conn.execute("SELECT COUNT(*) FROM items WHERE id > ?", (case.get("_before_it", 0),)).fetchone()[0]
         if n != exp["items_added"]:

@@ -26,7 +26,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "12"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "13"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -257,6 +257,85 @@ def sale(req: SaleRequest):
 def sales_today():
     with agent.lock:
         return {"recent": db.recent_sales(agent.conn, 8), "today": db.sales_summary(agent.conn, "today")}
+
+
+# ---------- stage 19: reminders and alerts ----------
+
+class RecurringRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=60)
+    amount: int = Field(gt=0, le=1_000_000_000)
+    currency: Literal["IQD", "USD"] = "IQD"
+    day_of_month: int = Field(ge=1, le=31)
+    from_drawer: bool = True
+
+
+class RecurringAction(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    skip: bool = False
+
+
+class SettingsRequest(BaseModel):
+    drawer_hour: int | None = Field(default=None, ge=0, le=23)
+    overdue_days: int | None = Field(default=None, ge=1, le=365)
+
+
+def _settings() -> dict:
+    return {k: int(db.get_setting(agent.conn, k)) for k in db.DEFAULT_SETTINGS}
+
+
+@app.get("/alerts")
+def alerts():
+    with agent.lock:
+        return db.alerts(agent.conn)
+
+
+@app.get("/recurring")
+def recurring():
+    with agent.lock:
+        return {"recurring": db.list_recurring(agent.conn), "settings": _settings()}
+
+
+@app.post("/recurring")
+def add_recurring(req: RecurringRequest):
+    with agent.lock:
+        rid = db.add_recurring(agent.conn, " ".join(req.reason.split()), req.amount, req.currency, req.day_of_month,
+                               req.from_drawer)
+        return {"ok": True, "recurring": db.get_recurring(agent.conn, rid)}
+
+
+@app.delete("/recurring/{rec_id}")
+def remove_recurring(rec_id: int):
+    with agent.lock:
+        if not db.get_recurring(agent.conn, rec_id):
+            return _error(404, "ما لگيت هالصرفية.")
+        db.remove_recurring(agent.conn, rec_id)
+    return {"ok": True}
+
+
+@app.post("/recurring/{rec_id}/record")
+def record_recurring(rec_id: int, req: RecurringAction):
+    """The owner said yes (or "not this month") to a fixed expense from the alerts."""
+    with agent.lock:
+        tools = agent.session(req.session_id).tools
+        tools.source, tools.source_message = "screen", None
+        result = tools.execute("record_recurring_expense", {"recurring_id": rec_id, "skip": req.skip})
+    if not result.get("ok"):
+        return JSONResponse(result, status_code=422)
+    if result.get("skipped"):
+        return {**result, "reply": f"تمام، {result['reason']} ما تنسجل هالشهر."}
+    reply = f"سجلت سحب {_money(result['amount'], result['currency'])} ({result['reason']})، صرفية ثابتة."
+    agent.record_event(req.session_id, f"(وافقت على الصرفية الثابتة: {result['reason']})", reply)
+    return {**result, "reply": reply}
+
+
+@app.post("/settings")
+def settings(req: SettingsRequest):
+    with agent.lock:
+        if req.drawer_hour is not None:
+            db.set_setting(agent.conn, "drawer_hour", req.drawer_hour)
+        if req.overdue_days is not None:
+            db.set_setting(agent.conn, "overdue_days", req.overdue_days)
+        return {"ok": True, "settings": _settings()}
 
 
 # ---------- backups and Excel export ----------

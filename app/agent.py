@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import threading
 import time
 from datetime import datetime
@@ -22,6 +23,70 @@ REFUSED_REPLY = "ما أگدر أساعد بهذا. هسه أسوي الديون
 EMPTY_REPLY = "ما فهمت عليك، عيد الطلب بطريقة ثانية."
 
 DEFAULT_LOG_PATH = Path(__file__).resolve().parent.parent / "logs" / "tool_calls.jsonl"
+
+
+# ---------- stage 19: a money figure in a reply must come from somewhere ----------
+# "النموذج يخترع رقم: أي رقم ما جا من أداة ينرفض". Figures of 1,000 and more in the reply must
+# appear in a tool's input or result, in the owner's message (25 = 25,000 too), in the memory
+# or earlier in the conversation. Otherwise the model is asked once to fix it, and if it does
+# not, the owner is warned not to rely on that figure.
+_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩٬", "0123456789,")
+_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_DATE_TIME = re.compile(r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?|\b\d{1,2}:\d{2}\b")
+_WORD_AMOUNTS = {"ربع مليون": 250_000, "نص مليون": 500_000, "مليون ونص": 1_500_000, "مليونين": 2_000_000,
+                 "مليون": 1_000_000}
+MIN_CHECKED = 1000
+
+
+def _numbers(text: str) -> set[int]:
+    text = _DATE_TIME.sub(" ", str(text or "").translate(_DIGITS))
+    out = set()
+    for m in _NUMBER.findall(text):
+        try:
+            out.add(round(float(m.replace(",", ""))))
+        except ValueError:
+            pass
+    return out
+
+
+def _walk_numbers(value, out: set) -> None:
+    if isinstance(value, bool):
+        return
+    if isinstance(value, (int, float)):
+        out.add(round(value))
+    elif isinstance(value, str):
+        out |= _numbers(value)
+    elif isinstance(value, dict):
+        for v in value.values():
+            _walk_numbers(v, out)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            _walk_numbers(v, out)
+
+
+def _owner_numbers(text: str) -> set[int]:
+    """The owner's numbers as he means them: 25 = 25,000, "مليون ونص" = 1,500,000."""
+    found = _numbers(text)
+    out = set(found) | {n * 1000 for n in found} | {n * 1_000_000 for n in found if n < 100}
+    for word, value in _WORD_AMOUNTS.items():
+        if word in (text or ""):
+            out.add(value)
+    return out
+
+
+def unsupported_numbers(reply: str, allowed: set[int]) -> list[int]:
+    bad = []
+    for n in sorted(_numbers(reply)):
+        if n < MIN_CHECKED or n in allowed:
+            continue
+        if 1900 <= n <= 2100 and str(n) in reply:  # a year, not money
+            continue
+        bad.append(n)
+    return bad
+
+
+NUMBER_NOTE = ("تنبيه من النظام (مو من صاحب المحل): ردك بيه أرقام ما طلعت من الأدوات ولا من كلام صاحب المحل: {nums}. "
+               "لا تحسب بنفسك. اكتب الرد من جديد بالأرقام اللي رجعتها الأدوات بس، وإذا تحتاج رقم جديد استدعي الأداة.")
 
 
 def _money(amount: int, currency: str) -> str:
@@ -64,6 +129,10 @@ def _with_done_note(reply: str, tool_log: list[dict]) -> str:
             done.append(f"غيرت سعر {r['name']}")
         elif entry["tool"] == "undo_last" and r["undone"].get("type") == "sale":
             done.append(f"لغيت البيعة ({r['undone']['what']})")
+        elif entry["tool"] == "add_recurring_expense":
+            done.append(f"حفظت صرفية ثابتة: {r['reason']}")
+        elif entry["tool"] == "record_recurring_expense" and not r.get("skipped"):
+            done.append(f"سجلت سحب {_money(r['amount'], r['currency'])} ({r['reason']})")
         elif entry["tool"] == "record_cash_in":
             done.append(f"سجلت وارد {_money(r['amount'], r['currency'])} ({r['label']})")
         elif entry["tool"] == "undo_last" and r["undone"].get("type") == "cash_in":
@@ -161,10 +230,12 @@ class Agent:
         session.tools.source_message = message
         session.tools.source = source
         session.tools.turn += 1
+        session.tools._turn_entries = set()
         turn: list[dict] = [{"role": "user", "text": message}]
         tool_log: list[dict] = []
 
         reply = None
+        number_retry = None  # index in `turn` of the note asking to fix invented figures
         try:
             llm = self.get_llm()
             for _ in range(MAX_ITERATIONS):
@@ -176,6 +247,19 @@ class Agent:
                     break
                 if not response.tool_calls:
                     reply = response.text or EMPTY_REPLY
+                    bad = unsupported_numbers(reply, self._allowed_numbers(session, message, turn, tool_log))
+                    if bad and number_retry is None:
+                        log.warning("Unsupported figures %s in reply, asking the model to fix it", bad)
+                        number_retry = len(turn)
+                        turn.append({"role": "assistant", "text": reply, "tool_calls": []})
+                        turn.append({"role": "user", "text": NUMBER_NOTE.format(nums="، ".join(f"{n:,}" for n in bad))})
+                        continue
+                    if bad:
+                        tool_log.append({"tool": "number_check", "input": {"reply": reply},
+                                         "result": {"ok": False, "unsupported": bad,
+                                                    "message": "أرقام بالرد ما طلعت من الحسابات"}})
+                        reply += ("\n⚠️ انتبه: " + "، ".join(f"{n:,}" for n in bad)
+                                  + " ما طلع من الحسابات، لا تعتمد عليه. اسألني مرة ثانية.")
                     break
 
                 turn.append({"role": "assistant", "text": response.text,
@@ -197,10 +281,23 @@ class Agent:
             log.exception("Agent turn failed")
             reply = _with_done_note("صار خطأ غير متوقع، عيد المحاولة.", tool_log)
 
+        if number_retry is not None:  # keep the history clean: drop the rejected draft and the note
+            del turn[number_retry:number_retry + 2]
         turn.append({"role": "assistant", "text": reply, "tool_calls": []})
         session.commit(turn)
         self._save(session_id, message, reply, tool_log, source)
         return {"reply": reply, "tool_calls": tool_log}
+
+    def _allowed_numbers(self, session: Session, message: str, turn: list[dict], tool_log: list[dict]) -> set[int]:
+        allowed = _owner_numbers(message)
+        for entry in tool_log:
+            _walk_numbers(entry.get("input"), allowed)
+            _walk_numbers(entry.get("result"), allowed)
+        for m in session.history():
+            allowed |= _owner_numbers(m.get("text", "")) if m.get("role") == "user" else _numbers(m.get("text", ""))
+        for mem in db.list_memories(self.conn):
+            allowed |= _owner_numbers(mem["text"])
+        return allowed
 
     def _run_tool(self, session: Session, session_id: str, message: str, call) -> dict:
         started = time.perf_counter()

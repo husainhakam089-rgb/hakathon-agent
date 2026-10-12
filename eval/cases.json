@@ -1,5 +1,5 @@
 {
-  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes. Withdrawals (stage 11): setup.withdrawals [amount, currency, reason, in_session?]; expect.withdrawals [amount, currency, a word the reason must contain]; expect.withdrawals_undone: how many seeded ones end up undone. Memory (stage 12): setup.memories [text]; expect.memories_added: how many new memories. Drawer (stage 15): setup.drawer_day {opening, transactions, withdrawals, close?} = an opening count after the old balances, the day's entries, then optionally a close. expect.drawer_counts_added, expect.drawer_opening (iqd), expect.drawer_cash_sales {IQD: n} of the new close, expect.from_drawer (of the last new transaction). Cash ins (stage 16): setup.drawer_day.cash_ins [amount, currency, label]; expect.cash_ins [amount, currency, a word the label must contain]. Items and sales (stage 17): base_setup.items [name, price, cost, unit]; setup.sales [item, qty, payment]; expect.sales [[payment, total, customer or null, {item: qty}]]; expect.items_added.",
+  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes. Withdrawals (stage 11): setup.withdrawals [amount, currency, reason, in_session?]; expect.withdrawals [amount, currency, a word the reason must contain]; expect.withdrawals_undone: how many seeded ones end up undone. Memory (stage 12): setup.memories [text]; expect.memories_added: how many new memories. Drawer (stage 15): setup.drawer_day {opening, transactions, withdrawals, close?} = an opening count after the old balances, the day's entries, then optionally a close. expect.drawer_counts_added, expect.drawer_opening (iqd), expect.drawer_cash_sales {IQD: n} of the new close, expect.from_drawer (of the last new transaction). Cash ins (stage 16): setup.drawer_day.cash_ins [amount, currency, label]; expect.cash_ins [amount, currency, a word the label must contain]. Items and sales (stage 17): base_setup.items [name, price, cost, unit]; setup.sales [item, qty, payment]; expect.sales [[payment, total, customer or null, {item: qty}]]; expect.items_added. Alerts (stage 19): setup.overdue [customer] = their entries 45 days old; setup.just_now [[name, type, amount, currency]] = recorded a minute ago; expect.recurring_added.",
   "base_setup": {
     "customers": [
       "أبو علي",
@@ -917,6 +917,60 @@
         "items_added": 1,
         "tools_called": [
           "add_item"
+        ]
+      }
+    },
+    {
+      "id": 43,
+      "message": "ابو علي دفع عشرة",
+      "setup": {
+        "just_now": [
+          [
+            "أبو علي",
+            "payment",
+            10000,
+            "IQD"
+          ]
+        ]
+      },
+      "expect": {
+        "transactions": [],
+        "reply_has_any": [
+          "قبل",
+          "ثانية",
+          "نفس",
+          "مرتين",
+          "مكرر"
+        ]
+      }
+    },
+    {
+      "id": 44,
+      "message": "الإيجار 250 ألف كل شهر يوم 1",
+      "expect": {
+        "transactions": [],
+        "withdrawals": [],
+        "recurring_added": 1,
+        "tools_called": [
+          "add_recurring_expense"
+        ]
+      }
+    },
+    {
+      "id": 45,
+      "message": "شنو عندي تنبيهات؟",
+      "setup": {
+        "overdue": [
+          "أم حسين"
+        ]
+      },
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "get_alerts"
+        ],
+        "reply_has_all": [
+          "أم حسين"
         ]
       }
     }

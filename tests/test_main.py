@@ -83,10 +83,11 @@ def test_running_version_of_something_else():
 
 def test_voice_message_is_saved_with_source_voice(client, conn):
     cid = db.add_customer(conn, "أبو علي")
-    debt = LLMResponse(text="", tool_calls=[ToolCall("t", "record_debt", {"customer_id": cid, "amount": 25000, "currency": "IQD"})])
-    c = client(debt, LLMResponse(text="تمام"), debt, LLMResponse(text="تمام"))
+    debt = lambda n: LLMResponse(text="", tool_calls=[ToolCall("t", "record_debt", {"customer_id": cid, "amount": n, "currency": "IQD"})])  # noqa: E731
+    # different amounts: the same one twice within minutes is now asked about (stage 19)
+    c = client(debt(25000), LLMResponse(text="تمام"), debt(30000), LLMResponse(text="تمام"))
     c.post("/chat", json={"session_id": "s", "message": "سجل على ابو علي 25 الف", "source": "voice"})
-    c.post("/chat", json={"session_id": "s", "message": "سجل على ابو علي 25 الف"})
+    c.post("/chat", json={"session_id": "s", "message": "سجل على ابو علي 30 الف"})
     assert [r[0] for r in conn.execute("SELECT source FROM transactions ORDER BY id")] == ["voice", "chat"]
     assert c.post("/chat", json={"session_id": "s", "message": "x", "source": "email"}).status_code == 422
 

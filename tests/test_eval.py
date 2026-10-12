@@ -28,8 +28,8 @@ class Script:
 
 
 def test_cases_file_is_complete():
-    # 1-13 customers, 14-19 suppliers, 20-23 withdrawals, 24-26 memory, 27-32 the cash drawer, 33-36 every dinar in and out, 37-42 items and sales
-    assert [c["id"] for c in CASES["cases"]] == list(range(1, 43))
+    # 1-13 customers, 14-19 suppliers, 20-23 withdrawals, 24-26 memory, 27-32 the cash drawer, 33-36 every dinar in and out, 37-42 items and sales, 43-45 alerts
+    assert [c["id"] for c in CASES["cases"]] == list(range(1, 46))
 
 
 def test_correct_debt_passes():
@@ -136,3 +136,17 @@ def test_sale_cases():
         LLMResponse(text="تمام."),
     ))
     assert not as_cash_in["passed"]  # an item sale must be a sale, not a bare cash in
+
+
+def test_duplicate_case():
+    asks = run_eval.run_case(case(43), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "record_payment", {"customer_id": 1, "amount": 10000, "currency": "IQD"})]),
+        LLMResponse(text="سجلت هالمبلغ لأبو علي قبل شوية، هاي دفعة ثانية لو نفسها؟"),
+    ))
+    assert asks["passed"], asks["failures"]  # the code refused the second one
+    forced = run_eval.run_case(case(43), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "record_payment", {"customer_id": 1, "amount": 10000, "currency": "IQD",
+                                                                          "confirmed": True})]),
+        LLMResponse(text="تمام، سجلت مرة ثانية."),
+    ))
+    assert not forced["passed"]  # recorded it again without asking

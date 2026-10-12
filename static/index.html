@@ -290,7 +290,18 @@ tr.flash td { animation: flash 1.6s ease-out; }
 #ledgerBtn.on { color: var(--accent-text); }
 #menuBtn .dot, #ledgerBtn .dot { position: absolute; top: -3px; inset-inline-end: -3px; width: 10px; height: 10px; border-radius: 50%;
   background: var(--accent); border: 2px solid var(--bg); display: none; }
-#menuBtn.changed .dot, #ledgerBtn.changed .dot { display: block; }
+#menuBtn.changed .dot, #ledgerBtn.changed .dot, #menuBtn.alert .dot { display: block; }
+#menuBtn.alert .dot { background: var(--bad); }
+.menu .badge { margin-inline-start: auto; background: var(--bad); color: #fff; border-radius: 999px; font-size: 11px;
+  padding: 1px 7px; display: none; }
+.menu .badge.on { display: inline-block; }
+.alert-card { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.alert-card .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.alert-card .row button { flex: 1; min-width: 90px; padding: 8px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--card-strong); color: var(--text); cursor: pointer; font: inherit; font-size: 13px; }
+.alert-card .row button.yes { background: var(--accent); color: #0f172a; border-color: var(--accent); font-weight: 700; }
+.alert-card small { color: var(--muted); }
+.agent.proactive { border-inline-start: 3px solid var(--accent); }
 #ledgerBtn .dot { position: static; margin-inline-start: auto; }  /* in the menu: at the row's end */
 .ledger-top { display: none; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border-soft); font-size: 16px; }
 main.ledger-off { grid-template-columns: minmax(0, 1fr); }
@@ -335,6 +346,7 @@ main.ledger-off .debtors { display: none; }
     <div class="menu-wrap">
       <button class="icon-btn" id="menuBtn" title="القائمة" aria-haspopup="true" aria-expanded="false">☰<span class="lbl"> القائمة</span><i class="dot"></i></button>
       <div class="menu" id="menu" role="menu">
+        <button role="menuitem" id="alertsBtn"><span class="ic">🔔</span><span>التنبيهات</span><b class="badge" id="alertsCount"></b></button>
         <button role="menuitem" id="saleBtn"><span class="ic">🛒</span>شاشة البيع</button>
         <button role="menuitem" id="ledgerBtn" aria-expanded="false"><span class="ic">📒</span><span id="ledgerLbl">افتح الحسابات</span><i class="dot"></i></button>
         <button role="menuitem" id="sessionsBtn"><span class="ic">🗂</span>المحادثات القديمة</button>
@@ -375,6 +387,7 @@ main.ledger-off .debtors { display: none; }
         <button class="chip fill" data-fill="سديت، بالجرار ">سديت، بالجرار …</button>
         <button class="chip">شكد بعت اليوم؟</button>
         <button class="chip">شنو الوارد والصادر اليوم؟</button>
+        <button class="chip">شنو عندي تنبيهات؟</button>
         <button class="chip">شطب آخر وحدة</button>
       </div>
       <div class="attachment" id="attachment">
@@ -564,6 +577,7 @@ async function send(text) {
     const wrote = okCalls.some(c => WRITE_TOOLS.includes(c.tool));
     loadDebtors(wrote, ledgerOf(okCalls));
     if (drawerKind === 'memory' && okCalls.some(c => c.tool === 'remember' || c.tool === 'forget')) renderMemory();
+    checkAlerts(false);
   } catch (e) {
     setBusy(false);
     addAgent('ما گدرت أوصل للسيرفر. تأكد إن البرنامج بعده شغال بالطرفية.', [], true);
@@ -1108,10 +1122,10 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawerKind
 /* ---------- which accounts tab goes with what the owner asked ---------- */
 const WRITE_TOOLS = ['record_debt', 'record_payment', 'add_customer', 'undo_last', 'undo_batch',
   'record_purchase', 'record_supplier_payment', 'add_supplier', 'record_withdrawal', 'count_drawer', 'set_drawer_opening', 'record_cash_in',
-  'record_sale'];
+  'record_sale', 'record_recurring_expense'];
 const TOOL_LEDGER = {
   count_drawer: 'drawer', set_drawer_opening: 'drawer', drawer_status: 'drawer', drawer_history: 'drawer',
-  drawer_details: 'drawer', record_cash_in: 'drawer',
+  drawer_details: 'drawer', record_cash_in: 'drawer', record_recurring_expense: 'withdrawal',
   find_customer: 'customer', add_customer: 'customer', record_debt: 'customer', record_payment: 'customer',
   get_balance: 'customer', get_history: 'customer', list_debtors: 'customer', undo_batch: 'customer',
   find_supplier: 'supplier', add_supplier: 'supplier', record_purchase: 'supplier', record_supplier_payment: 'supplier',
@@ -1378,6 +1392,118 @@ async function loadSalesToday() {
   } catch (e) { /* the list is only a convenience */ }
 }
 
+/* ---------- stage 19: alerts. The agent speaks up by itself; it records nothing without a yes ---------- */
+let lastAlerts = null;
+
+function alertCount(a) {
+  return (a.drawer_not_counted ? 1 : 0) + a.recurring_due.length + (a.overdue.length ? 1 : 0);
+}
+
+async function checkAlerts(speak) {
+  try {
+    const a = await (await fetch('/alerts')).json();
+    lastAlerts = a;
+    const n = alertCount(a);
+    $('alertsCount').textContent = n || '';
+    $('alertsCount').classList.toggle('on', n > 0);
+    $('menuBtn').classList.toggle('alert', n > 0);
+    if (drawerKind === 'alerts') renderAlerts();
+    if (speak) speakAlerts(a);
+  } catch (e) { /* alerts are a help, never in the way */ }
+}
+
+// Once a day per kind of alert, the agent says it in the chat (no model call: the code knows).
+function speakAlerts(a) {
+  const today = new Date().toISOString().slice(0, 10);
+  const said = JSON.parse(store.get('debt_alerts_said') || '{}');
+  const lines = [];
+  const key = (k) => { if (said[k] === today) return false; said[k] = today; return true; };
+  if (a.drawer_not_counted && key('drawer')) lines.push('صارت الساعة ' + a.drawer_hour + ' وما عديت الجرار اليوم. لما تعده گلي: سديت، بالجرار كذا.');
+  for (const r of a.recurring_due) if (key('rec' + r.id)) lines.push(`موعد ${r.reason} (${fmt(r.amount)} ${r.currency === 'USD' ? 'دولار' : 'دينار'}) إجه وما انسجل. أسجله؟ من ☰ ← 🔔 التنبيهات.`);
+  if (a.overdue.length && key('overdue')) {
+    const top = a.overdue.slice(0, 3).map(o => `${o.name} (${fmt(o.balance.IQD)}، ${o.days} يوم)`).join('، ');
+    lines.push(`${a.overdue.length === 1 ? 'زبون' : a.overdue.length + ' زباين'} ما سددوا من أكثر من ${a.overdue_days} يوم: ${top}.`);
+  }
+  if (!lines.length) return;
+  store.set('debt_alerts_said', JSON.stringify(said));
+  $('welcome')?.remove();
+  addAgent('🔔 ' + lines.join('\n'), []);
+  const bubbles = document.querySelectorAll('.msg.agent');
+  bubbles[bubbles.length - 1]?.classList.add('proactive');
+}
+
+function renderAlerts() {
+  const a = lastAlerts;
+  if (!a) return;
+  const word = c => c === 'USD' ? 'دولار' : 'دينار';
+  let html = '';
+  if (a.drawer_not_counted) html += `<div class="alert-card"><b>🧾 ما عديت الجرار اليوم</b>
+    <small>عده وگلي: سديت، بالجرار كذا.</small><div class="row"><button class="yes" data-fill-chat="سديت، بالجرار ">اكتبها بالمحادثة</button></div></div>`;
+  for (const r of a.recurring_due) html += `<div class="alert-card"><b>📅 ${esc(r.reason)}: ${fmt(r.amount)} ${word(r.currency)}</b>
+    <small>صرفية ثابتة يوم ${r.day_of_month} بالشهر، وما انسجلت هالشهر.</small>
+    <div class="row"><button class="yes" data-rec="${r.id}">✓ سجّلها</button><button data-rec-skip="${r.id}">مو هالشهر</button></div></div>`;
+  if (a.overdue.length) html += `<div class="alert-card"><b>⏰ ديون متأخرة (أكثر من ${a.overdue_days} يوم بدون تسديد)</b>
+    ${a.overdue.slice(0, 15).map(o => `<div class="row" style="justify-content:space-between"><span>${esc(o.name)}</span>
+      <span>${fmt(o.balance.IQD)}${o.balance.USD ? ' + ' + fmt(o.balance.USD) + '$' : ''} · ${o.days} يوم</span></div>`).join('')}</div>`;
+  if (!html) html = '<p class="hint">ما كو تنبيهات هسه ✓</p>';
+  html += `<details><summary>⚙️ الصرفيات الثابتة والإعدادات</summary><div id="recurringBox"><p class="hint">…</p></div></details>`;
+  $('drawerBody').innerHTML = html;
+  loadRecurring();
+}
+
+async function loadRecurring() {
+  try {
+    const data = await (await fetch('/recurring')).json();
+    const box = $('recurringBox');
+    if (!box) return;
+    box.innerHTML = `<p class="hint">صرفيات تتكرر كل شهر: بيومها أذكّرك وأسألك أسجلها. تگدر تضيفها من المحادثة هم: "الإيجار 250 ألف كل شهر يوم 1".</p>
+      ${data.recurring.map(r => `<div class="item"><div class="txt">${esc(r.reason)}<small>${fmt(r.amount)} · يوم ${r.day_of_month} بالشهر</small></div>
+        <button data-rec-del="${r.id}" title="شيلها">✕</button></div>`).join('')}
+      <div class="fields">
+        <div class="field" style="grid-column: 1 / -1"><label>على شنو</label><input id="recReason" placeholder="إيجار، مولدة، راتب عامل"></div>
+        <div class="field"><label>المبلغ</label><input id="recAmount" inputmode="numeric" placeholder="250000"></div>
+        <div class="field"><label>يوم بالشهر</label><input id="recDay" inputmode="numeric" placeholder="1"></div>
+      </div>
+      <div class="actions" style="margin-top:8px"><button class="big secondary" id="recAdd">＋ ضيف صرفية ثابتة</button></div>
+      <div class="fields" style="margin-top:12px">
+        <div class="field"><label>ذكرني بالجرار بعد الساعة</label><input id="setHour" inputmode="numeric" value="${data.settings.drawer_hour}"></div>
+        <div class="field"><label>الدين متأخر بعد (يوم)</label><input id="setDays" inputmode="numeric" value="${data.settings.overdue_days}"></div>
+      </div>
+      <div class="actions" style="margin-top:8px"><button class="big secondary" id="setSave">احفظ الإعدادات</button></div>
+      <div id="recNote"></div>`;
+  } catch (e) { /* ignore */ }
+}
+
+$('alertsBtn').onclick = async () => { openDrawer('alerts', '🔔 التنبيهات'); await checkAlerts(false); renderAlerts(); };
+$('drawerBody').addEventListener('click', async e => {
+  if (drawerKind !== 'alerts') return;
+  const t = e.target;
+  const post = (url, body, method = 'POST') => fetch(url, {method, headers: {'Content-Type': 'application/json'}, body: body && JSON.stringify(body)}).then(r => r.json());
+  if (t.dataset.fillChat !== undefined) {
+    closeDrawer(); $('input').value = t.dataset.fillChat; $('input').focus(); return;
+  }
+  if (t.dataset.rec || t.dataset.recSkip) {
+    t.disabled = true;
+    const data = await post(`/recurring/${t.dataset.rec || t.dataset.recSkip}/record`, {session_id: sessionId, skip: !!t.dataset.recSkip});
+    if (data.reply) { $('welcome')?.remove(); addAgent(data.reply, []); }
+    if (data.ok && !data.skipped) loadDebtors(true, 'withdrawal');
+    return checkAlerts(false);
+  }
+  if (t.dataset.recDel) { await post('/recurring/' + t.dataset.recDel, null, 'DELETE'); return loadRecurring(); }
+  if (t.id === 'recAdd') {
+    const reason = $('recReason').value.trim(), amount = toInt($('recAmount').value), day = toInt($('recDay').value);
+    if (!reason || !amount || !day || day > 31) { $('recNote').innerHTML = '<p class="msg-bad">اكتب السبب والمبلغ ويوم من 1 لـ 31.</p>'; return; }
+    await post('/recurring', {reason, amount, day_of_month: day});
+    await loadRecurring(); return checkAlerts(false);
+  }
+  if (t.id === 'setSave') {
+    const hour = toInt($('setHour').value), days = toInt($('setDays').value);
+    const data = await post('/settings', {drawer_hour: hour ?? undefined, overdue_days: days || undefined});
+    $('recNote').innerHTML = data.ok ? '<p class="msg-ok">✓ انحفظت.</p>' : '<p class="msg-bad">الساعة من 0 لـ 23، والأيام من 1 لـ 365.</p>';
+    return checkAlerts(false);
+  }
+});
+
 /* ---------- backups and Excel ---------- */
 async function renderBackups(note) {
   const body = $('drawerBody');
@@ -1586,7 +1712,8 @@ async function loadDebtors(flash, showTab) {
 }
 
 loadDebtors(false);
-openConversation(sessionId, true);  // after a refresh, the conversation is still there
+openConversation(sessionId, true).then(() => checkAlerts(true));  // after a refresh, the conversation is still there
+setInterval(() => checkAlerts(true), 10 * 60 * 1000);  // the drawer hour can come while the page is open
 $('input').focus();
 </script>
 </body>
