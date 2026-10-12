@@ -125,6 +125,42 @@ form .attach-btn:hover { border-color: var(--accent-border); }
 .drawer .actions .primary { background: var(--accent); color: #0f172a; border-color: var(--accent); }
 .drawer .actions .secondary { background: var(--accent-soft); color: var(--accent-text); }
 .drawer .ok { color: var(--good); font-size: 13px; }
+/* ---------- the sale screen (stage 17) ---------- */
+.sale-search { width: 100%; background: var(--card-strong); border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px 12px; color: var(--text); font: inherit; font-size: 14px; }
+.item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.item-tile { position: relative; text-align: start; background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px; cursor: pointer; color: var(--text); font: inherit; }
+.item-tile:hover { border-color: var(--accent-border); }
+.item-tile b { display: block; font-size: 14px; }
+.item-tile small { color: var(--muted); font-size: 12px; }
+.item-tile .edit { position: absolute; top: 4px; inset-inline-end: 4px; background: none; border: none; color: var(--faint);
+  cursor: pointer; font-size: 13px; padding: 2px 4px; }
+.cart { border: 1px solid var(--border); border-radius: 12px; padding: 4px 10px; }
+.cart-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+.cart-row:last-child { border-bottom: none; }
+.cart-row .nm { flex: 1; min-width: 0; font-size: 14px; }
+.cart-row .nm small { display: block; color: var(--faint); font-size: 11px; }
+.qty { display: flex; align-items: center; gap: 4px; }
+.qty button { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-strong);
+  color: var(--text); cursor: pointer; font-size: 16px; }
+.qty span { min-width: 26px; text-align: center; font-variant-numeric: tabular-nums; }
+.cart-row .lt { min-width: 74px; text-align: end; font-variant-numeric: tabular-nums; font-size: 14px; }
+.pay { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.pay button { padding: 10px 4px; border-radius: 10px; border: 1px solid var(--border); background: var(--card);
+  color: var(--text); cursor: pointer; font: inherit; font-size: 13px; }
+.pay button.on { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-text); font-weight: 700; }
+.sale-total { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; padding: 4px 2px; }
+.sale-total b { font-size: 22px; color: var(--accent-text); font-variant-numeric: tabular-nums; }
+.drawer select, .drawer .field input { width: 100%; background: var(--card-strong); border: 1px solid var(--border);
+  border-radius: 10px; padding: 9px 10px; color: var(--text); font: inherit; font-size: 14px; }
+.drawer .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.drawer .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+.drawer details summary { cursor: pointer; color: var(--accent-text); font-size: 14px; padding: 6px 0; }
+.drawer .msg-ok { color: var(--good); font-size: 14px; }
+.drawer .msg-bad { color: var(--bad); font-size: 14px; }
+.sale-recent { font-size: 13px; color: var(--muted); }
+.sale-recent div { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-soft); }
 .drawer .folder { direction: ltr; text-align: left; font-size: 12px; color: var(--faint); word-break: break-all; }
 .drawer .item.click:hover, .drawer .item.on { border-color: var(--accent-border); background: var(--accent-soft); }
 
@@ -299,6 +335,7 @@ main.ledger-off .debtors { display: none; }
     <div class="menu-wrap">
       <button class="icon-btn" id="menuBtn" title="القائمة" aria-haspopup="true" aria-expanded="false">☰<span class="lbl"> القائمة</span><i class="dot"></i></button>
       <div class="menu" id="menu" role="menu">
+        <button role="menuitem" id="saleBtn"><span class="ic">🛒</span>شاشة البيع</button>
         <button role="menuitem" id="ledgerBtn" aria-expanded="false"><span class="ic">📒</span><span id="ledgerLbl">افتح الحسابات</span><i class="dot"></i></button>
         <button role="menuitem" id="sessionsBtn"><span class="ic">🗂</span>المحادثات القديمة</button>
         <button role="menuitem" id="memoryBtn"><span class="ic">🧠</span>ذاكرة الوكيل</button>
@@ -329,6 +366,8 @@ main.ledger-off .debtors { display: none; }
         <button class="chip fill" data-fill="أخذت بضاعة من ">أخذت بضاعة من …</button>
         <button class="chip fill" data-fill="دفعت لـ">دفعت لـ …</button>
         <button class="chip">شكد عليّ للشركات؟</button>
+        <button class="chip fill" data-fill="بعت ">بعت …</button>
+        <button class="chip fill" data-fill="شكد بعنا ">شكد بعنا … هالشهر؟</button>
         <button class="chip fill" data-fill="وارد ">وارد …</button>
         <button class="chip fill" data-fill="صادر ">صادر …</button>
         <button class="chip fill" data-fill="سحبت ">سحبت …</button>
@@ -1068,7 +1107,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawerKind
 
 /* ---------- which accounts tab goes with what the owner asked ---------- */
 const WRITE_TOOLS = ['record_debt', 'record_payment', 'add_customer', 'undo_last', 'undo_batch',
-  'record_purchase', 'record_supplier_payment', 'add_supplier', 'record_withdrawal', 'count_drawer', 'set_drawer_opening', 'record_cash_in'];
+  'record_purchase', 'record_supplier_payment', 'add_supplier', 'record_withdrawal', 'count_drawer', 'set_drawer_opening', 'record_cash_in',
+  'record_sale'];
 const TOOL_LEDGER = {
   count_drawer: 'drawer', set_drawer_opening: 'drawer', drawer_status: 'drawer', drawer_history: 'drawer',
   drawer_details: 'drawer', record_cash_in: 'drawer',
@@ -1186,6 +1226,157 @@ $('drawerBody').addEventListener('click', async e => {
   await fetch('/memories/' + id, {method: 'DELETE'});
   renderMemory();
 });
+
+/* ---------- the sale screen (stage 17): no model call, the code adds it up ---------- */
+const sale = {items: [], customers: [], cart: [], payment: 'cash', customerId: null, query: '', editing: null, note: ''};
+const PAY_TEXT = {cash: 'كاش', debt: 'دين', electronic: 'زين كاش / ماستر'};
+
+async function openSale() {
+  openDrawer('sale', '🛒 شاشة البيع');
+  try {
+    const [i, c] = await Promise.all([fetch('/items'), fetch('/customers')]);
+    sale.items = (await i.json()).items || [];
+    sale.customers = (await c.json()).customers || [];
+  } catch (e) { sale.note = '<p class="msg-bad">ما گدرت أجيب المواد.</p>'; }
+  renderSale();
+  loadSalesToday();
+}
+$('saleBtn').onclick = openSale;
+
+function saleTotal() { return sale.cart.reduce((t, l) => t + Math.round(l.qty * l.price), 0); }
+
+function renderSale() {
+  if (drawerKind !== 'sale') return;
+  const q = sale.query.trim();
+  const SHOW = 12;  // a long list would push the cart off the screen: search for the rest
+  const matching = sale.items.filter(it => !q || it.name.includes(q));
+  const shown = matching.slice(0, SHOW);
+  const cur = sale.cart.length ? (sale.items.find(it => it.id === sale.cart[0].id) || {}).currency : 'IQD';
+  const word = cur === 'USD' ? 'دولار' : 'دينار';
+  const editing = sale.editing ? sale.items.find(it => it.id === sale.editing) : null;
+  $('drawerBody').innerHTML = `
+    <input class="sale-search" id="saleSearch" placeholder="دوّر مادة…" value="${esc(sale.query)}" autocomplete="off">
+    <div class="item-grid">${shown.map(it => `<div class="item-tile" data-add="${it.id}" role="button" tabindex="0">
+        <button class="edit" data-edit="${it.id}" title="عدّل السعر">✎</button>
+        <b>${esc(it.name)}</b><small>${fmt(it.price)}${it.unit ? ' / ' + esc(it.unit) : ''}</small></div>`).join('')
+      || `<p class="hint">${sale.items.length ? 'ما كو مادة بهالاسم.' : 'ما كو مواد بعد. ضيفها من تحت ⬇'}</p>`}</div>
+    ${matching.length > SHOW ? `<p class="hint">و${fmt(matching.length - SHOW)} مادة ثانية: دوّرها بالاسم.</p>` : ''}
+    ${sale.cart.length ? `<div class="cart">${sale.cart.map((l, k) => `<div class="cart-row">
+        <div class="nm">${esc(l.name)}<small>${fmt(l.price)} للوحدة</small></div>
+        <div class="qty"><button data-dec="${k}" aria-label="نقّص">−</button><span>${l.qty}</span><button data-inc="${k}" aria-label="زيد">+</button></div>
+        <div class="lt">${fmt(Math.round(l.qty * l.price))}</div></div>`).join('')}</div>
+      <div class="pay">${Object.entries(PAY_TEXT).map(([k, t]) => `<button data-pay="${k}" class="${sale.payment === k ? 'on' : ''}">${t}</button>`).join('')}</div>
+      ${sale.payment === 'debt' ? `<select id="saleCustomer"><option value="">على منو الدين؟</option>${sale.customers.map(c =>
+        `<option value="${c.id}" ${c.id === sale.customerId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : ''}
+      <div class="sale-total"><span>المجموع</span><b>${fmt(saleTotal())} <small>${word}</small></b></div>
+      <div class="actions"><button class="big primary" id="saleDone">✓ سجّل البيعة</button>
+        <button class="big secondary" id="saleClear">فرّغ السلة</button></div>`
+    : '<p class="hint">اضغط على مادة حتى تنضاف للسلة.</p>'}
+    ${sale.note}
+    <details ${editing ? 'open' : ''}><summary>${editing ? '✎ تعديل ' + esc(editing.name) : '＋ مادة جديدة'}</summary>
+      <div class="fields">
+        <div class="field" style="grid-column: 1 / -1"><label>الاسم</label><input id="itName" value="${editing ? esc(editing.name) : ''}" ${editing ? 'disabled' : ''}></div>
+        <div class="field"><label>سعر البيع</label><input id="itPrice" inputmode="numeric" placeholder="مثل 25000" value="${editing ? editing.price : ''}"></div>
+        <div class="field"><label>الكلفة (اختياري)</label><input id="itCost" inputmode="numeric" value="${editing && editing.cost !== null ? editing.cost : ''}"></div>
+        <div class="field"><label>الوحدة (كيس، قطعة…)</label><input id="itUnit" value="${editing && editing.unit ? esc(editing.unit) : ''}"></div>
+      </div>
+      <div class="actions" style="margin-top:8px"><button class="big secondary" id="itSave">${editing ? 'احفظ السعر' : 'ضيف المادة'}</button>
+        ${editing ? '<button class="big secondary" id="itCancel">إلغاء</button>' : ''}</div>
+    </details>
+    <div class="sale-recent" id="saleRecent"></div>`;
+  const search = $('saleSearch');
+  search.oninput = () => { sale.query = search.value; const pos = search.selectionStart; renderSale(); $('saleSearch').focus(); $('saleSearch').setSelectionRange(pos, pos); };
+  if ($('saleCustomer')) $('saleCustomer').onchange = e => { sale.customerId = Number(e.target.value) || null; };
+  if (sale.recentHtml) $('saleRecent').innerHTML = sale.recentHtml;
+}
+
+// Arabic-Indic digits and "25 الف" style shorthand are typed often: keep it simple, digits only.
+function toInt(v) {
+  const s = String(v || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d]/g, '');
+  return s ? Number(s) : null;
+}
+
+$('drawerBody').addEventListener('click', async e => {
+  if (drawerKind !== 'sale') return;
+  const t = e.target;
+  if (t.dataset.edit) { e.stopPropagation(); sale.editing = Number(t.dataset.edit); sale.note = ''; return renderSale(); }
+  const tile = t.closest('[data-add]');
+  if (tile) {
+    const it = sale.items.find(x => x.id === Number(tile.dataset.add));
+    const first = sale.cart[0] && sale.items.find(x => x.id === sale.cart[0].id);
+    if (first && first.currency !== it.currency) { sale.note = '<p class="msg-bad">مواد بالدينار ومواد بالدولار: سجلهن ببيعتين.</p>'; return renderSale(); }
+    const line = sale.cart.find(l => l.id === it.id);
+    if (line) line.qty += 1; else sale.cart.push({id: it.id, name: it.name, price: it.price, qty: 1});
+    sale.note = '';
+    sale.query = '';  // found it: back to the full list for the next one
+    return renderSale();
+  }
+  if (t.dataset.inc) { sale.cart[t.dataset.inc].qty += 1; return renderSale(); }
+  if (t.dataset.dec) { const l = sale.cart[t.dataset.dec]; l.qty -= 1; if (l.qty <= 0) sale.cart.splice(t.dataset.dec, 1); return renderSale(); }
+  if (t.dataset.pay) { sale.payment = t.dataset.pay; return renderSale(); }
+  if (t.id === 'saleClear') { sale.cart = []; sale.note = ''; return renderSale(); }
+  if (t.id === 'itCancel') { sale.editing = null; return renderSale(); }
+  if (t.id === 'itSave') return saveItem();
+  if (t.id === 'saleDone') return submitSale(false);
+});
+
+async function saveItem() {
+  const price = toInt($('itPrice').value), costRaw = $('itCost').value.trim(), cost = costRaw ? toInt(costRaw) : null;
+  const unit = $('itUnit').value.trim() || null;
+  if (!price) { sale.note = '<p class="msg-bad">اكتب سعر البيع بالأرقام، مثل 25000.</p>'; return renderSale(); }
+  const body = sale.editing ? {price, cost, unit} : {name: $('itName').value.trim(), price, cost, unit};
+  if (!sale.editing && !body.name) { sale.note = '<p class="msg-bad">اكتب اسم المادة.</p>'; return renderSale(); }
+  try {
+    const res = await fetch(sale.editing ? '/items/' + sale.editing : '/items', {method: sale.editing ? 'PATCH' : 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.message || 'خطأ');
+    sale.items = sale.items.filter(x => x.id !== data.item.id).concat([data.item]).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    sale.cart.forEach(l => { if (l.id === data.item.id) l.price = data.item.price; });
+    sale.note = `<p class="msg-ok">✓ ${sale.editing ? 'انحفظ سعر' : 'انضافت'} ${esc(data.item.name)}.</p>`;
+    sale.editing = null;
+  } catch (err) {
+    sale.note = `<p class="msg-bad">${esc(err.message || 'ما گدرت أحفظ.')}</p>`;
+  }
+  renderSale();
+}
+
+async function submitSale(confirmed) {
+  if (sale.payment === 'debt' && !sale.customerId) { sale.note = '<p class="msg-bad">اختار على منو الدين.</p>'; return renderSale(); }
+  const btn = $('saleDone'); if (btn) { btn.disabled = true; btn.textContent = 'دا أسجل…'; }
+  try {
+    const res = await fetch('/sales', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+      session_id: sessionId, payment: sale.payment, customer_id: sale.payment === 'debt' ? sale.customerId : null, confirmed,
+      lines: sale.cart.map(l => ({item_id: l.id, qty: l.qty, unit_price: l.price}))})});
+    const data = await res.json();
+    if (res.status === 409 && data.error === 'confirmation_required') {
+      if (confirm(`المبلغ كبير: ${fmt(data.total)}. متأكد تسجله؟`)) return submitSale(true);
+      sale.note = ''; return renderSale();
+    }
+    if (!res.ok || !data.ok) throw new Error(data.message || 'ما گدرت أسجل البيعة.');
+    sale.cart = []; sale.customerId = null; sale.payment = 'cash';
+    sale.note = `<p class="msg-ok">✓ ${esc(data.reply)}</p>`;
+    $('welcome')?.remove();
+    addAgent(data.reply, []);
+    loadDebtors(true, data.payment === 'debt' ? 'customer' : 'drawer');
+    loadSalesToday();
+  } catch (err) {
+    sale.note = `<p class="msg-bad">${esc(err.message)}</p>`;
+  }
+  renderSale();
+}
+
+async function loadSalesToday() {
+  try {
+    const data = await (await fetch('/sales')).json();
+    const t = data.today.by_payment;
+    const parts = Object.entries(PAY_TEXT).filter(([k]) => t[k].IQD).map(([k, w]) => `${w} ${fmt(t[k].IQD)}`);
+    sale.recentHtml = `<p class="hint"><b>بيع اليوم: ${fmt(data.today.totals.IQD)} دينار</b>${parts.length ? ' (' + parts.join('، ') + ')' : ''}</p>` +
+      (data.recent || []).map(r => `<div><span>${esc(r.what)} · ${PAY_TEXT[r.payment]}${r.customer_name ? ' · ' + esc(r.customer_name) : ''}</span>
+        <span>${fmt(r.total)} · ${esc(shortDate(r.created_at).replace('اليوم ', ''))}</span></div>`).join('');
+    if (drawerKind === 'sale' && $('saleRecent')) $('saleRecent').innerHTML = sale.recentHtml;
+  } catch (e) { /* the list is only a convenience */ }
+}
 
 /* ---------- backups and Excel ---------- */
 async function renderBackups(note) {

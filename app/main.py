@@ -26,7 +26,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "11"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "12"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -163,6 +163,100 @@ def drawer_details(count_id: int | None = None):
         if count_id is not None and (count is None or count["undone"] or count["kind"] != "close"):
             return _error(404, "ما لگيت هالعدّة.")
         return db.drawer_details(agent.conn, count)
+
+
+# ---------- stage 17: items and the sale screen ----------
+
+class ItemRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    price: int = Field(gt=0, le=1_000_000_000)
+    cost: int | None = Field(default=None, ge=0, le=1_000_000_000)
+    unit: str | None = Field(default=None, max_length=30)
+    currency: Literal["IQD", "USD"] = "IQD"
+
+
+class ItemUpdate(BaseModel):
+    price: int | None = Field(default=None, gt=0, le=1_000_000_000)
+    cost: int | None = Field(default=None, ge=0, le=1_000_000_000)
+    unit: str | None = Field(default=None, max_length=30)
+    active: bool | None = None
+
+
+class SaleLine(BaseModel):
+    item_id: int
+    qty: float = Field(default=1, gt=0, le=100000)
+    unit_price: int | None = Field(default=None, gt=0, le=1_000_000_000)
+
+
+class SaleRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    payment: Literal["cash", "debt", "electronic"]
+    customer_id: int | None = None
+    lines: list[SaleLine] = Field(min_length=1, max_length=100)
+    confirmed: bool = False
+
+
+PAYMENT_WORDS = {"cash": "كاش", "debt": "دين", "electronic": "إلكتروني"}
+
+
+@app.get("/items")
+def items():
+    with agent.lock:
+        return {"items": db.all_items(agent.conn)}
+
+
+@app.post("/items")
+def add_item(req: ItemRequest):
+    name = " ".join(req.name.split())
+    with agent.lock:
+        if any(m["normalized_name"] == db.normalize(name) for m in db.find_items(agent.conn, name)):
+            return _error(409, "أكو مادة بنفس الاسم.")
+        item_id = db.add_item(agent.conn, name, req.price, req.cost, req.unit, req.currency)
+        return {"ok": True, "item": db.get_item(agent.conn, item_id)}
+
+
+@app.patch("/items/{item_id}")
+def update_item(item_id: int, req: ItemUpdate):
+    with agent.lock:
+        if not db.get_item(agent.conn, item_id):
+            return _error(404, "ما لگيت المادة.")
+        db.update_item(agent.conn, item_id, price=req.price, cost=req.cost, unit=req.unit,
+                       active=None if req.active is None else int(req.active))
+        return {"ok": True, "item": db.get_item(agent.conn, item_id)}
+
+
+@app.get("/customers")
+def customers():
+    """All customers (for picking who a debt sale goes to)."""
+    with agent.lock:
+        return {"customers": [{"id": c["id"], "name": c["name"]} for c in db.all_customers(agent.conn)]}
+
+
+@app.post("/sales")
+def sale(req: SaleRequest):
+    """A sale from the sale screen: same checks as the chat (record_sale), recorded in this
+    conversation so "شطب آخر وحدة" can undo it."""
+    with agent.lock:
+        tools = agent.session(req.session_id).tools
+        tools.source, tools.source_message = "screen", None
+        result = tools.execute("record_sale", {"lines": [l.model_dump() for l in req.lines], "payment": req.payment,
+                                               "customer_id": req.customer_id, "confirmed": req.confirmed})
+    if not result.get("ok"):
+        status = 409 if result.get("error") == "confirmation_required" else 422
+        return JSONResponse({**result, "message": result.get("message")}, status_code=status)
+    reply = f"سجلت بيعة {result['what']} بـ {_money(result['total'], result['currency'])} {PAYMENT_WORDS[req.payment]}"
+    if req.payment == "debt":
+        reply += f" على {result['customer_name']}، صار عليه {_money(result['balance'][result['currency']], result['currency'])}"
+    reply += "."
+    agent.record_event(req.session_id, f"(بعت من شاشة البيع: {result['what']}، {PAYMENT_WORDS[req.payment]})",
+                       f"{reply} (sale_id: {result['sale_id']})", shown=reply)
+    return {**result, "reply": reply}
+
+
+@app.get("/sales")
+def sales_today():
+    with agent.lock:
+        return {"recent": db.recent_sales(agent.conn, 8), "today": db.sales_summary(agent.conn, "today")}
 
 
 # ---------- backups and Excel export ----------

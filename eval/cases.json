@@ -1,5 +1,5 @@
 {
-  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes. Withdrawals (stage 11): setup.withdrawals [amount, currency, reason, in_session?]; expect.withdrawals [amount, currency, a word the reason must contain]; expect.withdrawals_undone: how many seeded ones end up undone. Memory (stage 12): setup.memories [text]; expect.memories_added: how many new memories. Drawer (stage 15): setup.drawer_day {opening, transactions, withdrawals, close?} = an opening count after the old balances, the day's entries, then optionally a close. expect.drawer_counts_added, expect.drawer_opening (iqd), expect.drawer_cash_sales {IQD: n} of the new close, expect.from_drawer (of the last new transaction). Cash ins (stage 16): setup.drawer_day.cash_ins [amount, currency, label]; expect.cash_ins [amount, currency, a word the label must contain].",
+  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes. Withdrawals (stage 11): setup.withdrawals [amount, currency, reason, in_session?]; expect.withdrawals [amount, currency, a word the reason must contain]; expect.withdrawals_undone: how many seeded ones end up undone. Memory (stage 12): setup.memories [text]; expect.memories_added: how many new memories. Drawer (stage 15): setup.drawer_day {opening, transactions, withdrawals, close?} = an opening count after the old balances, the day's entries, then optionally a close. expect.drawer_counts_added, expect.drawer_opening (iqd), expect.drawer_cash_sales {IQD: n} of the new close, expect.from_drawer (of the last new transaction). Cash ins (stage 16): setup.drawer_day.cash_ins [amount, currency, label]; expect.cash_ins [amount, currency, a word the label must contain]. Items and sales (stage 17): base_setup.items [name, price, cost, unit]; setup.sales [item, qty, payment]; expect.sales [[payment, total, customer or null, {item: qty}]]; expect.items_added.",
   "base_setup": {
     "customers": [
       "أبو علي",
@@ -58,6 +58,26 @@
         200000,
         "IQD",
         "إيجار"
+      ]
+    ],
+    "items": [
+      [
+        "طحين",
+        25000,
+        22000,
+        "كيس"
+      ],
+      [
+        "زيت",
+        4000,
+        3000,
+        "قنينة"
+      ],
+      [
+        "رز",
+        30000,
+        26000,
+        "كيس"
       ]
     ]
   },
@@ -782,6 +802,121 @@
         },
         "reply_has_any": [
           "40,000"
+        ]
+      }
+    },
+    {
+      "id": 37,
+      "message": "بعت كيسين طحين",
+      "expect": {
+        "transactions": [],
+        "sales": [
+          [
+            "cash",
+            50000,
+            null,
+            {
+              "طحين": 2
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": 38,
+      "message": "بعت لأبو علي كيس رز وقنينتين زيت دين",
+      "expect": {
+        "transactions": [
+          [
+            "أبو علي",
+            "debt",
+            38000,
+            "IQD"
+          ]
+        ],
+        "sales": [
+          [
+            "debt",
+            38000,
+            "أبو علي",
+            {
+              "رز": 1,
+              "زيت": 2
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": 39,
+      "message": "بعت 3 زيت زين كاش",
+      "expect": {
+        "transactions": [],
+        "sales": [
+          [
+            "electronic",
+            12000,
+            null,
+            {
+              "زيت": 3
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": 40,
+      "message": "شكد بعنا طحين هالشهر؟",
+      "setup": {
+        "sales": [
+          [
+            "طحين",
+            2,
+            "cash"
+          ],
+          [
+            "طحين",
+            4,
+            "electronic"
+          ],
+          [
+            "زيت",
+            1,
+            "cash"
+          ]
+        ]
+      },
+      "expect": {
+        "transactions": [],
+        "sales": [],
+        "tools_called": [
+          "item_sales"
+        ],
+        "reply_has_all": [
+          "150,000"
+        ]
+      }
+    },
+    {
+      "id": 41,
+      "message": "بعت كيس سكر",
+      "expect": {
+        "transactions": [],
+        "sales": [],
+        "items_added": 0,
+        "reply_has_any": [
+          "سكر"
+        ]
+      }
+    },
+    {
+      "id": 42,
+      "message": "ضيف مادة سكر، الكيس بـ 20 وكلفته 17",
+      "expect": {
+        "transactions": [],
+        "items_added": 1,
+        "tools_called": [
+          "add_item"
         ]
       }
     }

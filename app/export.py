@@ -17,7 +17,8 @@ CURRENCY_WORDS = {"IQD": "دينار", "USD": "دولار"}
 HEAD_FONT = Font(bold=True, color="FFFFFF")
 HEAD_FILL = PatternFill("solid", fgColor="D97706")
 AMOUNT_HEADERS = {"دينار", "دولار", "المبلغ", "بالجرار (دينار)", "چان بالجرار", "تسديدات زبائن", "دفع للموردين",
-                  "سحوبات", "البيع النقدي", "بيع بالدين", "مجموع البيع"}
+                  "سحوبات", "البيع النقدي", "بيع بالدين", "مجموع البيع", "سعر البيع", "الكلفة", "سعر الوحدة",
+                  "الربح"}
 
 
 def _sheet(wb, title, headers, rows, widths):
@@ -97,6 +98,24 @@ def build_workbook(conn) -> bytes:
            [[r["at"], r["side"], r["what"], r["amount"], CURRENCY_WORDS.get(r["currency"], r["currency"]), r["msg"] or ""]
             for r in moves],
            [18, 12, 28, 14, 10, 40])
+
+    items = db.all_items(conn, active_only=False)
+    _sheet(wb, "المواد", ["المادة", "الوحدة", "سعر البيع", "الكلفة", "العملة"],
+           [[i["name"], i["unit"] or "", i["price"], i["cost"], CURRENCY_WORDS.get(i["currency"], i["currency"])] for i in items],
+           [24, 12, 14, 14, 10])
+    pay = {"cash": "كاش", "debt": "دين", "electronic": "إلكتروني"}
+    lines = conn.execute(
+        """SELECT s.id, s.created_at, s.payment, c.name AS customer, i.name AS item, l.qty, l.unit_price, l.line_total,
+                  l.unit_cost, s.currency, s.undone
+           FROM sale_lines l JOIN sales s ON s.id = l.sale_id JOIN items i ON i.id = l.item_id
+           LEFT JOIN customers c ON c.id = s.customer_id ORDER BY s.id, l.id""").fetchall()
+    _sheet(wb, "المبيعات", ["التاريخ", "رقم البيعة", "الدفع", "الزبون", "المادة", "العدد", "سعر الوحدة", "المبلغ",
+                            "الكلفة", "الربح", "ملغي"],
+           [[r["created_at"], r["id"], pay[r["payment"]], r["customer"] or "", r["item"], r["qty"], r["unit_price"],
+             r["line_total"], None if r["unit_cost"] is None else round(r["qty"] * r["unit_cost"]),
+             None if r["unit_cost"] is None else r["line_total"] - round(r["qty"] * r["unit_cost"]),
+             "ملغي" if r["undone"] else ""] for r in lines],
+           [18, 10, 10, 18, 18, 8, 12, 12, 12, 12, 8])
 
     buf = io.BytesIO()
     wb.save(buf)

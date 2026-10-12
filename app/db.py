@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS drawer_counts (
   tx_upto           INTEGER NOT NULL,
   wd_upto           INTEGER NOT NULL,
   ci_upto           INTEGER NOT NULL DEFAULT 0,  -- last cash_ins id
+  sa_upto           INTEGER NOT NULL DEFAULT 0,  -- last sales id (stage 17)
   source_message    TEXT,
   session_id        TEXT,
   undone            INTEGER NOT NULL DEFAULT 0,
@@ -117,6 +118,46 @@ CREATE TABLE IF NOT EXISTS cash_ins (
   undone            INTEGER NOT NULL DEFAULT 0,
   created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
+
+-- Stage 17: what the shop sells, and each sale from the sale screen or the chat.
+-- Prices are whole dinars (or dollars). cost may be unknown (NULL): then no profit for it.
+CREATE TABLE IF NOT EXISTS items (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  name              TEXT NOT NULL,
+  normalized_name   TEXT NOT NULL,
+  unit              TEXT,                    -- كيس، كارتون، قطعة...
+  price             INTEGER NOT NULL CHECK (price > 0),
+  cost              INTEGER CHECK (cost IS NULL OR cost >= 0),
+  currency          TEXT NOT NULL DEFAULT 'IQD' CHECK (currency IN ('IQD','USD')),
+  active            INTEGER NOT NULL DEFAULT 1,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+-- payment: cash (into the drawer) | debt (added to the customer: debt_tx_id) |
+-- electronic (Zain Cash, card: not in the drawer). Never deleted, only undone.
+CREATE TABLE IF NOT EXISTS sales (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  payment           TEXT NOT NULL CHECK (payment IN ('cash','debt','electronic')),
+  customer_id       INTEGER REFERENCES customers(id),
+  debt_tx_id        INTEGER REFERENCES transactions(id),
+  total             INTEGER NOT NULL CHECK (total > 0),
+  cost_total        INTEGER,                 -- NULL when a line's cost is unknown
+  currency          TEXT NOT NULL DEFAULT 'IQD' CHECK (currency IN ('IQD','USD')),
+  source_message    TEXT,
+  source            TEXT NOT NULL DEFAULT 'chat',  -- chat | voice | screen
+  session_id        TEXT,
+  undone            INTEGER NOT NULL DEFAULT 0,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS sale_lines (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  sale_id           INTEGER NOT NULL REFERENCES sales(id),
+  item_id           INTEGER NOT NULL REFERENCES items(id),
+  qty               REAL NOT NULL CHECK (qty > 0),
+  unit_price        INTEGER NOT NULL,
+  unit_cost         INTEGER,
+  line_total        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sale_lines_sale ON sale_lines(sale_id);
 """
 
 # Columns added after v0: (name, definition) added to older databases on connect.
@@ -151,8 +192,10 @@ def _migrate(conn) -> None:
         conn.execute("ALTER TABLE withdrawals ADD COLUMN session_id TEXT")
     if "from_drawer" not in wd_columns:
         conn.execute("ALTER TABLE withdrawals ADD COLUMN from_drawer INTEGER NOT NULL DEFAULT 1")
-    if "ci_upto" not in {r["name"] for r in conn.execute("PRAGMA table_info(drawer_counts)")}:
-        conn.execute("ALTER TABLE drawer_counts ADD COLUMN ci_upto INTEGER NOT NULL DEFAULT 0")
+    dc_columns = {r["name"] for r in conn.execute("PRAGMA table_info(drawer_counts)")}
+    for col in ("ci_upto", "sa_upto"):
+        if col not in dc_columns:
+            conn.execute(f"ALTER TABLE drawer_counts ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_batch ON transactions(batch_id)")
     conn.commit()
 
@@ -212,9 +255,10 @@ def mark_undone(conn, tx_id: int) -> None:
 
 # ---------- withdrawals (stage 11) ----------
 
-PERIODS = ("today", "month", "all")
+PERIODS = ("today", "week", "month", "all")
 _PERIOD_SQL = {
     "today": "date(created_at) = date('now','localtime')",
+    "week": "date(created_at) > date('now','localtime','-7 days')",  # the last 7 days, today included
     "month": "strftime('%Y-%m', created_at) = strftime('%Y-%m','now','localtime')",
     "all": "1 = 1",
 }
@@ -356,8 +400,10 @@ def session_entries(conn, session_id: str) -> list:
            SELECT 'dr', id, created_at FROM drawer_counts WHERE session_id = ? AND undone = 0
            UNION ALL
            SELECT 'ci', id, created_at FROM cash_ins WHERE session_id = ? AND undone = 0
-           ORDER BY created_at, kind, id""", (session_id, session_id, session_id, session_id))
-    tags = {"wd": "withdrawal", "dr": "drawer", "ci": "cash_in"}
+           UNION ALL
+           SELECT 'sa', id, created_at FROM sales WHERE session_id = ? AND undone = 0
+           ORDER BY created_at, kind, id""", (session_id,) * 5)
+    tags = {"wd": "withdrawal", "dr": "drawer", "ci": "cash_in", "sa": "sale"}
     return [r["id"] if r["kind"] == "tx" else (tags[r["kind"]], r["id"]) for r in rows]
 
 
@@ -366,19 +412,24 @@ def session_entries(conn, session_id: str) -> list:
 def _max_ids(conn) -> dict:
     """Where each list ends right now: a count covers every entry up to these ids."""
     one = lambda t: conn.execute(f"SELECT COALESCE(MAX(id), 0) FROM {t}").fetchone()[0]  # noqa: E731
-    return {"tx_upto": one("transactions"), "wd_upto": one("withdrawals"), "ci_upto": one("cash_ins")}
+    return {"tx_upto": one("transactions"), "wd_upto": one("withdrawals"), "ci_upto": one("cash_ins"),
+            "sa_upto": one("sales")}
 
 
 def _ids_before_today(conn) -> dict:
     one = lambda t: conn.execute(  # noqa: E731
         f"SELECT COALESCE(MAX(id), 0) FROM {t} WHERE date(created_at) < date('now','localtime')").fetchone()[0]
-    return {"tx_upto": one("transactions"), "wd_upto": one("withdrawals"), "ci_upto": one("cash_ins")}
+    return {"tx_upto": one("transactions"), "wd_upto": one("withdrawals"), "ci_upto": one("cash_ins"),
+            "sa_upto": one("sales")}
+
+
+UPTO_KEYS = ("tx_upto", "wd_upto", "ci_upto", "sa_upto")
 
 
 def _range(prev: dict | None, count: dict | None) -> dict:
     """Entry ids after `prev` and up to `count` (no count: up to now)."""
     big = 1 << 62
-    return {k: ((prev[k] if prev else 0), (count[k] if count else big)) for k in ("tx_upto", "wd_upto", "ci_upto")}
+    return {k: ((prev[k] if prev else 0), (count[k] if count else big)) for k in UPTO_KEYS}
 
 
 def add_cash_in(conn, amount: int, currency: str, label: str, note=None, source_message=None,
@@ -421,11 +472,12 @@ def add_drawer_count(conn, kind: str, iqd: int | None, usd: int | None, source_m
         upto = _max_ids(conn)
     else:
         prev = last_drawer_count(conn)
-        upto = {k: prev[k] for k in ("tx_upto", "wd_upto", "ci_upto")} if prev else _ids_before_today(conn)
+        upto = {k: prev[k] for k in UPTO_KEYS} if prev else _ids_before_today(conn)
     cur = conn.execute(
-        """INSERT INTO drawer_counts (kind, iqd, usd, tx_upto, wd_upto, ci_upto, source_message, session_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (kind, iqd, usd, upto["tx_upto"], upto["wd_upto"], upto["ci_upto"], source_message, session_id))
+        """INSERT INTO drawer_counts (kind, iqd, usd, tx_upto, wd_upto, ci_upto, sa_upto, source_message, session_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (kind, iqd, usd, upto["tx_upto"], upto["wd_upto"], upto["ci_upto"], upto["sa_upto"],
+         source_message, session_id))
     conn.commit()
     return cur.lastrowid
 
@@ -444,8 +496,8 @@ def drawer_movements(conn, rng: dict) -> dict:
     """Money in and out of the drawer between two counts, per currency. Imported rows (old
     notebook pages) and undone ones are not today's money."""
     zero = lambda: {c: 0 for c in CURRENCIES}  # noqa: E731
-    out = {"customer_payments": zero(), "cash_ins": zero(), "supplier_payments": zero(), "withdrawals": zero(),
-           "credit_sales": zero(), "not_from_drawer": zero()}
+    out = {"customer_payments": zero(), "cash_ins": zero(), "sales_cash": zero(), "sales_electronic": zero(),
+           "supplier_payments": zero(), "withdrawals": zero(), "credit_sales": zero(), "not_from_drawer": zero()}
     (tx_from, tx_to), (wd_from, wd_to), (ci_from, ci_to) = rng["tx_upto"], rng["wd_upto"], rng["ci_upto"]
     for r in conn.execute(
             """SELECT c.kind, t.type, t.currency, t.from_drawer, SUM(t.amount) s
@@ -469,6 +521,10 @@ def drawer_movements(conn, rng: dict) -> dict:
     for r in conn.execute("""SELECT currency, SUM(amount) s FROM cash_ins
                              WHERE id > ? AND id <= ? AND undone = 0 GROUP BY currency""", (ci_from, ci_to)):
         out["cash_ins"][r["currency"]] += r["s"]
+    sa_from, sa_to = rng["sa_upto"]
+    for r in conn.execute("""SELECT payment, currency, SUM(total) s FROM sales WHERE id > ? AND id <= ? AND undone = 0
+                             AND payment IN ('cash','electronic') GROUP BY payment, currency""", (sa_from, sa_to)):
+        out["sales_cash" if r["payment"] == "cash" else "sales_electronic"][r["currency"]] += r["s"]
     return out
 
 
@@ -476,9 +532,11 @@ def drawer_report(conn, count: dict | None = None) -> dict:
     """The day that ends with `count` (a close), or so far since the last count (count=None:
     movements only, nothing counted to compare with yet). Each currency on its own:
 
-    expected   = start + customer payments + cash ins ("وارد محمد") - paid to suppliers - withdrawals
+    expected   = start + customer payments + cash ins ("وارد محمد") + cash sales from the sale screen
+                 - paid to suppliers - withdrawals
     difference = counted - expected    (+ = sold and not written down, - = the drawer is short)
-    cash sales = cash ins + difference = counted - start - customer payments + suppliers + withdrawals
+    cash sales = cash ins + screen cash sales + difference
+               = counted - start - customer payments + suppliers + withdrawals
     """
     prev = last_drawer_count(conn, count["id"] if count else None)
     moves = drawer_movements(conn, _range(prev, count))
@@ -494,9 +552,9 @@ def drawer_report(conn, count: dict | None = None) -> dict:
             if now is None or start is None:
                 continue  # not counted at both ends: nothing to compare for this currency
             expected[cur] = (start + moves["customer_payments"][cur] + moves["cash_ins"][cur]
-                             - moves["supplier_payments"][cur] - moves["withdrawals"][cur])
+                             + moves["sales_cash"][cur] - moves["supplier_payments"][cur] - moves["withdrawals"][cur])
             difference[cur] = now - expected[cur]
-            cash_sales[cur] = moves["cash_ins"][cur] + difference[cur]
+            cash_sales[cur] = moves["cash_ins"][cur] + moves["sales_cash"][cur] + difference[cur]
             total_sales[cur] = cash_sales[cur] + moves["credit_sales"][cur]
         report.update(expected=expected, difference=difference, cash_sales=cash_sales, total_sales=total_sales,
                       shortage=any(v < 0 for v in difference.values()))
@@ -537,6 +595,15 @@ def drawer_details(conn, count: dict | None = None) -> dict:
                WHERE id > ? AND id <= ? AND undone = 0""", rng["ci_upto"]):
         entries.append(("in", {"what": r["label"], "amount": r["amount"], "currency": r["currency"],
                                "at": r["created_at"], "kind": "cash_in"}))
+    for r in conn.execute(
+            """SELECT s.id, s.created_at, s.total, s.currency, s.payment,
+                      GROUP_CONCAT(i.name || CASE WHEN l.qty != 1 THEN ' ×' || CAST(l.qty AS TEXT) ELSE '' END, '، ') AS what
+               FROM sales s JOIN sale_lines l ON l.sale_id = s.id JOIN items i ON i.id = l.item_id
+               WHERE s.id > ? AND s.id <= ? AND s.undone = 0 AND s.payment = 'cash'
+               GROUP BY s.id""", rng["sa_upto"]):
+        what = (r["what"] or "").replace(".0", "")
+        entries.append(("in", {"what": f"بيع: {what}", "amount": r["total"], "currency": r["currency"],
+                               "at": r["created_at"], "kind": "sale"}))
     entries.sort(key=lambda e: e[1]["at"])  # as it happened through the day
     for side, line in entries:
         (lines_in if side == "in" else lines_out).append(line)
@@ -555,7 +622,8 @@ def drawer_details(conn, count: dict | None = None) -> dict:
             totals[cur] = {"in": t_in, "out": t_out, "left": t_in - t_out}
     return {"count_id": count["id"] if count else None, "counted": report.get("counted"), "start": report["start"],
             "in": lines_in, "out": lines_out, "totals": totals, "credit_sales": report["credit_sales"],
-            "not_from_drawer": report["not_from_drawer"], "difference": report.get("difference", {}),
+            "not_from_drawer": report["not_from_drawer"], "sales_electronic": report["sales_electronic"],
+            "difference": report.get("difference", {}),
             "cash_sales": report.get("cash_sales", {}), "complete": bool(count and report.get("difference"))}
 
 
@@ -564,6 +632,140 @@ def drawer_closes(conn, limit: int = 30) -> list[dict]:
     rows = conn.execute("SELECT * FROM drawer_counts WHERE undone = 0 AND kind = 'close' "
                         "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     return [drawer_report(conn, dict(r)) for r in rows]
+
+
+# ---------- items and sales (stage 17) ----------
+
+def add_item(conn, name: str, price: int, cost: int | None = None, unit: str | None = None,
+             currency: str = "IQD") -> int:
+    cur = conn.execute(
+        "INSERT INTO items (name, normalized_name, unit, price, cost, currency) VALUES (?, ?, ?, ?, ?, ?)",
+        (name.strip(), normalize(name), (unit or "").strip() or None, price, cost, currency))
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_item(conn, item_id: int):
+    row = conn.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def all_items(conn, active_only: bool = True) -> list[dict]:
+    sql = "SELECT * FROM items" + (" WHERE active = 1" if active_only else "") + " ORDER BY name"
+    return [dict(r) for r in conn.execute(sql)]
+
+
+def find_items(conn, query: str) -> list[dict]:
+    items = all_items(conn)
+    return find_matches(query, items)
+
+
+def update_item(conn, item_id: int, **fields) -> None:
+    allowed = {k: v for k, v in fields.items() if k in ("name", "unit", "price", "cost", "active") and v is not None}
+    if "name" in allowed:
+        allowed["normalized_name"] = normalize(allowed["name"])
+    if allowed:
+        sets = ", ".join(f"{k} = ?" for k in allowed)
+        conn.execute(f"UPDATE items SET {sets} WHERE id = ?", (*allowed.values(), item_id))
+        conn.commit()
+
+
+def add_sale(conn, payment: str, lines: list[dict], currency: str = "IQD", customer_id: int | None = None,
+             source_message=None, source="chat", session_id: str | None = None) -> int:
+    """One sale, all or nothing. lines: [{item_id, qty, unit_price, unit_cost}] already checked.
+    A debt sale also writes the customer's debt (no session id on it: undoing the sale undoes it)."""
+    total = sum(round(l["qty"] * l["unit_price"]) for l in lines)
+    costs = [l["unit_cost"] for l in lines]
+    cost_total = None if any(c is None for c in costs) else sum(round(l["qty"] * l["unit_cost"]) for l in lines)
+    names = "، ".join(f"{get_item(conn, l['item_id'])['name']}" + (f" ×{_qty(l['qty'])}" if l["qty"] != 1 else "")
+                      for l in lines)
+    try:
+        debt_tx = None
+        if payment == "debt":
+            debt_tx = add_transaction(conn, customer_id, "debt", total, currency, note=f"بيع: {names}",
+                                      source_message=source_message, source=source, commit=False)
+        cur = conn.execute(
+            """INSERT INTO sales (payment, customer_id, debt_tx_id, total, cost_total, currency, source_message,
+                                  source, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (payment, customer_id, debt_tx, total, cost_total, currency, source_message, source, session_id))
+        sale_id = cur.lastrowid
+        for l in lines:
+            conn.execute(
+                "INSERT INTO sale_lines (sale_id, item_id, qty, unit_price, unit_cost, line_total) VALUES (?, ?, ?, ?, ?, ?)",
+                (sale_id, l["item_id"], l["qty"], l["unit_price"], l["unit_cost"], round(l["qty"] * l["unit_price"])))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return sale_id
+
+
+def _qty(q) -> str:
+    return str(int(q)) if float(q).is_integer() else f"{q:g}"
+
+
+def get_sale(conn, sale_id: int) -> dict | None:
+    row = conn.execute("SELECT * FROM sales WHERE id = ?", (sale_id,)).fetchone()
+    if not row:
+        return None
+    sale = dict(row)
+    sale["lines"] = [dict(r) for r in conn.execute(
+        """SELECT l.*, i.name, i.unit FROM sale_lines l JOIN items i ON i.id = l.item_id
+           WHERE l.sale_id = ? ORDER BY l.id""", (sale_id,))]
+    sale["what"] = "، ".join(l["name"] + (f" ×{_qty(l['qty'])}" if l["qty"] != 1 else "") for l in sale["lines"])
+    return sale
+
+
+def mark_sale_undone(conn, sale_id: int) -> None:
+    sale = get_sale(conn, sale_id)
+    conn.execute("UPDATE sales SET undone = 1 WHERE id = ?", (sale_id,))
+    if sale and sale["debt_tx_id"]:
+        conn.execute("UPDATE transactions SET undone = 1 WHERE id = ?", (sale["debt_tx_id"],))
+    conn.commit()
+
+
+def recent_sales(conn, limit: int = 10) -> list[dict]:
+    ids = [r["id"] for r in conn.execute("SELECT id FROM sales WHERE undone = 0 ORDER BY id DESC LIMIT ?", (limit,))]
+    out = []
+    for i in ids:
+        sale = get_sale(conn, i)
+        if sale["customer_id"]:
+            sale["customer_name"] = get_customer(conn, sale["customer_id"])["name"]
+        out.append(sale)
+    return out
+
+
+def sales_summary(conn, period: str = "month", item_id: int | None = None) -> dict:
+    """Per item (or one item): how much was sold, for how much, its cost and profit; and the
+    totals by payment. Profit counts only lines whose cost is known."""
+    where = _PERIOD_SQL[period if period in PERIODS else "month"].replace("created_at", "s.created_at")
+    args: list = []
+    if item_id is not None:
+        where += " AND l.item_id = ?"
+        args.append(item_id)
+    items = []
+    for r in conn.execute(
+            f"""SELECT i.id, i.name, i.unit, s.currency, SUM(l.qty) qty, SUM(l.line_total) revenue,
+                       SUM(CASE WHEN l.unit_cost IS NULL THEN NULL ELSE ROUND(l.qty * l.unit_cost) END) cost,
+                       SUM(CASE WHEN l.unit_cost IS NULL THEN 1 ELSE 0 END) unknown_cost, COUNT(DISTINCT s.id) sales
+                FROM sale_lines l JOIN sales s ON s.id = l.sale_id JOIN items i ON i.id = l.item_id
+                WHERE s.undone = 0 AND {where}
+                GROUP BY i.id, s.currency ORDER BY revenue DESC""", args):
+        cost = int(r["cost"]) if r["cost"] is not None and not r["unknown_cost"] else None
+        items.append({"item_id": r["id"], "name": r["name"], "unit": r["unit"], "currency": r["currency"],
+                      "qty": r["qty"], "revenue": r["revenue"], "cost": cost,
+                      "profit": r["revenue"] - cost if cost is not None else None, "sales": r["sales"]})
+    by_payment = {p: {c: 0 for c in CURRENCIES} for p in ("cash", "debt", "electronic")}
+    pay_where = _PERIOD_SQL[period if period in PERIODS else "month"]
+    pay_args: list = []
+    if item_id is not None:
+        pay_where += " AND id IN (SELECT sale_id FROM sale_lines WHERE item_id = ?)"
+        pay_args.append(item_id)
+    for r in conn.execute(f"""SELECT payment, currency, SUM(total) s FROM sales WHERE undone = 0 AND {pay_where}
+                              GROUP BY payment, currency""", pay_args):
+        by_payment[r["payment"]][r["currency"]] = r["s"]
+    totals = {c: sum(by_payment[p][c] for p in by_payment) for c in CURRENCIES}
+    return {"period": period, "items": items, "by_payment": by_payment, "totals": totals}
 
 
 # ---------- batches (imports) ----------

@@ -46,6 +46,12 @@ def build_db(base: dict, extra: dict):
         tx_id = db.add_transaction(conn, ids[name], tx_type, amount, currency)
         if rest and rest[0]:
             session_txs.append(tx_id)
+    # stage 17: [name, price, cost, unit]; past sales: [item name, qty, payment] (cash/electronic)
+    for name, price, cost, unit in base.get("items", []) + extra.get("items", []):
+        ids["مادة:" + name] = db.add_item(conn, name, price, cost, unit)
+    for item, qty, payment in extra.get("sales", []):
+        it = db.get_item(conn, ids["مادة:" + item])
+        db.add_sale(conn, payment, [{"item_id": it["id"], "qty": qty, "unit_price": it["price"], "unit_cost": it["cost"]}])
     for text in base.get("memories", []) + extra.get("memories", []):
         db.add_memory(conn, text)
     for row in base.get("withdrawals", []) + extra.get("withdrawals", []):
@@ -75,7 +81,7 @@ def build_db(base: dict, extra: dict):
 def check(case: dict, result: dict, conn, ids: dict, before_max_id: int, seeded: list) -> list[str]:
     """Returns the list of failed checks (empty = pass)."""
     exp = case["expect"]
-    names = {v: k for k, v in ids.items()}
+    names = {v: k for k, v in ids.items() if not k.startswith("مادة:")}  # item ids are another table
     failures = []
 
     new_rows = conn.execute(
@@ -125,6 +131,18 @@ def check(case: dict, result: dict, conn, ids: dict, before_max_id: int, seeded:
         got_sales = db.drawer_report(conn, closes[-1])["cash_sales"] if closes else None
         if got_sales != exp["drawer_cash_sales"]:
             failures.append(f"البيع النقدي: المتوقع {exp['drawer_cash_sales']}، الموجود {got_sales or 'ما انعد الجرار'}")
+    if "sales" in exp:  # [[payment, total, customer or null, {item: qty}], ...] the new sales
+        got_sales = []
+        for r in conn.execute("SELECT id FROM sales WHERE id > ? AND undone = 0 ORDER BY id", (case.get("_before_sa", 0),)):
+            sale = db.get_sale(conn, r["id"])
+            who = names.get(sale["customer_id"]) if sale["customer_id"] else None
+            got_sales.append([sale["payment"], sale["total"], who, {l["name"]: l["qty"] for l in sale["lines"]}])
+        if got_sales != exp["sales"]:
+            failures.append(f"البيع: المتوقع {exp['sales'] or 'ولا بيعة'}، الموجود {got_sales or 'ولا بيعة'}")
+    if "items_added" in exp:
+        n = conn.execute("SELECT COUNT(*) FROM items WHERE id > ?", (case.get("_before_it", 0),)).fetchone()[0]
+        if n != exp["items_added"]:
+            failures.append(f"المواد الجديدة: المتوقع {exp['items_added']}، الموجود {n}")
     if "cash_ins" in exp:  # [amount, currency, a word the label must contain]
         got_ci = [[r["amount"], r["currency"], r["label"]] for r in conn.execute(
             "SELECT * FROM cash_ins WHERE id > ? AND undone = 0 ORDER BY id", (case.get("_before_ci", 0),))]
@@ -173,7 +191,9 @@ def run_case(case: dict, base: dict, llm) -> dict:
     case = {**case, "_before_wd": conn.execute("SELECT COALESCE(MAX(id), 0) FROM withdrawals").fetchone()[0],
             "_before_mem": conn.execute("SELECT COUNT(*) FROM memories WHERE active = 1").fetchone()[0],
             "_before_dr": conn.execute("SELECT COALESCE(MAX(id), 0) FROM drawer_counts").fetchone()[0],
-            "_before_ci": conn.execute("SELECT COALESCE(MAX(id), 0) FROM cash_ins").fetchone()[0]}
+            "_before_ci": conn.execute("SELECT COALESCE(MAX(id), 0) FROM cash_ins").fetchone()[0],
+            "_before_sa": conn.execute("SELECT COALESCE(MAX(id), 0) FROM sales").fetchone()[0],
+            "_before_it": conn.execute("SELECT COALESCE(MAX(id), 0) FROM items").fetchone()[0]}
 
     started = time.perf_counter()
     result = agent.chat("eval", case["message"])

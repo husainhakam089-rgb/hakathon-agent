@@ -215,6 +215,84 @@ TOOL_SCHEMAS = [
             "required": ["period"],
         },
     },
+    # ----- items and sales (stage 17) -----
+    {
+        "name": "find_item",
+        "description": "يدور مادة بالاسم (طحين، رز، زيت...). يرجع المطابقات ويا سعر البيع والكلفة والوحدة.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "اسم المادة بس، بدون العدد والوحدة"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "add_item",
+        "description": "يضيف مادة جديدة لقائمة المواد، بس لما صاحب المحل يطلب: \"ضيف مادة طحين، الكيس بـ 25 وكلفته 22\".",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "price": {"type": "integer", "description": "سعر البيع للوحدة، عدد صحيح"},
+                "cost": {"type": "integer", "description": "كلفة الوحدة (شكد اشتراها)، إذا گالها"},
+                "unit": {"type": "string", "description": "كيس، كارتون، قطعة، كيلو..."},
+                "currency": {"type": "string", "enum": ["IQD", "USD"]},
+            },
+            "required": ["name", "price"],
+        },
+    },
+    {
+        "name": "update_item",
+        "description": "يغير سعر البيع أو الكلفة أو الوحدة لمادة موجودة: \"صار سعر الطحين 26\".",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item_id": {"type": "integer"},
+                "price": {"type": "integer"},
+                "cost": {"type": "integer"},
+                "unit": {"type": "string"},
+            },
+            "required": ["item_id"],
+        },
+    },
+    {
+        "name": "record_sale",
+        "description": "يسجل بيعة بمادة أو أكثر. المجموع يحسبه الكود. payment: cash (كاش، يدخل الجرار) أو debt (دين، "
+                       "ينضاف لحساب الزبون وحده ويحتاج customer_id) أو electronic (زين كاش، ماستر، كي كارد: ما يدخل الجرار).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "item_id": {"type": "integer"},
+                            "qty": {"type": "number", "description": "العدد، الافتراضي 1"},
+                            "unit_price": {"type": "integer", "description": "بس إذا گال سعر غير السعر المسجل للمادة"},
+                        },
+                        "required": ["item_id"],
+                    },
+                },
+                "payment": {"type": "string", "enum": ["cash", "debt", "electronic"]},
+                "customer_id": {"type": "integer", "description": "للدين بس: الزبون من find_customer"},
+                "confirmed": {"type": "boolean", "description": "true فقط بعد ما المستخدم يأكد مبلغ كبير"},
+            },
+            "required": ["lines", "payment"],
+        },
+    },
+    {
+        "name": "item_sales",
+        "description": "شكد انباع: لكل مادة العدد والمبلغ والكلفة والربح، والمجموع حسب طريقة الدفع. "
+                       "item_id اختياري (مادة وحدة: \"شكد بعنا طحين هالشهر؟\"). period: today، week (آخر 7 أيام)، month، all.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item_id": {"type": "integer"},
+                "period": {"type": "string", "enum": ["today", "week", "month", "all"]},
+            },
+            "required": ["period"],
+        },
+    },
     # ----- the cash drawer (stage 15) -----
     {
         "name": "record_cash_in",
@@ -320,6 +398,10 @@ _OWNER_TOOK = re.compile(_LEAD + r"(?:اخذت|أخذت|خذيت)\s+(?:من(?!\s
 # the model must not decide by itself what to keep.
 _TEACHING = re.compile(r"تذكر|تذكّر|احفظ|احفض|خلي\s*(?:ب|في)\s*بالك|من\s*هسه|من\s*الآن|من\s*الان|اعتبر|يعني|نفسه|نفسها|"
                        r"هو\s+نفس|هي\s+نفس|لا\s*تنسى|انتبه\s+إن|انتبه\s+ان|سجل\s+ببالك|عندنا\s+.+\s+معناها")
+
+
+# add_item right away only when the owner's own message asks to add an item (stage 17).
+_ADD_ITEM = re.compile(r"ضيف|اضف|أضف|إضافة|اضافة|سجل\s+مادة|مادة\s+جديدة|صنف\s+جديد|نزل\s+مادة")
 
 
 def _error(code: str, message: str, **extra) -> dict:
@@ -612,6 +694,110 @@ class DebtTools:
         summary = db.withdrawals_summary(self.conn, period, reason or None)
         return {"ok": True, "ledger": "withdrawal", **summary}
 
+    # ----- items and sales -----
+
+    def tool_find_item(self, query):
+        matches = db.find_items(self.conn, str(query or ""))
+        if not matches:
+            self._new_name_turn.setdefault(("item", normalize(str(query or ""))), self.turn)
+        return {"ok": True, "count": len(matches),
+                "matches": [{k: m[k] for k in ("id", "name", "unit", "price", "cost", "currency")} for m in matches]}
+
+    def tool_add_item(self, name, price, cost=None, unit=None, currency="IQD"):
+        name = " ".join(str(name or "").split())
+        if not name:
+            return _error("invalid_name", "اسم المادة فارغ")
+        p, c = _as_int(price), _as_int(cost) if cost is not None else None
+        if p is None or p <= 0:
+            return _error("invalid_amount", "سعر البيع لازم يكون رقم صحيح أكبر من صفر")
+        if cost is not None and (c is None or c < 0):
+            return _error("invalid_amount", "الكلفة لازم تكون رقم صحيح")
+        currency = (currency or "IQD").upper()
+        if currency not in db.CURRENCIES:
+            return _error("invalid_currency", "العملة لازم تكون IQD أو USD")
+        exact = [m for m in db.find_items(self.conn, name) if m["normalized_name"] == normalize(name)]
+        if exact:
+            return _error("item_exists", "اكو مادة بنفس الاسم", existing={"id": exact[0]["id"], "name": exact[0]["name"]})
+        # Same rule as a new customer: only when the owner asked to add it, or answered "yes"
+        # in a later message after being asked.
+        first_seen = self._new_name_turn.setdefault(("item", normalize(name)), self.turn)
+        if first_seen >= self.turn and not _ADD_ITEM.search(self.source_message or ""):
+            return _error("ask_first", f"لا تضيف هسه. اسأل صاحب المحل: 'ما عندي مادة اسمها {name}، أضيفها بسعر {p:,}؟' "
+                                       "وانتظر جوابه بالرسالة الجاية.")
+        item_id = db.add_item(self.conn, name, p, c, unit, currency)
+        return {"ok": True, "item_id": item_id, "name": name, "price": p, "cost": c, "unit": unit, "currency": currency}
+
+    def tool_update_item(self, item_id, price=None, cost=None, unit=None):
+        item = db.get_item(self.conn, _as_int(item_id)) if _as_int(item_id) is not None else None
+        if not item:
+            return _error("item_not_found", f"ما كو مادة بالرقم {item_id}. دوّر بـ find_item.")
+        p = _as_int(price) if price is not None else None
+        c = _as_int(cost) if cost is not None else None
+        if (price is not None and (p is None or p <= 0)) or (cost is not None and (c is None or c < 0)):
+            return _error("invalid_amount", "السعر لازم يكون رقم صحيح")
+        if p is None and c is None and not unit:
+            return _error("nothing_to_change", "شنو أغير؟ السعر لو الكلفة؟")
+        db.update_item(self.conn, item["id"], price=p, cost=c, unit=unit)
+        new = db.get_item(self.conn, item["id"])
+        return {"ok": True, "item_id": new["id"], "name": new["name"], "price": new["price"], "cost": new["cost"],
+                "unit": new["unit"], "before": {"price": item["price"], "cost": item["cost"]}}
+
+    def tool_record_sale(self, lines, payment="cash", customer_id=None, confirmed=False):
+        if payment not in ("cash", "debt", "electronic"):
+            return _error("invalid_payment", "طريقة الدفع: cash أو debt أو electronic")
+        if not isinstance(lines, list) or not lines:
+            return _error("no_lines", "شنو انباع؟ ما كو ولا مادة")
+        checked, currency = [], None
+        for raw in lines:
+            raw = raw if isinstance(raw, dict) else {}
+            iid = _as_int(raw.get("item_id"))
+            item = db.get_item(self.conn, iid) if iid is not None else None
+            if not item or not item["active"]:
+                return _error("item_not_found", f"ما كو مادة بالرقم {raw.get('item_id')}. دوّر بـ find_item، "
+                                                "وإذا ما موجودة اسأل صاحب المحل يضيفها وبيش.")
+            qty = raw.get("qty", 1)
+            if isinstance(qty, bool) or not isinstance(qty, (int, float)) or qty <= 0 or qty > 100000:
+                return _error("invalid_qty", f"العدد غلط لـ {item['name']}")
+            price = item["price"] if raw.get("unit_price") is None else _as_int(raw.get("unit_price"))
+            if price is None or price <= 0:
+                return _error("invalid_amount", f"السعر غلط لـ {item['name']}")
+            if currency and item["currency"] != currency:
+                return _error("mixed_currency", "مواد بالدينار ومواد بالدولار: سجلهن ببيعتين")
+            currency = item["currency"]
+            checked.append({"item_id": item["id"], "qty": float(qty), "unit_price": price, "unit_cost": item["cost"],
+                            "name": item["name"]})
+        total = sum(round(l["qty"] * l["unit_price"]) for l in checked)
+        customer = None
+        if payment == "debt":
+            customer, err = self._customer_or_error(customer_id)
+            if err:
+                return _error("customer_required", "بيعة الدين تحتاج الزبون: دوّره بـ find_customer. " + err["message"])
+        limit = self.large_amount_iqd if currency == "IQD" else USD_LARGE_AMOUNT
+        if total > limit and not confirmed:
+            return _error("confirmation_required",
+                          "المبلغ كبير، لازم تأكد ويا المستخدم وبعدين تعيد الاستدعاء بـ confirmed=true",
+                          total=total, currency=currency, limit=limit)
+        sale_id = db.add_sale(self.conn, payment, checked, currency, customer["id"] if customer else None,
+                              self.source_message, self.source, self.session_id)
+        self.session_tx_ids.append(("sale", sale_id))
+        sale = db.get_sale(self.conn, sale_id)
+        result = {"ok": True, "ledger": "customer" if payment == "debt" else "drawer", "sale_id": sale_id,
+                  "payment": payment, "what": sale["what"], "total": sale["total"], "currency": currency,
+                  "lines": [{"name": l["name"], "qty": l["qty"], "unit_price": l["unit_price"],
+                             "line_total": l["line_total"]} for l in sale["lines"]]}
+        if customer:
+            result.update(customer_name=customer["name"], balance=db.get_balance(self.conn, customer["id"]))
+        if sale["cost_total"] is not None:
+            result["profit"] = sale["total"] - sale["cost_total"]
+        return result
+
+    def tool_item_sales(self, period="month", item_id=None):
+        period = period if period in db.PERIODS else "month"
+        iid = _as_int(item_id) if item_id is not None else None
+        if item_id is not None and (iid is None or not db.get_item(self.conn, iid)):
+            return _error("item_not_found", f"ما كو مادة بالرقم {item_id}. دوّر بـ find_item.")
+        return {"ok": True, **db.sales_summary(self.conn, period, iid)}
+
     # ----- the cash drawer -----
 
     def _drawer_amounts(self, iqd, usd):
@@ -727,6 +913,19 @@ class DebtTools:
     def tool_undo_last(self):
         while self.session_tx_ids:
             entry = self.session_tx_ids.pop()
+            if isinstance(entry, tuple) and entry[0] == "sale":
+                sale = db.get_sale(self.conn, entry[1])
+                if sale and not sale["undone"]:
+                    db.mark_sale_undone(self.conn, sale["id"])
+                    undone = {"ledger": "customer" if sale["payment"] == "debt" else "drawer", "type": "sale",
+                              "sale_id": sale["id"], "what": sale["what"], "payment": sale["payment"],
+                              "amount": sale["total"], "currency": sale["currency"]}
+                    out = {"ok": True, "undone": undone}
+                    if sale["customer_id"]:
+                        undone["customer_name"] = db.get_customer(self.conn, sale["customer_id"])["name"]
+                        out["balance"] = db.get_balance(self.conn, sale["customer_id"])
+                    return out
+                continue
             if isinstance(entry, tuple) and entry[0] == "cash_in":
                 ci = db.get_cash_in(self.conn, entry[1])
                 if ci and not ci["undone"]:

@@ -28,8 +28,8 @@ class Script:
 
 
 def test_cases_file_is_complete():
-    # 1-13 customers, 14-19 suppliers, 20-23 withdrawals, 24-26 memory, 27-32 the cash drawer, 33-36 every dinar in and out
-    assert [c["id"] for c in CASES["cases"]] == list(range(1, 37))
+    # 1-13 customers, 14-19 suppliers, 20-23 withdrawals, 24-26 memory, 27-32 the cash drawer, 33-36 every dinar in and out, 37-42 items and sales
+    assert [c["id"] for c in CASES["cases"]] == list(range(1, 43))
 
 
 def test_correct_debt_passes():
@@ -122,3 +122,17 @@ def test_drawer_cases():
         LLMResponse(text="اليوم بعت نقد 1,010,000 دينار."),
     ))
     assert status["passed"], status["failures"]
+
+
+def test_sale_cases():
+    flour = 1  # base_setup items: طحين 1, زيت 2, رز 3
+    ok = run_eval.run_case(case(37), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "record_sale", {"payment": "cash", "lines": [{"item_id": flour, "qty": 2}]})]),
+        LLMResponse(text="تمام، بعت كيسين طحين بـ 50,000 دينار كاش."),
+    ))
+    assert ok["passed"], ok["failures"]
+    as_cash_in = run_eval.run_case(case(37), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "record_cash_in", {"amount": 50000, "currency": "IQD", "label": "طحين"})]),
+        LLMResponse(text="تمام."),
+    ))
+    assert not as_cash_in["passed"]  # an item sale must be a sale, not a bare cash in
