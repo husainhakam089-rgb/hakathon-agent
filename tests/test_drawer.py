@@ -159,8 +159,8 @@ def test_details_in_out_and_left(conn, tools):
     d = tools.execute("drawer_details", {})
     assert d["complete"]
     assert [(x["what"], x["amount"]) for x in d["in"]] == [
-        ("چان بالجرار (الفكة)", 50000), ("تسديد من أبو علي", 20000), ("البيع النقدي (محسوب من العدّة)", 1010000)]
-    assert [(x["what"], x["amount"]) for x in d["out"]] == [("دفع لـ شركة الزين", 200000), ("سحب: مولدة", 30000)]
+        ("چان بالجرار (الفكة)", 50000), ("تسديد من أبو علي", 20000), ("زيادة بالجرار: بيع ما انكتب", 1010000)]
+    assert [(x["what"], x["amount"]) for x in d["out"]] == [("دفع لـ شركة الزين", 200000), ("مولدة", 30000)]
     assert d["totals"]["IQD"] == {"in": 1080000, "out": 230000, "left": 850000}  # = what was counted
 
 
@@ -178,3 +178,57 @@ def test_details_endpoint(conn, tools, monkeypatch):
     assert d["totals"]["IQD"]["left"] == 5000
     assert client.get("/drawer/details").json()["complete"] is False
     assert client.get("/drawer/details?count_id=999").status_code == 404
+
+
+def test_every_dinar_in_and_out(conn, tools):
+    """Hussein's example: وارد محمد 25، صادر 35 راتب عامل. Each line by who / what; the count
+    then shows what was not written down (or what is missing)."""
+    ali, zain = _parties(conn)
+    tools.execute("set_drawer_opening", {"iqd": 50000})
+    r = tools.execute("record_cash_in", {"amount": 25000, "currency": "IQD", "label": "محمد"})
+    assert r["ok"] and r["cash_ins_since_last_count"]["IQD"] == 25000
+    tools.execute("record_withdrawal", {"amount": 35000, "currency": "IQD", "reason": "راتب عامل"})
+    tools.execute("record_payment", {"customer_id": ali, "amount": 10000, "currency": "IQD"})
+    tools.execute("record_cash_in", {"amount": 40000, "currency": "IQD", "label": "كارت شحن"})
+    now = tools.execute("drawer_details", {"which": "since_last_count"})
+    # in time order (same second here, so only the set is checked; the start comes first)
+    assert now["in"][0]["what"] == "چان بالجرار (الفكة)"
+    assert sorted(x["what"] for x in now["in"][1:]) == sorted(["محمد", "تسديد من أبو علي", "كارت شحن"])
+    assert [x["what"] for x in now["out"]] == ["راتب عامل"]
+    assert now["totals"]["IQD"] == {"in": 125000, "out": 35000, "left": 90000}  # what should be in it
+    # counted 100,000: 10,000 more than written down
+    c = tools.execute("count_drawer", {"iqd": 100000})
+    assert c["expected"]["IQD"] == 90000 and c["difference"]["IQD"] == 10000
+    assert c["cash_sales"]["IQD"] == 75000 and not c["shortage"]  # 25 + 40 written + 10 not
+    d = tools.execute("drawer_details", {})
+    assert d["in"][-1]["what"].startswith("زيادة") and d["totals"]["IQD"]["left"] == 100000
+
+
+def test_short_drawer_with_cash_ins(conn, tools):
+    tools.execute("set_drawer_opening", {"iqd": 0})
+    tools.execute("record_cash_in", {"amount": 30000, "currency": "IQD", "label": "محمد"})
+    c = tools.execute("count_drawer", {"iqd": 25000})
+    assert c["difference"]["IQD"] == -5000 and c["shortage"] and "ناقص 5,000" in c["meaning"]
+    d = tools.execute("drawer_details", {})
+    assert d["out"][-1]["what"].startswith("نقص") and d["totals"]["IQD"]["left"] == 25000
+
+
+def test_cash_in_rules_and_undo(conn, tools):
+    assert tools.execute("record_cash_in", {"amount": 5000, "currency": "IQD", "label": " "})["error"] == "label_required"
+    assert tools.execute("record_cash_in", {"amount": 0, "currency": "IQD", "label": "x"})["error"] == "invalid_amount"
+    big = tools.execute("record_cash_in", {"amount": 5_000_000, "currency": "IQD", "label": "x"})
+    assert big["error"] == "confirmation_required"
+    tools.execute("record_cash_in", {"amount": 5000, "currency": "IQD", "label": "محمد"})
+    u = tools.execute("undo_last", {})
+    assert u["ok"] and u["undone"]["type"] == "cash_in" and u["undone"]["label"] == "محمد"
+    assert db.drawer_report(conn)["cash_ins"]["IQD"] == 0
+    # no customer was created or touched
+    assert conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 0
+
+
+def test_cash_ins_survive_an_old_count(conn, tools):
+    """A count made before this stage has ci_upto 0: later cash ins still fall after it."""
+    tools.execute("set_drawer_opening", {"iqd": 0})
+    conn.execute("UPDATE drawer_counts SET ci_upto = 0"); conn.commit()
+    tools.execute("record_cash_in", {"amount": 7000, "currency": "IQD", "label": "بيع"})
+    assert tools.execute("count_drawer", {"iqd": 7000})["difference"]["IQD"] == 0

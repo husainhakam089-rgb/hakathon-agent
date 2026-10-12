@@ -56,6 +56,10 @@ def _with_done_note(reply: str, tool_log: list[dict]) -> str:
             done.append(f"سجلت سحب {_money(r['amount'], r['currency'])} ({r['reason']})")
         elif entry["tool"] == "count_drawer":
             done.append("سجلت عدّة الجرار" + (f" {r['counted']['iqd']:,} دينار" if r["counted"]["iqd"] is not None else ""))
+        elif entry["tool"] == "record_cash_in":
+            done.append(f"سجلت وارد {_money(r['amount'], r['currency'])} ({r['label']})")
+        elif entry["tool"] == "undo_last" and r["undone"].get("type") == "cash_in":
+            done.append(f"لغيت الوارد ({r['undone']['label']})")
         elif entry["tool"] == "set_drawer_opening":
             done.append("سجلت الفكة")
         elif entry["tool"] == "undo_last" and r["undone"].get("ledger") == "drawer":

@@ -1,5 +1,5 @@
 {
-  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes. Withdrawals (stage 11): setup.withdrawals [amount, currency, reason, in_session?]; expect.withdrawals [amount, currency, a word the reason must contain]; expect.withdrawals_undone: how many seeded ones end up undone. Memory (stage 12): setup.memories [text]; expect.memories_added: how many new memories. Drawer (stage 15): setup.drawer_day {opening, transactions, withdrawals, close?} = an opening count after the old balances, the day's entries, then optionally a close. expect.drawer_counts_added, expect.drawer_opening (iqd), expect.drawer_cash_sales {IQD: n} of the new close, expect.from_drawer (of the last new transaction).",
+  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes. Withdrawals (stage 11): setup.withdrawals [amount, currency, reason, in_session?]; expect.withdrawals [amount, currency, a word the reason must contain]; expect.withdrawals_undone: how many seeded ones end up undone. Memory (stage 12): setup.memories [text]; expect.memories_added: how many new memories. Drawer (stage 15): setup.drawer_day {opening, transactions, withdrawals, close?} = an opening count after the old balances, the day's entries, then optionally a close. expect.drawer_counts_added, expect.drawer_opening (iqd), expect.drawer_cash_sales {IQD: n} of the new close, expect.from_drawer (of the last new transaction). Cash ins (stage 16): setup.drawer_day.cash_ins [amount, currency, label]; expect.cash_ins [amount, currency, a word the label must contain].",
   "base_setup": {
     "customers": [
       "أبو علي",
@@ -698,6 +698,90 @@
         ],
         "reply_has_all": [
           "850,000"
+        ]
+      }
+    },
+    {
+      "id": 33,
+      "message": "وارد محمد 25",
+      "expect": {
+        "transactions": [],
+        "cash_ins": [
+          [
+            25000,
+            "IQD",
+            "محمد"
+          ]
+        ],
+        "tools_not_called": [
+          "add_customer"
+        ]
+      }
+    },
+    {
+      "id": 34,
+      "message": "صادر 35 راتب عامل",
+      "expect": {
+        "transactions": [],
+        "withdrawals": [
+          [
+            35000,
+            "IQD",
+            "راتب"
+          ]
+        ]
+      }
+    },
+    {
+      "id": 35,
+      "message": "أبو علي سدد 10 آلاف",
+      "expect": {
+        "transactions": [
+          [
+            "أبو علي",
+            "payment",
+            10000,
+            "IQD"
+          ]
+        ],
+        "cash_ins": []
+      }
+    },
+    {
+      "id": 36,
+      "message": "سديت، بالجرار 120 ألف",
+      "setup": {
+        "drawer_day": {
+          "opening": 50000,
+          "cash_ins": [
+            [
+              25000,
+              "IQD",
+              "محمد"
+            ],
+            [
+              40000,
+              "IQD",
+              "كارت شحن"
+            ]
+          ],
+          "withdrawals": [
+            [
+              35000,
+              "IQD",
+              "راتب عامل"
+            ]
+          ]
+        }
+      },
+      "expect": {
+        "transactions": [],
+        "drawer_counts_added": 1,
+        "drawer_cash_sales": {
+          "IQD": 105000
+        },
+        "reply_has_any": [
+          "40,000"
         ]
       }
     }

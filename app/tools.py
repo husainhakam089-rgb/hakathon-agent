@@ -217,6 +217,21 @@ TOOL_SCHEMAS = [
     },
     # ----- the cash drawer (stage 15) -----
     {
+        "name": "record_cash_in",
+        "description": "وارد للجرار: فلوس دخلت مو تسديد دين، ويا منو أو شنو: \"وارد محمد 25 ألف\"، \"بعت لأبو أحمد بـ 15\"، "
+                       "\"دخل 40 ألف كارت شحن\". ما يغير أي دفتر، بس يبين بالجرار من وين دخل كل فلس.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "amount": {"type": "integer", "description": "عدد صحيح موجب، بالوحدة الكاملة"},
+                "currency": {"type": "string", "enum": ["IQD", "USD"]},
+                "label": {"type": "string", "description": "من منو أو على شنو، مثل ما گالها: محمد، بيع، كارت شحن"},
+                "confirmed": {"type": "boolean", "description": "true فقط بعد ما المستخدم يأكد مبلغ كبير"},
+            },
+            "required": ["amount", "currency", "label"],
+        },
+    },
+    {
         "name": "count_drawer",
         "description": "صاحب المحل عدّ الجرار (آخر اليوم أو بأي وقت): يسجل العدّة ويرجع تقرير من آخر عدّة: "
                        "شكد چان بالجرار، شكد دخل وطلع، والبيع النقدي ومجموع البيع. iqd و usd اللي گالها بس.",
@@ -246,8 +261,8 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "drawer_details",
-        "description": "تفاصيل الجرار سطر سطر: الوارد (اللي دخل: الفكة، التسديدات، البيع النقدي) والصادر (اللي طلع: "
-                       "الدفع للموردين والسحوبات)، ومجموع الوارد والصادر والباقي بالجرار. "
+        "description": "تفاصيل الجرار سطر سطر، كل فلس من وين ووكت: الوارد (الفكة، التسديدات، الوارد مثل محمد 25، "
+                       "والزيادة) والصادر (الدفع للموردين، السحوبات مثل راتب عامل، والنقص)، ومجموع الوارد والصادر والباقي بالجرار. "
                        "which: last_close = آخر عدّة (الافتراضي)، since_last_count = من آخر عدّة لهسه (قبل ما ينعد).",
         "input_schema": {
             "type": "object",
@@ -317,8 +332,13 @@ def _drawer_meaning(report: dict) -> str:
     words = {"IQD": "دينار", "USD": "دولار"}
     for cur, sales in report.get("cash_sales", {}).items():
         line = f"البيع النقدي {sales:,} {words[cur]}، ومجموع البيع ويا الدين {report['total_sales'][cur]:,}"
-        if sales < 0:
-            line += f" (بالسالب: الجرار ناقص {-sales:,} {words[cur]} أو أكو شي ما انسجل)"
+        diff = report["difference"][cur]
+        if report["cash_ins"][cur]:
+            line += (f". المفروض بالجرار {report['expected'][cur]:,}"
+                     + (f"، وأكو زيادة {diff:,} (بيع ما انكتب)" if diff > 0 else
+                        f"، والجرار ناقص {-diff:,} {words[cur]}" if diff < 0 else "، ومطابق بالضبط"))
+        elif diff < 0:
+            line += f" (الجرار ناقص {-diff:,} {words[cur]} أو أكو شي ما انسجل)"
         parts.append(line)
     if not parts:
         return "ما گدرت أحسب البيع: لازم عدّة بالبداية وبالنهاية لنفس العملة."
@@ -609,6 +629,28 @@ class DebtTools:
             return None, None, _error("amount_required", "اسأل صاحب المحل: شكد بالجرار؟")
         return values[0], values[1], None
 
+    def tool_record_cash_in(self, amount, currency="IQD", label=None, confirmed=False):
+        label = " ".join(str(label or "").split())
+        if not label:
+            return _error("label_required", "اسأل صاحب المحل: الوارد من منو أو على شنو؟")
+        value = _as_int(amount)
+        if value is None or value <= 0:
+            return _error("invalid_amount", "المبلغ لازم يكون رقم صحيح أكبر من صفر")
+        currency = (currency or "IQD").upper()
+        if currency not in db.CURRENCIES:
+            return _error("invalid_currency", "العملة لازم تكون IQD أو USD")
+        limit = self.large_amount_iqd if currency == "IQD" else USD_LARGE_AMOUNT
+        if value > limit and not confirmed:
+            return _error("confirmation_required",
+                          "المبلغ كبير، لازم تأكد ويا المستخدم وبعدين تعيد الاستدعاء بـ confirmed=true",
+                          label=label, amount=value, currency=currency, limit=limit)
+        ci_id = db.add_cash_in(self.conn, value, currency, label, source_message=self.source_message,
+                               source=self.source, session_id=self.session_id)
+        self.session_tx_ids.append(("cash_in", ci_id))
+        since = db.drawer_report(self.conn)
+        return {"ok": True, "ledger": "drawer", "cash_in_id": ci_id, "amount": value, "currency": currency,
+                "label": label, "cash_ins_since_last_count": since["cash_ins"]}
+
     def tool_count_drawer(self, iqd=None, usd=None):
         iqd, usd, err = self._drawer_amounts(iqd, usd)
         if err:
@@ -685,6 +727,14 @@ class DebtTools:
     def tool_undo_last(self):
         while self.session_tx_ids:
             entry = self.session_tx_ids.pop()
+            if isinstance(entry, tuple) and entry[0] == "cash_in":
+                ci = db.get_cash_in(self.conn, entry[1])
+                if ci and not ci["undone"]:
+                    db.mark_cash_in_undone(self.conn, ci["id"])
+                    return {"ok": True, "undone": {"ledger": "drawer", "type": "cash_in", "cash_in_id": ci["id"],
+                                                   "label": ci["label"], "amount": ci["amount"],
+                                                   "currency": ci["currency"]}}
+                continue
             if isinstance(entry, tuple) and entry[0] == "drawer":
                 count = db.get_drawer_count(self.conn, entry[1])
                 if count and not count["undone"]:

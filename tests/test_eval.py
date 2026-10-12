@@ -28,8 +28,8 @@ class Script:
 
 
 def test_cases_file_is_complete():
-    # 1-13 customers, 14-19 suppliers, 20-23 withdrawals, 24-26 memory, 27-32 the cash drawer
-    assert [c["id"] for c in CASES["cases"]] == list(range(1, 33))
+    # 1-13 customers, 14-19 suppliers, 20-23 withdrawals, 24-26 memory, 27-32 the cash drawer, 33-36 every dinar in and out
+    assert [c["id"] for c in CASES["cases"]] == list(range(1, 37))
 
 
 def test_correct_debt_passes():

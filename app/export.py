@@ -81,6 +81,23 @@ def build_workbook(conn) -> bytes:
              c["credit_sales"]["IQD"], c["total_sales"].get("IQD")] for c in closes],
            [18, 14, 14, 14, 14, 12, 14, 12, 14])
 
+    moves = conn.execute(
+        """SELECT t.created_at AS at, CASE WHEN c.kind = 'customer' THEN 'وارد' ELSE 'صادر' END AS side,
+                  CASE WHEN c.kind = 'customer' THEN 'تسديد من ' || c.name ELSE 'دفع لـ ' || c.name END AS what,
+                  t.amount, t.currency, t.source_message AS msg
+           FROM transactions t JOIN customers c ON c.id = t.customer_id
+           WHERE t.type = 'payment' AND t.from_drawer = 1 AND t.undone = 0 AND t.batch_id IS NULL
+           UNION ALL
+           SELECT created_at, 'صادر', reason, amount, currency, source_message FROM withdrawals
+           WHERE from_drawer = 1 AND undone = 0
+           UNION ALL
+           SELECT created_at, 'وارد', label, amount, currency, source_message FROM cash_ins WHERE undone = 0
+           ORDER BY at""").fetchall()
+    _sheet(wb, "الوارد والصادر", ["التاريخ", "وارد / صادر", "من وين / على شنو", "المبلغ", "العملة", "الرسالة"],
+           [[r["at"], r["side"], r["what"], r["amount"], CURRENCY_WORDS.get(r["currency"], r["currency"]), r["msg"] or ""]
+            for r in moves],
+           [18, 12, 28, 14, 10, 40])
+
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

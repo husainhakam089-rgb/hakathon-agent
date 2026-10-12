@@ -143,6 +143,7 @@ tr.click { cursor: pointer; }
 td.tap-hint { color: var(--faint); font-size: 12px; text-align: center; border: none; }
 tr.click:hover td { background: var(--accent-soft); }
 .cash-h { font-size: 14px; margin: 10px 0 4px; }
+table.cash small.t { color: var(--faint); font-size: 11px; margin-inline-start: 8px; }
 table.cash td { padding: 8px 6px; }
 table.cash tr.computed td { color: var(--accent-text); }
 table.cash tr.sum td { font-weight: 700; border-top: 1px solid var(--border); }
@@ -328,11 +329,13 @@ main.ledger-off .debtors { display: none; }
         <button class="chip fill" data-fill="أخذت بضاعة من ">أخذت بضاعة من …</button>
         <button class="chip fill" data-fill="دفعت لـ">دفعت لـ …</button>
         <button class="chip">شكد عليّ للشركات؟</button>
+        <button class="chip fill" data-fill="وارد ">وارد …</button>
+        <button class="chip fill" data-fill="صادر ">صادر …</button>
         <button class="chip fill" data-fill="سحبت ">سحبت …</button>
         <button class="chip">شكد سحبت اليوم؟</button>
         <button class="chip fill" data-fill="سديت، بالجرار ">سديت، بالجرار …</button>
         <button class="chip">شكد بعت اليوم؟</button>
-        <button class="chip">شنو الوارد والصادر؟</button>
+        <button class="chip">شنو الوارد والصادر اليوم؟</button>
         <button class="chip">شطب آخر وحدة</button>
       </div>
       <div class="attachment" id="attachment">
@@ -1065,10 +1068,10 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawerKind
 
 /* ---------- which accounts tab goes with what the owner asked ---------- */
 const WRITE_TOOLS = ['record_debt', 'record_payment', 'add_customer', 'undo_last', 'undo_batch',
-  'record_purchase', 'record_supplier_payment', 'add_supplier', 'record_withdrawal', 'count_drawer', 'set_drawer_opening'];
+  'record_purchase', 'record_supplier_payment', 'add_supplier', 'record_withdrawal', 'count_drawer', 'set_drawer_opening', 'record_cash_in'];
 const TOOL_LEDGER = {
   count_drawer: 'drawer', set_drawer_opening: 'drawer', drawer_status: 'drawer', drawer_history: 'drawer',
-  drawer_details: 'drawer',
+  drawer_details: 'drawer', record_cash_in: 'drawer',
   find_customer: 'customer', add_customer: 'customer', record_debt: 'customer', record_payment: 'customer',
   get_balance: 'customer', get_history: 'customer', list_debtors: 'customer', undo_batch: 'customer',
   find_supplier: 'supplier', add_supplier: 'supplier', record_purchase: 'supplier', record_supplier_payment: 'supplier',
@@ -1244,16 +1247,16 @@ async function renderCashDay(countId) {
     const word = cur => cur === 'USD' ? 'دولار' : 'دينار';
     const table = (title, lines, total, cur) => `<h3 class="cash-h">${title}</h3>
       <table class="cash"><tbody>${lines.filter(x => x.currency === cur).map(x =>
-        `<tr class="${x.computed ? 'computed' : ''}"><td>${esc(x.what)}</td><td class="num">${x.amount < 0 ? 'ناقص ' + fmt(-x.amount) : fmt(x.amount)}</td></tr>`).join('')
+        `<tr class="${x.computed ? 'computed' : ''}"><td>${esc(x.what)}${x.start || x.computed ? '' : `<small class="t">${esc(shortDate(x.at).replace('اليوم ', ''))}</small>`}</td><td class="num">${fmt(x.amount)}</td></tr>`).join('')
         || '<tr><td class="zero">ما كو</td><td></td></tr>'}
       <tr class="sum"><td>المجموع</td><td class="num">${fmt(total)}</td></tr></tbody></table>`;
     const parts = Object.entries(d.totals).map(([cur, t]) => `
       ${Object.keys(d.totals).length > 1 ? `<p class="hint"><b>${word(cur)}</b></p>` : ''}
       ${table('⬇ الوارد (دخل للجرار)', d.in, t.in, cur)}
       ${table('⬆ الصادر (طلع من الجرار)', d.out, t.out, cur)}
-      <div class="cash-left">الوارد ${fmt(t.in)} − الصادر ${fmt(t.out)} = <b>${d.complete ? 'الباقي بالجرار' : 'المفروض بالجرار (بدون البيع)'} ${fmt(t.left)}</b> ${word(cur)}</div>`).join('');
+      <div class="cash-left">الوارد ${fmt(t.in)} − الصادر ${fmt(t.out)} = <b>${d.complete ? 'الباقي بالجرار' : 'المفروض بالجرار هسه'} ${fmt(t.left)}</b> ${word(cur)}</div>`).join('');
     const notes = [];
-    if (!d.complete) notes.push('بعد ما انعد الجرار، فالبيع النقدي ما ينعرف. لما تسد گول: سديت، بالجرار كذا.');
+    if (!d.complete) notes.push('هذا المفروض يكون بالجرار هسه. لما تعد الجرار وتگول "سديت، بالجرار كذا" تطلع الزيادة (بيع ما انكتب) أو النقص.');
     if (d.credit_sales.IQD || d.credit_sales.USD) notes.push(`بيع بالدين (ما دخل الجرار): ${fmt(d.credit_sales.IQD)} دينار${d.credit_sales.USD ? ' و' + fmt(d.credit_sales.USD) + ' دولار' : ''}`);
     if (d.not_from_drawer.IQD || d.not_from_drawer.USD) notes.push(`دفعات مو من الجرار (حوالة أو من جيبك): ${fmt(d.not_from_drawer.IQD)} دينار`);
     body.innerHTML = (parts || '<p class="hint">ما كو حركة.</p>') + notes.map(n => `<p class="hint">${esc(n)}</p>`).join('');
@@ -1293,9 +1296,9 @@ function renderDrawer() {
   $('empty').textContent = text.empty;
   $('empty').style.display = closes.length ? 'none' : 'block';
   const since = data.since_last_count;
-  const moved = since && ['customer_payments', 'supplier_payments', 'withdrawals'].some(k => since[k].IQD || since[k].USD);
+  const moved = since && ['customer_payments', 'cash_ins', 'supplier_payments', 'withdrawals'].some(k => since[k].IQD || since[k].USD);
   const nowRow = since && since.start && moved ? `<tr class="click" data-count="now" title="شنو دخل وطلع من آخر عدّة">
-      <td class="date">هسه</td><td class="num zero" colspan="3">بعد ما انعد · اضغط للتفاصيل</td></tr>` : '';
+      <td class="date">هسه</td><td class="num zero" colspan="3">من آخر عدّة · اضغط: كل فلس دخل وطلع</td></tr>` : '';
   $('rows').innerHTML = nowRow + closes.map(c => {
     const usd = money(c.cash_sales, 'USD');
     return `<tr class="click" data-count="${c.count_id}" title="اضغط للوارد والصادر"><td class="date">${esc(shortDate(c.counted.at))}</td>

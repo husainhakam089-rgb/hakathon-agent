@@ -57,14 +57,16 @@ def build_db(base: dict, extra: dict):
     # then the day's own entries, then optionally a close.
     day = extra.get("drawer_day")
     if day:
-        tx_upto, wd_upto = db._max_ids(conn)
-        conn.execute("INSERT INTO drawer_counts (kind, iqd, usd, tx_upto, wd_upto) VALUES ('open', ?, NULL, ?, ?)",
-                     (day["opening"], tx_upto, wd_upto))
+        upto = db._max_ids(conn)
+        conn.execute("INSERT INTO drawer_counts (kind, iqd, usd, tx_upto, wd_upto, ci_upto) VALUES ('open', ?, NULL, ?, ?, ?)",
+                     (day["opening"], upto["tx_upto"], upto["wd_upto"], upto["ci_upto"]))
         conn.commit()
         for name, tx_type, amount, currency in day.get("transactions", []):
             db.add_transaction(conn, ids[name], tx_type, amount, currency)
         for amount, currency, reason in day.get("withdrawals", []):
             db.add_withdrawal(conn, amount, currency, reason)
+        for amount, currency, label in day.get("cash_ins", []):
+            db.add_cash_in(conn, amount, currency, label)
         if day.get("close") is not None:
             db.add_drawer_count(conn, "close", day["close"], None)
     return conn, ids, session_txs
@@ -123,6 +125,13 @@ def check(case: dict, result: dict, conn, ids: dict, before_max_id: int, seeded:
         got_sales = db.drawer_report(conn, closes[-1])["cash_sales"] if closes else None
         if got_sales != exp["drawer_cash_sales"]:
             failures.append(f"البيع النقدي: المتوقع {exp['drawer_cash_sales']}، الموجود {got_sales or 'ما انعد الجرار'}")
+    if "cash_ins" in exp:  # [amount, currency, a word the label must contain]
+        got_ci = [[r["amount"], r["currency"], r["label"]] for r in conn.execute(
+            "SELECT * FROM cash_ins WHERE id > ? AND undone = 0 ORDER BY id", (case.get("_before_ci", 0),))]
+        ok_ci = len(got_ci) == len(exp["cash_ins"]) and all(
+            g[0] == a and g[1] == c and db.normalize(w) in db.normalize(g[2]) for g, (a, c, w) in zip(got_ci, exp["cash_ins"]))
+        if not ok_ci:
+            failures.append(f"الوارد: المتوقع {exp['cash_ins'] or 'ولا وارد'}، الموجود {got_ci or 'ولا وارد'}")
     if "from_drawer" in exp:
         last = conn.execute("SELECT from_drawer FROM transactions WHERE id > ? AND undone = 0 ORDER BY id DESC LIMIT 1",
                             (before_max_id,)).fetchone()
@@ -163,7 +172,8 @@ def run_case(case: dict, base: dict, llm) -> dict:
     before_max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM transactions").fetchone()[0]
     case = {**case, "_before_wd": conn.execute("SELECT COALESCE(MAX(id), 0) FROM withdrawals").fetchone()[0],
             "_before_mem": conn.execute("SELECT COUNT(*) FROM memories WHERE active = 1").fetchone()[0],
-            "_before_dr": conn.execute("SELECT COALESCE(MAX(id), 0) FROM drawer_counts").fetchone()[0]}
+            "_before_dr": conn.execute("SELECT COALESCE(MAX(id), 0) FROM drawer_counts").fetchone()[0],
+            "_before_ci": conn.execute("SELECT COALESCE(MAX(id), 0) FROM cash_ins").fetchone()[0]}
 
     started = time.perf_counter()
     result = agent.chat("eval", case["message"])
