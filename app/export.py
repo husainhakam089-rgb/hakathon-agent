@@ -16,6 +16,8 @@ TYPE_WORDS = {("customer", "debt"): "دين", ("customer", "payment"): "تسدي
 CURRENCY_WORDS = {"IQD": "دينار", "USD": "دولار"}
 HEAD_FONT = Font(bold=True, color="FFFFFF")
 HEAD_FILL = PatternFill("solid", fgColor="D97706")
+AMOUNT_HEADERS = {"دينار", "دولار", "المبلغ", "بالجرار (دينار)", "چان بالجرار", "تسديدات زبائن", "دفع للموردين",
+                  "سحوبات", "البيع النقدي", "بيع بالدين", "مجموع البيع"}
 
 
 def _sheet(wb, title, headers, rows, widths):
@@ -34,7 +36,7 @@ def _sheet(wb, title, headers, rows, widths):
         ws.column_dimensions[chr(ord("A") + i)].width = w
     ws.freeze_panes = "A2"
     for col in range(1, len(headers) + 1):  # amounts with thousands separators
-        if headers[col - 1] in ("دينار", "دولار", "المبلغ"):
+        if headers[col - 1] in AMOUNT_HEADERS:
             for (cell,) in ws.iter_rows(min_row=2, min_col=col, max_col=col):
                 cell.number_format = "#,##0"
     return ws
@@ -70,6 +72,14 @@ def build_workbook(conn) -> bytes:
            [[r["created_at"], r["amount"], CURRENCY_WORDS.get(r["currency"], r["currency"]), r["reason"],
              r["source_message"] or "", "ملغي" if r["undone"] else ""] for r in wds],
            [18, 14, 10, 18, 40, 8])
+
+    closes = list(reversed(db.drawer_closes(conn, 10_000)))
+    _sheet(wb, "الجرار", ["العدّة", "بالجرار (دينار)", "چان بالجرار", "تسديدات زبائن", "دفع للموردين", "سحوبات",
+                          "البيع النقدي", "بيع بالدين", "مجموع البيع"],
+           [[c["counted"]["at"], c["counted"]["iqd"], (c["start"] or {}).get("iqd"), c["customer_payments"]["IQD"],
+             c["supplier_payments"]["IQD"], c["withdrawals"]["IQD"], c["cash_sales"].get("IQD"),
+             c["credit_sales"]["IQD"], c["total_sales"].get("IQD")] for c in closes],
+           [18, 14, 14, 14, 14, 12, 14, 12, 14])
 
     buf = io.BytesIO()
     wb.save(buf)

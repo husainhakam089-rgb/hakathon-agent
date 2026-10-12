@@ -1,5 +1,5 @@
 {
-  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes. Withdrawals (stage 11): setup.withdrawals [amount, currency, reason, in_session?]; expect.withdrawals [amount, currency, a word the reason must contain]; expect.withdrawals_undone: how many seeded ones end up undone. Memory (stage 12): setup.memories [text]; expect.memories_added: how many new memories.",
+  "_doc": "Each case runs on a fresh in-memory database. setup.customers: [name, ...]; setup.transactions: [customer, type, amount, currency, in_session?]. in_session=true marks it as recorded in this chat session (so undo_last can see it). expect.transactions: the exact new rows (customer, type, amount, currency); [] = nothing may be recorded. expect.undone: customers whose seeded row must end up undone. reply_has_any: at least one of these strings in the reply. Suppliers (stage 10) are written \"مورد:<name>\" in transactions and expectations. transactions_any_of: several acceptable outcomes. Withdrawals (stage 11): setup.withdrawals [amount, currency, reason, in_session?]; expect.withdrawals [amount, currency, a word the reason must contain]; expect.withdrawals_undone: how many seeded ones end up undone. Memory (stage 12): setup.memories [text]; expect.memories_added: how many new memories. Drawer (stage 15): setup.drawer_day {opening, transactions, withdrawals, close?} = an opening count after the old balances, the day's entries, then optionally a close. expect.drawer_counts_added, expect.drawer_opening (iqd), expect.drawer_cash_sales {IQD: n} of the new close, expect.from_drawer (of the last new transaction).",
   "base_setup": {
     "customers": [
       "أبو علي",
@@ -517,6 +517,187 @@
         ],
         "tools_not_called": [
           "add_customer"
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "message": "سديت، بالجرار 850 ألف",
+      "setup": {
+        "drawer_day": {
+          "opening": 50000,
+          "transactions": [
+            [
+              "أبو علي",
+              "payment",
+              20000,
+              "IQD"
+            ],
+            [
+              "مورد:شركة الزين",
+              "payment",
+              200000,
+              "IQD"
+            ],
+            [
+              "أم حسين",
+              "debt",
+              75000,
+              "IQD"
+            ]
+          ],
+          "withdrawals": [
+            [
+              30000,
+              "IQD",
+              "مولدة"
+            ]
+          ]
+        }
+      },
+      "expect": {
+        "transactions": [],
+        "drawer_counts_added": 1,
+        "drawer_cash_sales": {
+          "IQD": 1010000
+        },
+        "tools_called": [
+          "count_drawer"
+        ],
+        "reply_has_any": [
+          "1,010,000"
+        ]
+      }
+    },
+    {
+      "id": 28,
+      "message": "سديت، بالجرار 300 ألف",
+      "expect": {
+        "transactions": [],
+        "drawer_counts_added": 0,
+        "reply_has_any": [
+          "الصبح",
+          "الفكة",
+          "چان",
+          "كان"
+        ]
+      }
+    },
+    {
+      "id": 29,
+      "message": "الفكة الصبح 50 ألف",
+      "expect": {
+        "transactions": [],
+        "drawer_counts_added": 1,
+        "drawer_opening": 50000,
+        "tools_called": [
+          "set_drawer_opening"
+        ]
+      }
+    },
+    {
+      "id": 30,
+      "message": "دفعت لشركة الزين 100 ألف من جيبي",
+      "expect": {
+        "transactions": [
+          [
+            "مورد:شركة الزين",
+            "payment",
+            100000,
+            "IQD"
+          ]
+        ],
+        "from_drawer": false
+      }
+    },
+    {
+      "id": 31,
+      "message": "شكد بعت اليوم؟",
+      "setup": {
+        "drawer_day": {
+          "opening": 50000,
+          "transactions": [
+            [
+              "أبو علي",
+              "payment",
+              20000,
+              "IQD"
+            ],
+            [
+              "مورد:شركة الزين",
+              "payment",
+              200000,
+              "IQD"
+            ],
+            [
+              "أم حسين",
+              "debt",
+              75000,
+              "IQD"
+            ]
+          ],
+          "withdrawals": [
+            [
+              30000,
+              "IQD",
+              "مولدة"
+            ]
+          ],
+          "close": 850000
+        }
+      },
+      "expect": {
+        "transactions": [],
+        "drawer_counts_added": 0,
+        "reply_has_any": [
+          "1,010,000"
+        ]
+      }
+    },
+    {
+      "id": 32,
+      "message": "شنو الوارد والصادر اليوم؟",
+      "setup": {
+        "drawer_day": {
+          "opening": 50000,
+          "transactions": [
+            [
+              "أبو علي",
+              "payment",
+              20000,
+              "IQD"
+            ],
+            [
+              "مورد:شركة الزين",
+              "payment",
+              200000,
+              "IQD"
+            ],
+            [
+              "أم حسين",
+              "debt",
+              75000,
+              "IQD"
+            ]
+          ],
+          "withdrawals": [
+            [
+              30000,
+              "IQD",
+              "مولدة"
+            ]
+          ],
+          "close": 850000
+        }
+      },
+      "expect": {
+        "transactions": [],
+        "drawer_counts_added": 0,
+        "tools_called": [
+          "drawer_details"
+        ],
+        "reply_has_all": [
+          "850,000"
         ]
       }
     }

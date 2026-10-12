@@ -26,7 +26,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "9"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "10"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -145,6 +145,24 @@ def withdrawals():
     rows = [{"id": r["reason"], "name": r["reason"], "balances": r["totals"], "last_activity": r["last"]}
             for r in month["by_reason"]]
     return {"debtors": rows, "totals": month["totals"], "today": today["totals"], "latest": month["latest"]}
+
+
+@app.get("/drawer")
+def drawer():
+    """Closing counts with each day's cash sales (stage 15), newest first, and what moved
+    since the last count."""
+    with agent.lock:
+        return {"closes": db.drawer_closes(agent.conn, 30), "since_last_count": db.drawer_report(agent.conn)}
+
+
+@app.get("/drawer/details")
+def drawer_details(count_id: int | None = None):
+    """One closing count line by line (in / out / left), or, without count_id, since the last count."""
+    with agent.lock:
+        count = db.get_drawer_count(agent.conn, count_id) if count_id is not None else None
+        if count_id is not None and (count is None or count["undone"] or count["kind"] != "close"):
+            return _error(404, "ما لگيت هالعدّة.")
+        return db.drawer_details(agent.conn, count)
 
 
 # ---------- backups and Excel export ----------

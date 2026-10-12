@@ -91,6 +91,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1
 .chip { background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; font-size: 12px;
   cursor: pointer; color: var(--muted); }
 .chip:hover { color: var(--accent-text); border-color: var(--accent-border); }
+.chip.fill { border-style: dashed; }  /* starts the sentence, you finish it */
 form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border-soft); }
 form input { flex: 1; min-width: 0; background: var(--card-strong); border: 1px solid var(--border); border-radius: 14px;
   padding: 12px 14px; font-size: 15px; outline: none; }
@@ -129,7 +130,7 @@ form .attach-btn:hover { border-color: var(--accent-border); }
 
 /* ---------- ledgers tabs (stage 10) ---------- */
 .ledger-head { justify-content: space-between; flex-wrap: wrap; }
-.tabs { display: flex; gap: 6px; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .tab { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; cursor: pointer;
   font-size: 13px; color: var(--muted); font-weight: 600; }
 .tab.on { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-text); }
@@ -137,6 +138,17 @@ form .attach-btn:hover { border-color: var(--accent-border); }
   background: var(--card); font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }
 .net b { font-size: 15px; font-variant-numeric: tabular-nums; }
 .net .pos { color: var(--good); } .net .neg { color: var(--bad); }
+td.neg-cell { color: var(--bad); }
+tr.click { cursor: pointer; }
+td.tap-hint { color: var(--faint); font-size: 12px; text-align: center; border: none; }
+tr.click:hover td { background: var(--accent-soft); }
+.cash-h { font-size: 14px; margin: 10px 0 4px; }
+table.cash td { padding: 8px 6px; }
+table.cash tr.computed td { color: var(--accent-text); }
+table.cash tr.sum td { font-weight: 700; border-top: 1px solid var(--border); }
+.cash-left { margin: 12px 0 6px; padding: 12px; border-radius: 12px; background: var(--accent-soft);
+  border: 1px solid var(--accent-border); font-size: 14px; line-height: 1.8; }
+td small.usd { color: var(--muted); }
 
 /* ---------- voice (stage 8) ---------- */
 form .mic-btn { background: var(--card-strong); color: inherit; border: 1px solid var(--border); padding: 0 14px; font-size: 18px; font-weight: 400; }
@@ -267,6 +279,10 @@ main.ledger-off .debtors { display: none; }
   header { gap: 8px; padding: 10px 12px; }
   header .lbl { display: none; }  /* icons only on phones */
   .msg, .agent-wrap { max-width: 92%; }
+  /* one row you slide sideways, so the commands don't eat the chat */
+  .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 8px; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex-shrink: 0; white-space: nowrap; }
 }
 </style>
 </head>
@@ -299,18 +315,24 @@ main.ledger-off .debtors { display: none; }
       <div class="messages" id="messages">
         <div class="welcome" id="welcome">
           هلا بيك 👋<br>
-          گلي شنو أسجل أو شنو تريد تعرف عن ديون الزبائن.
+          گلي شنو أسجل أو شنو تريد تعرف: ديون، موردين، سحوبات، أو عدّة الجرار.
         </div>
       </div>
+      <!-- Commands without names: "…" ones start the sentence and you finish it (name, amount);
+           the others are whole questions and are sent right away. -->
       <div class="chips" id="chips">
-        <button class="chip">سجل على ابو علي 25 الف</button>
-        <button class="chip">ابو علي دفع عشرة</button>
-        <button class="chip">شكد باقي على ابو علي؟</button>
-        <button class="chip">منو أكثر واحد عليه دين؟</button>
-        <button class="chip">أخذت من شركة الزين بضاعة بمليون</button>
+        <button class="chip fill" data-fill="سجل على ">سجل على …</button>
+        <button class="chip fill" data-fill="تسديد من ">تسديد من …</button>
+        <button class="chip fill" data-fill="شكد باقي على ">شكد باقي على …؟</button>
+        <button class="chip">منو عليهم ديون؟</button>
+        <button class="chip fill" data-fill="أخذت بضاعة من ">أخذت بضاعة من …</button>
+        <button class="chip fill" data-fill="دفعت لـ">دفعت لـ …</button>
         <button class="chip">شكد عليّ للشركات؟</button>
-        <button class="chip">سحبت 50 ألف للمولدة</button>
-        <button class="chip">شكد سحبت هالشهر؟</button>
+        <button class="chip fill" data-fill="سحبت ">سحبت …</button>
+        <button class="chip">شكد سحبت اليوم؟</button>
+        <button class="chip fill" data-fill="سديت، بالجرار ">سديت، بالجرار …</button>
+        <button class="chip">شكد بعت اليوم؟</button>
+        <button class="chip">شنو الوارد والصادر؟</button>
         <button class="chip">شطب آخر وحدة</button>
       </div>
       <div class="attachment" id="attachment">
@@ -339,6 +361,7 @@ main.ledger-off .debtors { display: none; }
           <button class="tab on" data-tab="customer" title="ديون إلك على الزبائن">الزبائن (إلي)</button>
           <button class="tab" data-tab="supplier" title="ديون عليك للشركات والموردين والمندوبين">الموردين (عليّ)</button>
           <button class="tab" data-tab="withdrawal" title="فلوس طلعت من دخل المحل">السحوبات</button>
+          <button class="tab" data-tab="drawer" title="عدّة الجرار آخر اليوم والبيع النقدي">الجرار</button>
         </div>
         <small id="updated"></small>
       </div>
@@ -350,7 +373,7 @@ main.ledger-off .debtors { display: none; }
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th id="nameHead">الاسم</th><th>دينار</th><th>دولار</th><th>آخر حركة</th></tr></thead>
+          <thead id="ledgerHead"><tr><th id="nameHead">الاسم</th><th>دينار</th><th>دولار</th><th>آخر حركة</th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
         <div class="empty" id="empty">ما كو ديون بعد.</div>
@@ -1005,7 +1028,15 @@ function unreadableHtml(lines) {
   if (!lines || !lines.length) return '';
   return `<div class="unreadable">أسطر ما انقرأت (ضيفها بالكتابة إذا تريد):<ul>${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul></div>`;
 }
-$('chips').onclick = e => { if (e.target.classList.contains('chip')) send(e.target.textContent); };
+$('chips').onclick = e => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  if (!chip.dataset.fill) return send(chip.textContent);
+  const input = $('input');  // the start of a command: you add the name and the amount
+  input.value = chip.dataset.fill;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+};
 $('newChat').onclick = () => {
   if (busy) return;
   sessionId = newId();
@@ -1034,8 +1065,10 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawerKind
 
 /* ---------- which accounts tab goes with what the owner asked ---------- */
 const WRITE_TOOLS = ['record_debt', 'record_payment', 'add_customer', 'undo_last', 'undo_batch',
-  'record_purchase', 'record_supplier_payment', 'add_supplier', 'record_withdrawal'];
+  'record_purchase', 'record_supplier_payment', 'add_supplier', 'record_withdrawal', 'count_drawer', 'set_drawer_opening'];
 const TOOL_LEDGER = {
+  count_drawer: 'drawer', set_drawer_opening: 'drawer', drawer_status: 'drawer', drawer_history: 'drawer',
+  drawer_details: 'drawer',
   find_customer: 'customer', add_customer: 'customer', record_debt: 'customer', record_payment: 'customer',
   get_balance: 'customer', get_history: 'customer', list_debtors: 'customer', undo_batch: 'customer',
   find_supplier: 'supplier', add_supplier: 'supplier', record_purchase: 'supplier', record_supplier_payment: 'supplier',
@@ -1188,8 +1221,9 @@ $('drawerBody').addEventListener('click', async e => {
 
 /* ---------- ledgers: customers (owed to me) / suppliers (I owe) ---------- */
 let lastSnapshot = {};
-let ledgers = {customer: null, supplier: null, withdrawal: null};
-const TABS = ['customer', 'supplier', 'withdrawal'];
+let ledgers = {customer: null, supplier: null, withdrawal: null, drawer: null};
+const TABS = ['customer', 'supplier', 'withdrawal', 'drawer'];
+const LEDGER_HEAD = '<tr><th id="nameHead">الاسم</th><th>دينار</th><th>دولار</th><th>آخر حركة</th></tr>';
 let activeTab = TABS.includes(store.get('debt_tab')) ? store.get('debt_tab') : 'customer';
 const TAB_TEXT = {
   customer: {iqd: 'مجموع الديون بالدينار', usd: 'مجموع الديون بالدولار', count: 'عدد الزبائن',
@@ -1198,7 +1232,78 @@ const TAB_TEXT = {
              empty: 'ما عليك شي للموردين.', credit: 'إلي', creditTitle: 'المورد صار مطلوب إلك'},
   withdrawal: {iqd: 'سحوبات هالشهر بالدينار', usd: 'سحوبات هالشهر بالدولار', count: 'سحوبات اليوم (دينار)',
                empty: 'ما كو سحوبات هالشهر.', name: 'السبب', credit: '', creditTitle: ''},
+  drawer: {iqd: 'بالجرار (آخر عدّة)', usd: 'البيع النقدي', count: 'مجموع البيع ويا الدين',
+           empty: 'ما كو عدّة بعد. لما تسد گول: سديت، بالجرار 850 ألف', credit: '', creditTitle: ''},
 };
+
+/* a day at the drawer line by line: in (وارد) / out (صادر) / left (الباقي) */
+async function renderCashDay(countId) {
+  const body = $('drawerBody');
+  try {
+    const d = await (await fetch('/drawer/details' + (countId === 'now' ? '' : '?count_id=' + encodeURIComponent(countId)))).json();
+    const word = cur => cur === 'USD' ? 'دولار' : 'دينار';
+    const table = (title, lines, total, cur) => `<h3 class="cash-h">${title}</h3>
+      <table class="cash"><tbody>${lines.filter(x => x.currency === cur).map(x =>
+        `<tr class="${x.computed ? 'computed' : ''}"><td>${esc(x.what)}</td><td class="num">${x.amount < 0 ? 'ناقص ' + fmt(-x.amount) : fmt(x.amount)}</td></tr>`).join('')
+        || '<tr><td class="zero">ما كو</td><td></td></tr>'}
+      <tr class="sum"><td>المجموع</td><td class="num">${fmt(total)}</td></tr></tbody></table>`;
+    const parts = Object.entries(d.totals).map(([cur, t]) => `
+      ${Object.keys(d.totals).length > 1 ? `<p class="hint"><b>${word(cur)}</b></p>` : ''}
+      ${table('⬇ الوارد (دخل للجرار)', d.in, t.in, cur)}
+      ${table('⬆ الصادر (طلع من الجرار)', d.out, t.out, cur)}
+      <div class="cash-left">الوارد ${fmt(t.in)} − الصادر ${fmt(t.out)} = <b>${d.complete ? 'الباقي بالجرار' : 'المفروض بالجرار (بدون البيع)'} ${fmt(t.left)}</b> ${word(cur)}</div>`).join('');
+    const notes = [];
+    if (!d.complete) notes.push('بعد ما انعد الجرار، فالبيع النقدي ما ينعرف. لما تسد گول: سديت، بالجرار كذا.');
+    if (d.credit_sales.IQD || d.credit_sales.USD) notes.push(`بيع بالدين (ما دخل الجرار): ${fmt(d.credit_sales.IQD)} دينار${d.credit_sales.USD ? ' و' + fmt(d.credit_sales.USD) + ' دولار' : ''}`);
+    if (d.not_from_drawer.IQD || d.not_from_drawer.USD) notes.push(`دفعات مو من الجرار (حوالة أو من جيبك): ${fmt(d.not_from_drawer.IQD)} دينار`);
+    body.innerHTML = (parts || '<p class="hint">ما كو حركة.</p>') + notes.map(n => `<p class="hint">${esc(n)}</p>`).join('');
+  } catch (e) {
+    body.innerHTML = '<p class="hint">ما گدرت أجيب التفاصيل.</p>';
+  }
+}
+$('rows').addEventListener('click', e => {
+  const row = e.target.closest('tr[data-count]');
+  if (!row || activeTab !== 'drawer') return;
+  const at = row.querySelector('.date').textContent;
+  openDrawer('cashday', '🧾 الجرار: ' + at);
+  renderCashDay(row.dataset.count);
+});
+
+/* the drawer tab: every closing count with its day's sales (dinar; dollars when counted) */
+function money(obj, cur) { return obj && obj[cur] !== undefined && obj[cur] !== null ? obj[cur] : null; }
+function cashCell(v) {
+  if (v === null) return '<td class="num zero">—</td>';
+  return v < 0 ? `<td class="num neg-cell" title="الجرار ناقص أو أكو شي ما انسجل">ناقص ${fmt(-v)}</td>` : `<td class="num">${fmt(v)}</td>`;
+}
+function renderDrawer() {
+  const data = ledgers.drawer;
+  const closes = data.closes || [];
+  const last = closes[0];
+  const text = TAB_TEXT.drawer;
+  $('statIqd').textContent = text.iqd;
+  $('statUsd').textContent = text.usd;
+  $('statCount').textContent = text.count;
+  const counted = last ? last.counted.iqd : null;
+  $('totalIqd').textContent = counted === null ? '—' : fmt(counted);
+  const cash = last ? money(last.cash_sales, 'IQD') : null;
+  $('totalUsd').textContent = cash === null ? '—' : (cash < 0 ? 'ناقص ' + fmt(-cash) : fmt(cash));
+  const total = last ? money(last.total_sales, 'IQD') : null;
+  $('count').textContent = total === null ? '—' : fmt(total);
+  $('ledgerHead').innerHTML = '<tr><th>العدّة</th><th>بالجرار</th><th>البيع النقدي</th><th>مجموع البيع</th></tr>';
+  $('empty').textContent = text.empty;
+  $('empty').style.display = closes.length ? 'none' : 'block';
+  const since = data.since_last_count;
+  const moved = since && ['customer_payments', 'supplier_payments', 'withdrawals'].some(k => since[k].IQD || since[k].USD);
+  const nowRow = since && since.start && moved ? `<tr class="click" data-count="now" title="شنو دخل وطلع من آخر عدّة">
+      <td class="date">هسه</td><td class="num zero" colspan="3">بعد ما انعد · اضغط للتفاصيل</td></tr>` : '';
+  $('rows').innerHTML = nowRow + closes.map(c => {
+    const usd = money(c.cash_sales, 'USD');
+    return `<tr class="click" data-count="${c.count_id}" title="اضغط للوارد والصادر"><td class="date">${esc(shortDate(c.counted.at))}</td>
+      <td class="num">${c.counted.iqd === null ? '—' : fmt(c.counted.iqd)}</td>${cashCell(money(c.cash_sales, 'IQD'))}
+      <td class="num">${money(c.total_sales, 'IQD') === null ? '—' : fmt(c.total_sales.IQD)}${usd !== null ? `<small class="usd"> + ${fmt(usd)}$</small>` : ''}</td></tr>`;
+  }).join('');
+  if (closes.length) $('rows').innerHTML += '<tr><td colspan="4" class="tap-hint">اضغط على أي عدّة حتى تشوف الوارد والصادر والباقي بالجرار</td></tr>';
+}
 
 function balanceCell(v, tab = 'customer') {
   if (!v) return '<td class="num zero">—</td>';
@@ -1232,6 +1337,8 @@ function renderNet() {
 function renderLedger(flash) {
   const data = ledgers[activeTab];
   if (!data) return;
+  if (activeTab === 'drawer') return renderDrawer();
+  $('ledgerHead').innerHTML = LEDGER_HEAD;
   const rows = data.debtors || [];
   const text = TAB_TEXT[activeTab];
   $('statIqd').textContent = text.iqd;
@@ -1259,8 +1366,8 @@ function shortDate(s) {
 // showTab: switch to the ledger that just changed (e.g. after a supplier entry)
 async function loadDebtors(flash, showTab) {
   try {
-    const [c, s, w] = await Promise.all([fetch('/debtors'), fetch('/suppliers'), fetch('/withdrawals')]);
-    ledgers = {customer: await c.json(), supplier: await s.json(), withdrawal: await w.json()};
+    const [c, s, w, d] = await Promise.all([fetch('/debtors'), fetch('/suppliers'), fetch('/withdrawals'), fetch('/drawer')]);
+    ledgers = {customer: await c.json(), supplier: await s.json(), withdrawal: await w.json(), drawer: await d.json()};
     if (showTab && showTab !== activeTab) {
       activeTab = showTab;
       store.set('debt_tab', showTab);
@@ -1271,6 +1378,7 @@ async function loadDebtors(flash, showTab) {
     const snapshot = {};
     for (const tab of TABS) {
       for (const r of ledgers[tab].debtors || []) snapshot[tab + ':' + r.id] = r.balances.IQD + '|' + r.balances.USD;
+      for (const c of ledgers[tab].closes || []) snapshot[tab + ':' + c.count_id] = c.counted.iqd + '|' + c.counted.usd;
     }
     // something changed while the accounts are closed: a dot on 📒
     if (flash && !ledgerOpen && JSON.stringify(snapshot) !== JSON.stringify(lastSnapshot)) {

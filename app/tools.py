@@ -72,6 +72,7 @@ TOOL_SCHEMAS = [
                 "currency": {"type": "string", "enum": ["IQD", "USD"]},
                 "note": {"type": "string"},
                 "confirmed": {"type": "boolean", "description": "true فقط بعد ما المستخدم يأكد مبلغ كبير"},
+                "from_drawer": {"type": "boolean", "description": "false بس إذا گال إن الفلوس ما دخلت الجرار (حوالة، زين كاش، ماستر، للبيت). الافتراضي true"},
             },
             "required": ["customer_id", "amount", "currency"],
         },
@@ -163,6 +164,7 @@ TOOL_SCHEMAS = [
                 "currency": {"type": "string", "enum": ["IQD", "USD"]},
                 "note": {"type": "string"},
                 "confirmed": {"type": "boolean", "description": "true فقط بعد ما المستخدم يأكد مبلغ كبير"},
+                "from_drawer": {"type": "boolean", "description": "false بس إذا گال إنه دفع مو من الجرار (من جيبي، من البيت، حوالة). الافتراضي true"},
             },
             "required": ["supplier_id", "amount", "currency"],
         },
@@ -196,6 +198,7 @@ TOOL_SCHEMAS = [
                 "reason": {"type": "string", "description": "على شنو أو منو سحبها، بكلمة أو كلمتين مثل ما گالها: مولدة، إيجار، شخصي"},
                 "note": {"type": "string"},
                 "confirmed": {"type": "boolean", "description": "true فقط بعد ما المستخدم يأكد مبلغ كبير"},
+                "from_drawer": {"type": "boolean", "description": "false بس إذا گال إنه دفعها مو من الجرار (من جيبي، من البيت، حوالة). الافتراضي true"},
             },
             "required": ["amount", "currency", "reason"],
         },
@@ -210,6 +213,53 @@ TOOL_SCHEMAS = [
                 "reason": {"type": "string"},
             },
             "required": ["period"],
+        },
+    },
+    # ----- the cash drawer (stage 15) -----
+    {
+        "name": "count_drawer",
+        "description": "صاحب المحل عدّ الجرار (آخر اليوم أو بأي وقت): يسجل العدّة ويرجع تقرير من آخر عدّة: "
+                       "شكد چان بالجرار، شكد دخل وطلع، والبيع النقدي ومجموع البيع. iqd و usd اللي گالها بس.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "iqd": {"type": "integer", "description": "الدينار اللي بالجرار، عدد صحيح (0 إذا فارغ)"},
+                "usd": {"type": "integer", "description": "الدولار اللي بالجرار، بس إذا ذكر دولار"},
+            },
+        },
+    },
+    {
+        "name": "set_drawer_opening",
+        "description": "شكد چان بالجرار ببداية اليوم (الفكة): \"الفكة الصبح 50 ألف\". يبدّل آخر عدّة.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "iqd": {"type": "integer"},
+                "usd": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "drawer_status",
+        "description": "شكد دخل وطلع من الجرار من آخر عدّة لهسه (بدون عدّة جديدة)، ويا آخر عدّة وتقريرها.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "drawer_details",
+        "description": "تفاصيل الجرار سطر سطر: الوارد (اللي دخل: الفكة، التسديدات، البيع النقدي) والصادر (اللي طلع: "
+                       "الدفع للموردين والسحوبات)، ومجموع الوارد والصادر والباقي بالجرار. "
+                       "which: last_close = آخر عدّة (الافتراضي)، since_last_count = من آخر عدّة لهسه (قبل ما ينعد).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"which": {"type": "string", "enum": ["last_close", "since_last_count"]}},
+        },
+    },
+    {
+        "name": "drawer_history",
+        "description": "تقارير العدّات القديمة (كل يوم: بالجرار، البيع النقدي، بيع الدين، المجموع)، من الأحدث.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "default": 7}},
         },
     },
     # ----- memory (stage 12): things the owner teaches -----
@@ -259,6 +309,20 @@ _TEACHING = re.compile(r"تذكر|تذكّر|احفظ|احفض|خلي\s*(?:ب|ف
 
 def _error(code: str, message: str, **extra) -> dict:
     return {"ok": False, "error": code, "message": message, **extra}
+
+
+def _drawer_meaning(report: dict) -> str:
+    """The day in one plain line, so the model does not do the arithmetic itself."""
+    parts = []
+    words = {"IQD": "دينار", "USD": "دولار"}
+    for cur, sales in report.get("cash_sales", {}).items():
+        line = f"البيع النقدي {sales:,} {words[cur]}، ومجموع البيع ويا الدين {report['total_sales'][cur]:,}"
+        if sales < 0:
+            line += f" (بالسالب: الجرار ناقص {-sales:,} {words[cur]} أو أكو شي ما انسجل)"
+        parts.append(line)
+    if not parts:
+        return "ما گدرت أحسب البيع: لازم عدّة بالبداية وبالنهاية لنفس العملة."
+    return "، و".join(parts)
 
 
 def _as_int(value):
@@ -324,7 +388,7 @@ class DebtTools:
         return self._party_or_error(customer_id, "customer")
 
     def _record(self, tx_type, customer_id, amount, currency="IQD", note=None, confirmed=False,
-                kind="customer"):
+                kind="customer", from_drawer=True):
         customer, err = self._party_or_error(customer_id, kind)
         if err:
             return err
@@ -349,7 +413,7 @@ class DebtTools:
         tx_id = db.add_transaction(
             self.conn, customer["id"], tx_type, value, currency,
             note=note, source_message=self.source_message, source=self.source,
-            session_id=self.session_id,
+            session_id=self.session_id, from_drawer=from_drawer is not False,
         )
         self.session_tx_ids.append(tx_id)
         after = db.get_balance(self.conn, customer["id"])
@@ -377,6 +441,8 @@ class DebtTools:
                 "currency": currency,
                 "balance": after,
             }
+        if tx_type == "payment" and from_drawer is False:
+            result["from_drawer"] = False
         if tx_type == "payment" and value > before[currency]:
             result["overpayment"] = True
             result["overpaid_by"] = value - max(before[currency], 0)
@@ -429,12 +495,13 @@ class DebtTools:
                           "إذا أخذ بضاعة من مورد استعمل record_purchase، وإذا مو واضح اسأله.")
         return self._record("debt", customer_id, amount, currency, note, confirmed)
 
-    def tool_record_payment(self, customer_id, amount, currency="IQD", note=None, confirmed=False):
+    def tool_record_payment(self, customer_id, amount, currency="IQD", note=None, confirmed=False,
+                            from_drawer=True):
         if _OWNER_PAID.search(self.source_message or ""):
             return _error("wrong_ledger", "صاحب المحل هو اللي دفع (دفعت لـ...)، فهذا مو تسديد من زبون. "
                           "إذا دفع لمورد استعمل record_supplier_payment، وإذا الاسم بالدفترين اسأله "
                           "'تقصد الزبون لو المورد؟'.")
-        return self._record("payment", customer_id, amount, currency, note, confirmed)
+        return self._record("payment", customer_id, amount, currency, note, confirmed, from_drawer=from_drawer)
 
     def tool_get_balance(self, customer_id):
         customer, err = self._customer_or_error(customer_id)
@@ -471,8 +538,10 @@ class DebtTools:
     def tool_record_purchase(self, supplier_id, amount, currency="IQD", note=None, confirmed=False):
         return self._record("debt", supplier_id, amount, currency, note, confirmed, kind="supplier")
 
-    def tool_record_supplier_payment(self, supplier_id, amount, currency="IQD", note=None, confirmed=False):
-        return self._record("payment", supplier_id, amount, currency, note, confirmed, kind="supplier")
+    def tool_record_supplier_payment(self, supplier_id, amount, currency="IQD", note=None, confirmed=False,
+                                     from_drawer=True):
+        return self._record("payment", supplier_id, amount, currency, note, confirmed, kind="supplier",
+                            from_drawer=from_drawer)
 
     def tool_get_supplier_balance(self, supplier_id):
         supplier, err = self._party_or_error(supplier_id, "supplier")
@@ -493,7 +562,8 @@ class DebtTools:
 
     # ----- withdrawals -----
 
-    def tool_record_withdrawal(self, amount, currency="IQD", reason=None, note=None, confirmed=False):
+    def tool_record_withdrawal(self, amount, currency="IQD", reason=None, note=None, confirmed=False,
+                               from_drawer=True):
         reason = str(reason or "").strip()
         if not reason:
             return _error("reason_required", "اسأل صاحب المحل: سحبتهن على شنو؟ (مثل مولدة، إيجار، شخصي)")
@@ -510,10 +580,10 @@ class DebtTools:
                           reason=reason, amount=value, currency=currency, limit=limit)
         wd_id = db.add_withdrawal(self.conn, value, currency, reason, note=note,
                                   source_message=self.source_message, source=self.source,
-                                  session_id=self.session_id)
+                                  session_id=self.session_id, from_drawer=from_drawer is not False)
         self.session_tx_ids.append(("withdrawal", wd_id))
         return {"ok": True, "ledger": "withdrawal", "withdrawal_id": wd_id, "amount": value,
-                "currency": currency, "reason": reason,
+                "currency": currency, "reason": reason, "from_drawer": from_drawer is not False,
                 "today_total": db.withdrawals_summary(self.conn, "today")["totals"],
                 "month_total": db.withdrawals_summary(self.conn, "month")["totals"]}
 
@@ -521,6 +591,68 @@ class DebtTools:
         period = period if period in db.PERIODS else "month"
         summary = db.withdrawals_summary(self.conn, period, reason or None)
         return {"ok": True, "ledger": "withdrawal", **summary}
+
+    # ----- the cash drawer -----
+
+    def _drawer_amounts(self, iqd, usd):
+        """(iqd, usd, error): each one a whole number >= 0 or None (not counted)."""
+        values = []
+        for v in (iqd, usd):
+            if v is None:
+                values.append(None)
+                continue
+            n = _as_int(v)
+            if n is None or n < 0:
+                return None, None, _error("invalid_amount", "المبلغ لازم يكون رقم صحيح، صفر أو أكثر")
+            values.append(n)
+        if values == [None, None]:
+            return None, None, _error("amount_required", "اسأل صاحب المحل: شكد بالجرار؟")
+        return values[0], values[1], None
+
+    def tool_count_drawer(self, iqd=None, usd=None):
+        iqd, usd, err = self._drawer_amounts(iqd, usd)
+        if err:
+            return err
+        prev = db.last_drawer_count(self.conn)
+        if prev is None:
+            return _error("opening_required",
+                          "هاي أول عدّة، وما أعرف شكد چان بالجرار ببداية اليوم. لا تسجل شي. اسأل صاحب المحل: "
+                          "'شكد چان بالجرار الصبح (الفكة)؟' وبعد جوابه استدعي set_drawer_opening وبعدين count_drawer.",
+                          counted={"iqd": iqd, "usd": usd})
+        count_id = db.add_drawer_count(self.conn, "close", iqd, usd, self.source_message, self.session_id)
+        self.session_tx_ids.append(("drawer", count_id))
+        report = db.drawer_report(self.conn, db.get_drawer_count(self.conn, count_id))
+        return {"ok": True, "ledger": "drawer", **report, "meaning": _drawer_meaning(report)}
+
+    def tool_set_drawer_opening(self, iqd=None, usd=None):
+        iqd, usd, err = self._drawer_amounts(iqd, usd)
+        if err:
+            return err
+        count_id = db.add_drawer_count(self.conn, "open", iqd, usd, self.source_message, self.session_id)
+        self.session_tx_ids.append(("drawer", count_id))
+        return {"ok": True, "ledger": "drawer", "opening": {"iqd": iqd, "usd": usd}}
+
+    def tool_drawer_status(self):
+        last = db.last_drawer_count(self.conn)
+        since = db.drawer_report(self.conn)
+        result = {"ok": True, "ledger": "drawer", "since_last_count": since}
+        if last and last["kind"] == "close":
+            result["last_close"] = db.drawer_report(self.conn, last)
+        if last is None:
+            result["note"] = "ما كو عدّة بعد. لما يسد صاحب المحل يگول: سديت، بالجرار كذا."
+        return result
+
+    def tool_drawer_details(self, which="last_close"):
+        last = db.last_drawer_count(self.conn)
+        if which != "since_last_count" and last and last["kind"] == "close":
+            details = db.drawer_details(self.conn, last)
+        else:
+            details = db.drawer_details(self.conn)
+        return {"ok": True, "ledger": "drawer", **details}
+
+    def tool_drawer_history(self, limit=7):
+        limit = max(1, min(_as_int(limit) or 7, 60))
+        return {"ok": True, "ledger": "drawer", "closes": db.drawer_closes(self.conn, limit)}
 
     # ----- memory -----
 
@@ -553,6 +685,14 @@ class DebtTools:
     def tool_undo_last(self):
         while self.session_tx_ids:
             entry = self.session_tx_ids.pop()
+            if isinstance(entry, tuple) and entry[0] == "drawer":
+                count = db.get_drawer_count(self.conn, entry[1])
+                if count and not count["undone"]:
+                    db.mark_drawer_count_undone(self.conn, count["id"])
+                    return {"ok": True, "undone": {"ledger": "drawer", "type": "drawer_" + count["kind"],
+                                                   "count_id": count["id"], "iqd": count["iqd"],
+                                                   "usd": count["usd"]}}
+                continue
             if isinstance(entry, tuple):  # ("withdrawal", id)
                 wd = db.get_withdrawal(self.conn, entry[1])
                 if wd and not wd["undone"]:

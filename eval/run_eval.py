@@ -53,6 +53,20 @@ def build_db(base: dict, extra: dict):
         wd_id = db.add_withdrawal(conn, amount, currency, reason)
         if rest and rest[0]:
             session_txs.append(("withdrawal", wd_id))
+    # stage 15: a day at the drawer. The opening covers everything above (old balances),
+    # then the day's own entries, then optionally a close.
+    day = extra.get("drawer_day")
+    if day:
+        tx_upto, wd_upto = db._max_ids(conn)
+        conn.execute("INSERT INTO drawer_counts (kind, iqd, usd, tx_upto, wd_upto) VALUES ('open', ?, NULL, ?, ?)",
+                     (day["opening"], tx_upto, wd_upto))
+        conn.commit()
+        for name, tx_type, amount, currency in day.get("transactions", []):
+            db.add_transaction(conn, ids[name], tx_type, amount, currency)
+        for amount, currency, reason in day.get("withdrawals", []):
+            db.add_withdrawal(conn, amount, currency, reason)
+        if day.get("close") is not None:
+            db.add_drawer_count(conn, "close", day["close"], None)
     return conn, ids, session_txs
 
 
@@ -94,6 +108,27 @@ def check(case: dict, result: dict, conn, ids: dict, before_max_id: int, seeded:
         if added != exp["memories_added"]:
             failures.append(f"الذاكرة: المتوقع ينحفظ {exp['memories_added']}، انحفظ {added}")
 
+    # stage 15: the cash drawer
+    before_dr = case.get("_before_dr", 0)
+    new_counts = [dict(r) for r in conn.execute(
+        "SELECT * FROM drawer_counts WHERE id > ? AND undone = 0 ORDER BY id", (before_dr,))]
+    if "drawer_counts_added" in exp and len(new_counts) != exp["drawer_counts_added"]:
+        failures.append(f"عدّات الجرار: المتوقع {exp['drawer_counts_added']}، الموجود {len(new_counts)}")
+    if "drawer_opening" in exp:
+        opens = [c["iqd"] for c in new_counts if c["kind"] == "open"]
+        if opens[-1:] != [exp["drawer_opening"]]:
+            failures.append(f"الفكة: المتوقع {exp['drawer_opening']}، الموجود {opens or 'ولا شي'}")
+    if "drawer_cash_sales" in exp:
+        closes = [c for c in new_counts if c["kind"] == "close"]
+        got_sales = db.drawer_report(conn, closes[-1])["cash_sales"] if closes else None
+        if got_sales != exp["drawer_cash_sales"]:
+            failures.append(f"البيع النقدي: المتوقع {exp['drawer_cash_sales']}، الموجود {got_sales or 'ما انعد الجرار'}")
+    if "from_drawer" in exp:
+        last = conn.execute("SELECT from_drawer FROM transactions WHERE id > ? AND undone = 0 ORDER BY id DESC LIMIT 1",
+                            (before_max_id,)).fetchone()
+        if not last or bool(last["from_drawer"]) != exp["from_drawer"]:
+            failures.append(f"من الجرار: المتوقع {exp['from_drawer']}، الموجود {None if not last else bool(last['from_drawer'])}")
+
     seeded_tx = [x for x in seeded if not isinstance(x, tuple)]
     for name in exp.get("undone", []):
         undone = conn.execute(
@@ -127,7 +162,8 @@ def run_case(case: dict, base: dict, llm) -> dict:
     session.tools.session_tx_ids = list(seeded)
     before_max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM transactions").fetchone()[0]
     case = {**case, "_before_wd": conn.execute("SELECT COALESCE(MAX(id), 0) FROM withdrawals").fetchone()[0],
-            "_before_mem": conn.execute("SELECT COUNT(*) FROM memories WHERE active = 1").fetchone()[0]}
+            "_before_mem": conn.execute("SELECT COUNT(*) FROM memories WHERE active = 1").fetchone()[0],
+            "_before_dr": conn.execute("SELECT COALESCE(MAX(id), 0) FROM drawer_counts").fetchone()[0]}
 
     started = time.perf_counter()
     result = agent.chat("eval", case["message"])

@@ -28,7 +28,8 @@ class Script:
 
 
 def test_cases_file_is_complete():
-    assert [c["id"] for c in CASES["cases"]] == list(range(1, 27))  # 1-13 customers, 14-19 suppliers, 20-23 withdrawals, 24-26 memory
+    # 1-13 customers, 14-19 suppliers, 20-23 withdrawals, 24-26 memory, 27-32 the cash drawer
+    assert [c["id"] for c in CASES["cases"]] == list(range(1, 33))
 
 
 def test_correct_debt_passes():
@@ -92,3 +93,32 @@ def test_withdrawal_cases():
         LLMResponse(text="لغيت سحب 30,000 دينار (شخصي)."),
     ))
     assert undo["passed"], undo["failures"]
+
+
+def test_drawer_cases():
+    ok = run_eval.run_case(case(27), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "count_drawer", {"iqd": 850000})]),
+        LLMResponse(text="بالجرار 850,000. البيع النقدي 1,010,000 دينار."),
+    ))
+    assert ok["passed"], ok["failures"]
+    typo = run_eval.run_case(case(27), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "count_drawer", {"iqd": 85000})]),
+        LLMResponse(text="البيع النقدي 1,010,000 دينار."),
+    ))
+    assert not typo["passed"]  # counted the wrong amount
+    asks = run_eval.run_case(case(28), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "count_drawer", {"iqd": 300000})]),
+        LLMResponse(text="شكد چان بالجرار الصبح؟"),
+    ))
+    assert asks["passed"], asks["failures"]  # the code refused the first count
+    pocket = run_eval.run_case(case(30), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "record_supplier_payment",
+                                                  {"supplier_id": 4, "amount": 100000, "currency": "IQD"})]),
+        LLMResponse(text="تمام."),
+    ))
+    assert not pocket["passed"]  # forgot from_drawer=false
+    status = run_eval.run_case(case(31), BASE, Script(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "drawer_status", {})]),
+        LLMResponse(text="اليوم بعت نقد 1,010,000 دينار."),
+    ))
+    assert status["passed"], status["failures"]

@@ -83,6 +83,23 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_msg_session ON chat_messages(session_id);
+
+-- Stage 15: counting the cash drawer. 'close' = counted at closing; 'open' = the owner said
+-- how much was in it at the start ("الفكة الصبح 50 ألف"). NULL = that currency not counted.
+-- tx_upto / wd_upto: the last transaction / withdrawal id at that moment, so a day is
+-- exactly the entries between two counts (not guessed from clock times).
+CREATE TABLE IF NOT EXISTS drawer_counts (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind              TEXT NOT NULL CHECK (kind IN ('open','close')),
+  iqd               INTEGER,
+  usd               INTEGER,
+  tx_upto           INTEGER NOT NULL,
+  wd_upto           INTEGER NOT NULL,
+  source_message    TEXT,
+  session_id        TEXT,
+  undone            INTEGER NOT NULL DEFAULT 0,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
 """
 
 # Columns added after v0: (name, definition) added to older databases on connect.
@@ -90,6 +107,7 @@ _MIGRATIONS = [
     ("batch_id", "TEXT"),
     ("source", "TEXT NOT NULL DEFAULT 'chat'"),
     ("session_id", "TEXT"),  # stage 13: the conversation it was recorded in (undo_last later)
+    ("from_drawer", "INTEGER NOT NULL DEFAULT 1"),  # stage 15: 0 = paid by transfer / from the owner's pocket
 ]
 
 
@@ -111,8 +129,11 @@ def _migrate(conn) -> None:
             conn.execute(f"ALTER TABLE transactions ADD COLUMN {name} {definition}")
     if "kind" not in {r["name"] for r in conn.execute("PRAGMA table_info(customers)")}:
         conn.execute("ALTER TABLE customers ADD COLUMN kind TEXT NOT NULL DEFAULT 'customer'")
-    if "session_id" not in {r["name"] for r in conn.execute("PRAGMA table_info(withdrawals)")}:
+    wd_columns = {r["name"] for r in conn.execute("PRAGMA table_info(withdrawals)")}
+    if "session_id" not in wd_columns:
         conn.execute("ALTER TABLE withdrawals ADD COLUMN session_id TEXT")
+    if "from_drawer" not in wd_columns:
+        conn.execute("ALTER TABLE withdrawals ADD COLUMN from_drawer INTEGER NOT NULL DEFAULT 1")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_batch ON transactions(batch_id)")
     conn.commit()
 
@@ -147,12 +168,13 @@ def find_customers(conn, query: str, kind: str = "customer") -> list[dict]:
 
 def add_transaction(conn, customer_id, tx_type, amount, currency="IQD",
                     note=None, source_message=None, batch_id=None, source="chat",
-                    commit: bool = True, session_id: str | None = None) -> int:
+                    commit: bool = True, session_id: str | None = None, from_drawer: bool = True) -> int:
     cur = conn.execute(
         """INSERT INTO transactions (customer_id, type, amount, currency, note, source_message,
-                                     batch_id, source, session_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (customer_id, tx_type, amount, currency, note, source_message, batch_id, source, session_id),
+                                     batch_id, source, session_id, from_drawer)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (customer_id, tx_type, amount, currency, note, source_message, batch_id, source, session_id,
+         int(bool(from_drawer))),
     )
     if commit:
         conn.commit()
@@ -188,12 +210,14 @@ def reason_key(reason: str) -> str:
 
 
 def add_withdrawal(conn, amount: int, currency: str, reason: str, note=None,
-                   source_message=None, source="chat", session_id: str | None = None) -> int:
+                   source_message=None, source="chat", session_id: str | None = None,
+                   from_drawer: bool = True) -> int:
     cur = conn.execute(
         """INSERT INTO withdrawals (amount, currency, reason, reason_key, note, source_message, source,
-                                    session_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (amount, currency, reason.strip(), reason_key(reason), note, source_message, source, session_id),
+                                    session_id, from_drawer)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (amount, currency, reason.strip(), reason_key(reason), note, source_message, source, session_id,
+         int(bool(from_drawer))),
     )
     conn.commit()
     return cur.lastrowid
@@ -304,13 +328,182 @@ def get_messages(conn, session_id: str, last: int | None = None) -> list[dict]:
 
 def session_entries(conn, session_id: str) -> list:
     """What this conversation recorded and is not undone yet, oldest first, in the form
-    undo_last expects: a transaction id, or ("withdrawal", id)."""
+    undo_last expects: a transaction id, ("withdrawal", id) or ("drawer", id)."""
     rows = conn.execute(
         """SELECT 'tx' AS kind, id, created_at FROM transactions WHERE session_id = ? AND undone = 0
            UNION ALL
            SELECT 'wd', id, created_at FROM withdrawals WHERE session_id = ? AND undone = 0
-           ORDER BY created_at, kind, id""", (session_id, session_id))
-    return [r["id"] if r["kind"] == "tx" else ("withdrawal", r["id"]) for r in rows]
+           UNION ALL
+           SELECT 'dr', id, created_at FROM drawer_counts WHERE session_id = ? AND undone = 0
+           ORDER BY created_at, kind, id""", (session_id, session_id, session_id))
+    tags = {"wd": "withdrawal", "dr": "drawer"}
+    return [r["id"] if r["kind"] == "tx" else (tags[r["kind"]], r["id"]) for r in rows]
+
+
+# ---------- the cash drawer (stage 15) ----------
+
+def _max_ids(conn) -> tuple[int, int]:
+    tx = conn.execute("SELECT COALESCE(MAX(id), 0) FROM transactions").fetchone()[0]
+    wd = conn.execute("SELECT COALESCE(MAX(id), 0) FROM withdrawals").fetchone()[0]
+    return tx, wd
+
+
+def _ids_before_today(conn) -> tuple[int, int]:
+    tx = conn.execute("SELECT COALESCE(MAX(id), 0) FROM transactions "
+                      "WHERE date(created_at) < date('now','localtime')").fetchone()[0]
+    wd = conn.execute("SELECT COALESCE(MAX(id), 0) FROM withdrawals "
+                      "WHERE date(created_at) < date('now','localtime')").fetchone()[0]
+    return tx, wd
+
+
+def last_drawer_count(conn, before_id: int | None = None):
+    """The latest count (open or close) still in force, optionally before a given count."""
+    sql = "SELECT * FROM drawer_counts WHERE undone = 0"
+    args: tuple = ()
+    if before_id is not None:
+        sql += " AND id < ?"
+        args = (before_id,)
+    row = conn.execute(sql + " ORDER BY id DESC LIMIT 1", args).fetchone()
+    return dict(row) if row else None
+
+
+def add_drawer_count(conn, kind: str, iqd: int | None, usd: int | None, source_message=None,
+                     session_id: str | None = None) -> int:
+    """A close counts everything recorded up to now. An open ("الفكة الصبح") replaces what
+    the last count said was in the drawer, from the same point; with no count before it,
+    it is the start of today."""
+    if kind == "close":
+        tx_upto, wd_upto = _max_ids(conn)
+    else:
+        prev = last_drawer_count(conn)
+        tx_upto, wd_upto = (prev["tx_upto"], prev["wd_upto"]) if prev else _ids_before_today(conn)
+    cur = conn.execute(
+        """INSERT INTO drawer_counts (kind, iqd, usd, tx_upto, wd_upto, source_message, session_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""", (kind, iqd, usd, tx_upto, wd_upto, source_message, session_id))
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_drawer_count(conn, count_id: int):
+    row = conn.execute("SELECT * FROM drawer_counts WHERE id = ?", (count_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def mark_drawer_count_undone(conn, count_id: int) -> None:
+    conn.execute("UPDATE drawer_counts SET undone = 1 WHERE id = ?", (count_id,))
+    conn.commit()
+
+
+def drawer_movements(conn, tx_from: int, tx_to: int | None, wd_from: int, wd_to: int | None) -> dict:
+    """Money in and out of the drawer between two counts, per currency. Imported rows (old
+    notebook pages) and undone ones are not today's money."""
+    zero = lambda: {c: 0 for c in CURRENCIES}  # noqa: E731
+    out = {"customer_payments": zero(), "supplier_payments": zero(), "withdrawals": zero(),
+           "credit_sales": zero(), "not_from_drawer": zero()}
+    tx_to = tx_to if tx_to is not None else 1 << 62
+    wd_to = wd_to if wd_to is not None else 1 << 62
+    for r in conn.execute(
+            """SELECT c.kind, t.type, t.currency, t.from_drawer, SUM(t.amount) s
+               FROM transactions t JOIN customers c ON c.id = t.customer_id
+               WHERE t.id > ? AND t.id <= ? AND t.undone = 0 AND t.batch_id IS NULL
+               GROUP BY c.kind, t.type, t.currency, t.from_drawer""", (tx_from, tx_to)):
+        cur, s = r["currency"], r["s"]
+        if r["kind"] == "customer" and r["type"] == "debt":
+            out["credit_sales"][cur] += s
+        elif r["type"] == "payment" and not r["from_drawer"]:
+            out["not_from_drawer"][cur] += s
+        elif r["kind"] == "customer":
+            out["customer_payments"][cur] += s
+        elif r["kind"] == "supplier" and r["type"] == "payment":
+            out["supplier_payments"][cur] += s
+    for r in conn.execute(
+            """SELECT currency, from_drawer, SUM(amount) s FROM withdrawals
+               WHERE id > ? AND id <= ? AND undone = 0 GROUP BY currency, from_drawer""", (wd_from, wd_to)):
+        key = "withdrawals" if r["from_drawer"] else "not_from_drawer"
+        out[key][r["currency"]] += r["s"]
+    return out
+
+
+def drawer_report(conn, count: dict | None = None) -> dict:
+    """Cash sales for the day that ends with `count` (a close), or so far since the last
+    count (count=None: movements only, nothing to compare with yet).
+
+    cash sales = in the drawer now - in it at the start - customer payments
+                 + paid to suppliers + withdrawals            (each currency on its own)
+    """
+    prev = last_drawer_count(conn, count["id"] if count else None)
+    tx_from, wd_from = (prev["tx_upto"], prev["wd_upto"]) if prev else (0, 0)
+    tx_to, wd_to = (count["tx_upto"], count["wd_upto"]) if count else (None, None)
+    moves = drawer_movements(conn, tx_from, tx_to, wd_from, wd_to)
+    report = {"start": ({"iqd": prev["iqd"], "usd": prev["usd"], "kind": prev["kind"], "at": prev["created_at"]}
+                        if prev else None),
+              **moves}
+    if count:
+        report["count_id"] = count["id"]
+        report["counted"] = {"iqd": count["iqd"], "usd": count["usd"], "at": count["created_at"]}
+        cash_sales, total_sales = {}, {}
+        for cur, key in (("IQD", "iqd"), ("USD", "usd")):
+            now, start = count[key], prev[key] if prev else None
+            if now is None or start is None:
+                continue  # not counted at both ends: no sales figure for this currency
+            sales = (now - start - moves["customer_payments"][cur]
+                     + moves["supplier_payments"][cur] + moves["withdrawals"][cur])
+            cash_sales[cur] = sales
+            total_sales[cur] = sales + moves["credit_sales"][cur]
+        report["cash_sales"] = cash_sales
+        report["total_sales"] = total_sales
+        report["shortage"] = any(v < 0 for v in cash_sales.values())
+    return report
+
+
+def drawer_details(conn, count: dict | None = None) -> dict:
+    """The day line by line, like the owner's own sheet: what came INTO the drawer (start,
+    customer payments, cash sales) and what went OUT (paid to suppliers, withdrawals), and
+    what is left. For count=None: since the last count, without sales (not counted yet)."""
+    report = drawer_report(conn, count)
+    prev = last_drawer_count(conn, count["id"] if count else None)
+    tx_from, wd_from = (prev["tx_upto"], prev["wd_upto"]) if prev else (0, 0)
+    tx_to = count["tx_upto"] if count else 1 << 62
+    wd_to = count["wd_upto"] if count else 1 << 62
+    lines_in, lines_out = [], []
+    for cur, key in (("IQD", "iqd"), ("USD", "usd")):
+        if prev and prev[key] is not None:
+            lines_in.append({"what": "چان بالجرار" + (" (الفكة)" if prev["kind"] == "open" else " (العدّة اللي قبل)"),
+                             "amount": prev[key], "currency": cur, "at": prev["created_at"]})
+    for r in conn.execute(
+            """SELECT t.created_at, c.kind, c.name, t.amount, t.currency FROM transactions t
+               JOIN customers c ON c.id = t.customer_id
+               WHERE t.id > ? AND t.id <= ? AND t.undone = 0 AND t.batch_id IS NULL
+                 AND t.type = 'payment' AND t.from_drawer = 1 ORDER BY t.id""", (tx_from, tx_to)):
+        line = {"amount": r["amount"], "currency": r["currency"], "at": r["created_at"]}
+        if r["kind"] == "customer":
+            lines_in.append({**line, "what": f"تسديد من {r['name']}"})
+        else:
+            lines_out.append({**line, "what": f"دفع لـ {r['name']}"})
+    for r in conn.execute(
+            """SELECT created_at, amount, currency, reason FROM withdrawals
+               WHERE id > ? AND id <= ? AND undone = 0 AND from_drawer = 1 ORDER BY id""", (wd_from, wd_to)):
+        lines_out.append({"what": f"سحب: {r['reason']}", "amount": r["amount"], "currency": r["currency"],
+                          "at": r["created_at"]})
+    for cur, sales in report.get("cash_sales", {}).items():
+        lines_in.append({"what": "البيع النقدي (محسوب من العدّة)", "amount": sales, "currency": cur,
+                         "at": count["created_at"], "computed": True})
+    totals = {}
+    for cur in CURRENCIES:
+        t_in = sum(x["amount"] for x in lines_in if x["currency"] == cur)
+        t_out = sum(x["amount"] for x in lines_out if x["currency"] == cur)
+        if t_in or t_out:
+            totals[cur] = {"in": t_in, "out": t_out, "left": t_in - t_out}
+    return {"count_id": count["id"] if count else None, "counted": report.get("counted"), "start": report["start"],
+            "in": lines_in, "out": lines_out, "totals": totals, "credit_sales": report["credit_sales"],
+            "not_from_drawer": report["not_from_drawer"], "complete": bool(count and report.get("cash_sales"))}
+
+
+def drawer_closes(conn, limit: int = 30) -> list[dict]:
+    """Recent closing counts with their day's report, newest first."""
+    rows = conn.execute("SELECT * FROM drawer_counts WHERE undone = 0 AND kind = 'close' "
+                        "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [drawer_report(conn, dict(r)) for r in rows]
 
 
 # ---------- batches (imports) ----------

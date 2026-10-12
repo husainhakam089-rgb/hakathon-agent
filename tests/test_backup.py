@@ -71,7 +71,7 @@ def test_excel_export(conn):
     db.add_transaction(conn, zain, "debt", 1000000, "IQD")
     db.add_withdrawal(conn, 50000, "IQD", "مولدة")
     wb = load_workbook(io.BytesIO(export.build_workbook(conn)))
-    assert wb.sheetnames == ["الزبائن (إلي)", "الموردين (عليّ)", "كل القيود", "السحوبات"]
+    assert wb.sheetnames == ["الزبائن (إلي)", "الموردين (عليّ)", "كل القيود", "السحوبات", "الجرار"]
     customers = list(wb["الزبائن (إلي)"].values)
     assert customers[1][:3] == ("أبو علي", 25000, 0) and customers[-1][:2] == ("المجموع", 25000)
     assert wb["الزبائن (إلي)"].sheet_view.rightToLeft
