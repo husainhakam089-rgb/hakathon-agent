@@ -160,6 +160,17 @@ form .attach-btn:hover { border-color: var(--accent-border); }
 .drawer .msg-ok { color: var(--good); font-size: 14px; }
 .drawer .msg-bad { color: var(--bad); font-size: 14px; }
 .sale-recent { font-size: 13px; color: var(--muted); }
+.rep-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.rep-tiles div { border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; }
+.rep-tiles span { display: block; font-size: 11px; color: var(--muted); }
+.rep-tiles b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.rep-tiles .big { grid-column: 1 / -1; background: var(--accent-soft); border-color: var(--accent-border); }
+.rep-tiles .big b { color: var(--accent-text); font-size: 22px; }
+.rep-tiles .neg b { color: var(--bad); }
+.periods { display: flex; gap: 6px; flex-wrap: wrap; }
+.periods button { padding: 6px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--card);
+  color: var(--text); cursor: pointer; font: inherit; font-size: 13px; }
+.periods button.on { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-text); }
 .sale-recent div { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-soft); }
 .drawer .folder { direction: ltr; text-align: left; font-size: 12px; color: var(--faint); word-break: break-all; }
 .drawer .item.click:hover, .drawer .item.on { border-color: var(--accent-border); background: var(--accent-soft); }
@@ -352,6 +363,7 @@ main.ledger-off .debtors { display: none; }
       <button class="icon-btn" id="menuBtn" title="القائمة" aria-haspopup="true" aria-expanded="false">☰<span class="lbl"> القائمة</span><i class="dot"></i></button>
       <div class="menu" id="menu" role="menu">
         <button role="menuitem" id="alertsBtn"><span class="ic">🔔</span><span>التنبيهات</span><b class="badge" id="alertsCount"></b></button>
+        <button role="menuitem" id="reportsBtn"><span class="ic">📊</span>التقارير والربح</button>
         <button role="menuitem" id="saleBtn"><span class="ic">🛒</span>شاشة البيع</button>
         <button role="menuitem" id="ledgerBtn" aria-expanded="false"><span class="ic">📒</span><span id="ledgerLbl">افتح الحسابات</span><i class="dot"></i></button>
         <button role="menuitem" id="sessionsBtn"><span class="ic">🗂</span>المحادثات القديمة</button>
@@ -392,6 +404,9 @@ main.ledger-off .debtors { display: none; }
         <button class="chip fill" data-fill="سديت، بالجرار ">سديت، بالجرار …</button>
         <button class="chip">شكد بعت اليوم؟</button>
         <button class="chip">شنو الوارد والصادر اليوم؟</button>
+        <button class="chip">شكد ربحت هالشهر؟</button>
+        <button class="chip">شلون كان الأسبوع؟</button>
+        <button class="chip fill" data-fill="كشف حساب ">كشف حساب …</button>
         <button class="chip">شنو عندي تنبيهات؟</button>
         <button class="chip">شطب آخر وحدة</button>
       </div>
@@ -1130,7 +1145,7 @@ const WRITE_TOOLS = ['record_debt', 'record_payment', 'add_customer', 'undo_last
   'record_sale', 'record_recurring_expense'];
 const TOOL_LEDGER = {
   count_drawer: 'drawer', set_drawer_opening: 'drawer', drawer_status: 'drawer', drawer_history: 'drawer',
-  drawer_details: 'drawer', record_cash_in: 'drawer', record_recurring_expense: 'withdrawal',
+  drawer_details: 'drawer', record_cash_in: 'drawer', record_recurring_expense: 'withdrawal', customer_statement: 'customer',
   find_customer: 'customer', add_customer: 'customer', record_debt: 'customer', record_payment: 'customer',
   get_balance: 'customer', get_history: 'customer', list_debtors: 'customer', undo_batch: 'customer',
   find_supplier: 'supplier', add_supplier: 'supplier', record_purchase: 'supplier', record_supplier_payment: 'supplier',
@@ -1506,6 +1521,55 @@ $('drawerBody').addEventListener('click', async e => {
     const data = await post('/settings', {drawer_hour: hour ?? undefined, overdue_days: days || undefined});
     $('recNote').innerHTML = data.ok ? '<p class="msg-ok">✓ انحفظت.</p>' : '<p class="msg-bad">الساعة من 0 لـ 23، والأيام من 1 لـ 365.</p>';
     return checkAlerts(false);
+  }
+});
+
+/* ---------- stage 18: reports (all computed on the server, by code) ---------- */
+let repPeriod = 'month';
+const REP_PERIODS = {today: 'اليوم', week: 'آخر 7 أيام', month: 'هالشهر', last_month: 'الشهر الماضي', all: 'الكل'};
+
+async function renderReports() {
+  const body = $('drawerBody');
+  try {
+    const [r, c] = await Promise.all([fetch('/reports?period=' + repPeriod), fetch('/customers')]);
+    const data = await r.json(), customers = (await c.json()).customers || [];
+    const p = data.profit, w = data.week, f = data.forecast;
+    const tile = (label, v, cls = '') => `<div class="${cls}${v < 0 ? ' neg' : ''}"><span>${label}</span><b>${v < 0 ? '− ' + fmt(-v) : fmt(v)}</b></div>`;
+    let html = `<div class="periods">${Object.entries(REP_PERIODS).map(([k, t]) =>
+      `<button data-period="${k}" class="${k === repPeriod ? 'on' : ''}">${t}</button>`).join('')}</div>
+      <h3 class="cash-h">💰 الربح: ${esc(p.period_words)}</h3>
+      <div class="rep-tiles">${tile('البيع', p.sales.IQD)}${tile('كلفة البضاعة', p.cost_of_goods.IQD)}
+        ${tile('الربح من البيع', p.gross_profit.IQD)}${tile('الصرفيات', p.expenses.IQD)}
+        ${tile('الربح الصافي', p.net_profit.IQD, 'big')}</div>
+      <p class="hint">من ${p.based_on.sales} بيعة و${p.based_on.withdrawals} سحب.${p.notes.length ? ' ' + p.notes.map(esc).join('. ') + '.' : ''}</p>`;
+    if (p.expenses_by_reason.length) html += `<table class="cash"><tbody>${p.expenses_by_reason.map(e =>
+      `<tr><td>${esc(e.reason)}</td><td class="num">${fmt(e.amounts.IQD)}</td></tr>`).join('')}</tbody></table>`;
+    html += `<h3 class="cash-h">📅 آخر 7 أيام</h3><div class="rep-tiles">
+        ${tile('بيع كاش', w.sales_by_payment.cash.IQD)}${tile('بيع دين', w.sales_by_payment.debt.IQD)}
+        ${tile('زين كاش / ماستر', w.sales_by_payment.electronic.IQD)}${tile('تسديدات الزبائن', w.customer_payments.IQD)}
+        ${tile('ديون جديدة', w.new_customer_debts.IQD)}${tile('دفعت للموردين', w.supplier_payments.IQD)}</div>
+      ${w.top_items.length ? `<p class="hint">أكثر شي انباع: ${w.top_items.slice(0, 3).map(i => `${esc(i.name)} (${fmt(i.revenue)})`).join('، ')}</p>` : ''}
+      ${w.drawer_short.length ? `<p class="msg-bad">الجرار طلع ناقص ${w.drawer_short.length} مرة بهالأسبوع.</p>` : ''}`;
+    html += `<h3 class="cash-h">🔮 توقع الكاش لـ 30 يوم</h3>` + (f.ok ? `<div class="rep-tiles">
+        ${tile('متوقع يدخل', f.expected_in.IQD)}${tile('متوقع يطلع', f.expected_out.IQD)}${tile('الصافي المتوقع', f.expected_net.IQD, 'big')}</div>
+      <p class="hint">مبني على آخر ${f.based_on_days} يوم: باليوم يدخل ${fmt(f.per_day_in.IQD)} ويطلع ${fmt(f.per_day_out.IQD)}.
+        ${f.fixed_expenses.length ? 'وداخلة الصرفيات الثابتة: ' + f.fixed_expenses.map(x => `${esc(x.reason)} ${fmt(x.amount)} (${x.due})`).join('، ') + '.' : ''}
+        ${esc(f.caveat)}</p>` : `<p class="hint">${esc(f.reason)}</p>`);
+    html += `<h3 class="cash-h">🧾 كشف حساب زبون</h3><p class="hint">صفحة بيها حساب زبون واحد بس، تطبعها أو تدزها إله.</p>
+      <select id="stCustomer"><option value="">اختار الزبون…</option>${customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+      <div class="actions" style="margin-top:8px"><button class="big secondary" id="stOpen">افتح الكشف (${REP_PERIODS[repPeriod]})</button></div>`;
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<p class="hint">ما گدرت أجيب التقارير.</p>';
+  }
+}
+$('reportsBtn').onclick = () => { openDrawer('reports', '📊 التقارير والربح'); renderReports(); };
+$('drawerBody').addEventListener('click', e => {
+  if (drawerKind !== 'reports') return;
+  if (e.target.dataset.period) { repPeriod = e.target.dataset.period; return renderReports(); }
+  if (e.target.id === 'stOpen') {
+    const id = $('stCustomer').value;
+    if (id) window.open(`/statement/${id}?period=${repPeriod}`, '_blank');
   }
 });
 

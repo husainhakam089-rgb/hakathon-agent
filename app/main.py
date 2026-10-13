@@ -10,13 +10,13 @@ from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 load_dotenv()
 
 from app import db  # noqa: E402  (after load_dotenv: DB_PATH comes from .env)
-from app import backup, export, extraction, spreadsheet  # noqa: E402
+from app import backup, export, extraction, reports, spreadsheet  # noqa: E402
 from app.agent import Agent  # noqa: E402
 from app.llm import LLMError  # noqa: E402
 
@@ -26,7 +26,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "15"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "16"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -258,6 +258,66 @@ def sale(req: SaleRequest):
 def sales_today():
     with agent.lock:
         return {"recent": db.recent_sales(agent.conn, 8), "today": db.sales_summary(agent.conn, "today")}
+
+
+# ---------- stage 18: reports ----------
+
+@app.get("/reports")
+def reports_view(period: str = "month"):
+    period = period if period in reports.PERIODS else "month"
+    with agent.lock:
+        forecast = reports.cash_forecast(agent.conn, 30)
+        return {"profit": reports.profit(agent.conn, period), "week": reports.week_summary(agent.conn),
+                "forecast": forecast}
+
+
+def _statement_html(st: dict) -> str:
+    from html import escape
+
+    def money(v, cur="IQD"):
+        return f"{v:,}" + (" $" if cur == "USD" else "")
+    word = {"debt": "دين", "payment": "تسديد"}
+    rows = "".join(
+        f"<tr><td class=d>{escape(l['at'][:16])}</td><td>{word[l['type']]}</td><td>{escape(l['note'])}</td>"
+        f"<td class=n>{money(l['amount'], l['currency']) if l['type'] == 'debt' else ''}</td>"
+        f"<td class=n>{money(l['amount'], l['currency']) if l['type'] == 'payment' else ''}</td>"
+        f"<td class=n>{money(l['balance'], l['currency'])}</td></tr>" for l in st["lines"]) \
+        or "<tr><td colspan=6 style='text-align:center;color:#777'>ما كو قيود بهالفترة</td></tr>"
+    from datetime import date, timedelta
+    last_day = (date.fromisoformat(st["to"]) - timedelta(days=1)).isoformat()
+    usd = st["opening"]["USD"] or st["closing"]["USD"]
+    def both(d):
+        return money(d["IQD"]) + (f" و {money(d['USD'], 'USD')}" if usd else "")
+    return f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>كشف حساب {escape(st['name'])}</title>
+<style>body{{font-family:system-ui,'Segoe UI',Tahoma,sans-serif;margin:24px;color:#111;background:#fff}}
+h1{{font-size:20px;margin:0 0 4px}} .sub{{color:#555;font-size:13px;margin-bottom:16px}}
+table{{width:100%;border-collapse:collapse;font-size:14px}} th,td{{border-bottom:1px solid #ddd;padding:8px 6px;text-align:right}}
+th{{background:#f5f5f5;font-size:12px}} .n{{font-variant-numeric:tabular-nums;white-space:nowrap}}
+td.d{{white-space:nowrap;font-size:12px;color:#444;direction:ltr;text-align:right}}
+.sum{{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}} .sum div{{border:1px solid #ddd;border-radius:10px;padding:8px 12px}}
+.sum b{{display:block;font-size:18px}} button{{margin-top:16px;padding:10px 18px;font-size:15px;cursor:pointer}}
+@media print{{button{{display:none}} body{{margin:0}}}}</style></head><body>
+<h1>كشف حساب: {escape(st['name'])}</h1>
+<div class="sub">{escape(st['period_words'])} · من {st['from']} لـ {last_day} · {st['based_on']['entries']} قيد</div>
+<div class="sum"><div>الرصيد قبل الفترة<b class=n>{both(st['opening'])}</b></div>
+<div>ديون بالفترة<b class=n>{both(st['debts'])}</b></div><div>تسديدات بالفترة<b class=n>{both(st['payments'])}</b></div>
+<div>الرصيد هسه<b class=n>{both(st['closing'])}</b></div></div>
+<table><thead><tr><th>التاريخ</th><th>النوع</th><th>التفاصيل</th><th>دين</th><th>تسديد</th><th>الرصيد بعده</th></tr></thead>
+<tbody>{rows}</tbody></table>
+<button onclick="print()">🖨 اطبع</button></body></html>"""
+
+
+@app.get("/statement/{customer_id}")
+def statement(customer_id: int, period: str = "month"):
+    """A printable page with one customer's account only (to show or send to that customer)."""
+    period = period if period in reports.PERIODS else "month"
+    with agent.lock:
+        customer = db.get_customer(agent.conn, customer_id)
+        if not customer or customer.get("kind", "customer") != "customer":
+            return _error(404, "ما لگيت هالزبون.")
+        st = reports.customer_statement(agent.conn, customer_id, period)
+    return HTMLResponse(_statement_html(st), headers={"Cache-Control": "no-store"})
 
 
 # ---------- stage 19: reminders and alerts ----------

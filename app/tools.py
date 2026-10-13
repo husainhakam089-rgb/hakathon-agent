@@ -9,7 +9,7 @@ import os
 import re
 import sys
 
-from app import db
+from app import db, reports
 from app.arabic import normalize
 
 USD_LARGE_AMOUNT = 1000  # treated as equivalent to LARGE_AMOUNT_IQD (no FX conversion in v0)
@@ -196,11 +196,14 @@ TOOL_SCHEMAS = [
                 "amount": {"type": "integer", "description": "عدد صحيح موجب، بالوحدة الكاملة"},
                 "currency": {"type": "string", "enum": ["IQD", "USD"]},
                 "reason": {"type": "string", "description": "على شنو أو منو سحبها، بكلمة أو كلمتين مثل ما گالها: مولدة، إيجار، شخصي"},
+                "quantity": {"type": "number", "description": "إذا المبلغ عدد × سعر (30 أمبير × 12,000): العدد هنا، والكود يضرب"},
+                "unit_price": {"type": "integer", "description": "سعر الوحدة ويا quantity (مثلًا سعر الأمبير)"},
+                "unit": {"type": "string", "description": "اسم الوحدة ويا quantity: أمبير، يوم، ساعة..."},
                 "note": {"type": "string"},
                 "confirmed": {"type": "boolean", "description": "true فقط بعد ما المستخدم يأكد مبلغ كبير"},
                 "from_drawer": {"type": "boolean", "description": "false بس إذا گال إنه دفعها مو من الجرار (من جيبي، من البيت، حوالة). الافتراضي true"},
             },
-            "required": ["amount", "currency", "reason"],
+            "required": ["currency", "reason"],
         },
     },
     {
@@ -355,6 +358,41 @@ TOOL_SCHEMAS = [
             "properties": {"limit": {"type": "integer", "default": 7}},
         },
     },
+    # ----- reports (stage 18): all computed by code -----
+    {
+        "name": "profit_report",
+        "description": "الربح لفترة: البيع، وكلفة البضاعة المباعة، والصرفيات (السحوبات) حسب السبب، والربح الصافي. "
+                       "period: today، yesterday، week (آخر 7 أيام)، month (هالشهر)، last_month، all.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"period": {"type": "string", "enum": ["today", "yesterday", "week", "month", "last_month", "all"]}},
+            "required": ["period"],
+        },
+    },
+    {
+        "name": "week_summary",
+        "description": "ملخص آخر 7 أيام: البيع حسب الدفع، الربح، الصرفيات، التسديدات، الديون الجديدة، الموردين، "
+                       "أكثر المواد بيعًا، أحسن يوم، وعدّات الجرار الناقصة.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "cash_forecast",
+        "description": "توقع الكاش للأيام الجاية (الافتراضي 30): شكد متوقع يدخل ويطلع، من معدل آخر الأسابيع ويا الصرفيات الثابتة.",
+        "input_schema": {"type": "object", "properties": {"days": {"type": "integer", "default": 30}}},
+    },
+    {
+        "name": "customer_statement",
+        "description": "كشف حساب زبون واحد لفترة: الرصيد قبل الفترة، كل قيد بيها ويا الرصيد بعده، والرصيد بالآخر. "
+                       "\"شكد حساب أبو محمد هالأسبوع؟\" = period=week.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "customer_id": {"type": "integer"},
+                "period": {"type": "string", "enum": ["today", "yesterday", "week", "month", "last_month", "all"]},
+            },
+            "required": ["customer_id", "period"],
+        },
+    },
     # ----- reminders and alerts (stage 19) -----
     {
         "name": "get_alerts",
@@ -479,6 +517,10 @@ def _drawer_meaning(report: dict) -> str:
     if not parts:
         return "ما گدرت أحسب البيع: لازم عدّة بالبداية وبالنهاية لنفس العملة."
     return "، و".join(parts)
+
+
+def _qty_str(q) -> str:
+    return str(int(q)) if float(q).is_integer() else f"{q:g}"
 
 
 def _as_int(value):
@@ -732,11 +774,22 @@ class DebtTools:
 
     # ----- withdrawals -----
 
-    def tool_record_withdrawal(self, amount, currency="IQD", reason=None, note=None, confirmed=False,
-                               from_drawer=True):
+    def tool_record_withdrawal(self, amount=None, currency="IQD", reason=None, note=None, confirmed=False,
+                               from_drawer=True, quantity=None, unit_price=None, unit=None):
         reason = str(reason or "").strip()
         if not reason:
             return _error("reason_required", "اسأل صاحب المحل: سحبتهن على شنو؟ (مثل مولدة، إيجار، شخصي)")
+        if quantity is not None or unit_price is not None:  # "30 أمبير بـ 12 ألف": the code multiplies (stage 18)
+            q, p = quantity, _as_int(unit_price)
+            if isinstance(q, bool) or not isinstance(q, (int, float)) or q <= 0 or p is None or p <= 0:
+                return _error("invalid_amount", "للضرب لازم العدد (quantity) وسعر الوحدة (unit_price) أرقام موجبة")
+            computed = round(q * p)
+            if amount is not None and _as_int(amount) != computed:
+                return _error("amount_mismatch", f"{_qty_str(q)} × {p:,} = {computed:,} مو {amount}. "
+                                                 "لا تحسب بنفسك: خلي amount فارغ والكود يضرب.")
+            amount = computed
+            detail = f"{_qty_str(q)} {unit or ''} × {p:,}".replace("  ", " ")
+            note = f"{note} · {detail}" if note else detail
         value = _as_int(amount)
         if value is None or value <= 0:
             return _error("invalid_amount", "المبلغ لازم يكون رقم صحيح أكبر من صفر")
@@ -754,6 +807,7 @@ class DebtTools:
         self.session_tx_ids.append(("withdrawal", wd_id))
         return {"ok": True, "ledger": "withdrawal", "withdrawal_id": wd_id, "amount": value,
                 "currency": currency, "reason": reason, "from_drawer": from_drawer is not False,
+                **({"computed_from": note.split(" · ")[-1]} if quantity is not None else {}),
                 "today_total": db.withdrawals_summary(self.conn, "today")["totals"],
                 "month_total": db.withdrawals_summary(self.conn, "month")["totals"]}
 
@@ -949,6 +1003,34 @@ class DebtTools:
     def tool_drawer_history(self, limit=7):
         limit = max(1, min(_as_int(limit) or 7, 60))
         return {"ok": True, "ledger": "drawer", "closes": db.drawer_closes(self.conn, limit)}
+
+    # ----- reports -----
+
+    def tool_profit_report(self, period="month"):
+        period = period if period in reports.PERIODS else "month"
+        return {"ok": True, **reports.profit(self.conn, period)}
+
+    def tool_week_summary(self):
+        return {"ok": True, **reports.week_summary(self.conn)}
+
+    def tool_cash_forecast(self, days=30):
+        d = _as_int(days) or 30
+        if not 1 <= d <= 365:
+            return _error("invalid_days", "عدد الأيام من 1 لـ 365")
+        result = reports.cash_forecast(self.conn, d)
+        if not result.pop("ok"):
+            return _error("not_enough_data", result["reason"])
+        return {"ok": True, **result}
+
+    def tool_customer_statement(self, customer_id, period="month"):
+        customer, err = self._customer_or_error(customer_id)
+        if err:
+            return err
+        period = period if period in reports.PERIODS else "month"
+        st = reports.customer_statement(self.conn, customer["id"], period)
+        st["lines"] = st["lines"][-40:]  # the model needs the recent ones; the page shows them all
+        st["page"] = f"/statement/{customer['id']}?period={period}"
+        return {"ok": True, **st}
 
     # ----- reminders and alerts -----
 

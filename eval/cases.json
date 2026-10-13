@@ -973,6 +973,82 @@
           "أم حسين"
         ]
       }
+    },
+    {
+      "id": 46,
+      "message": "شكد ربحت اليوم؟",
+      "setup": {
+        "sales": [
+          [
+            "طحين",
+            4,
+            "cash"
+          ],
+          [
+            "رز",
+            1,
+            "electronic"
+          ]
+        ]
+      },
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "profit_report"
+        ],
+        "reply_has_all": [
+          "259,000"
+        ]
+      }
+    },
+    {
+      "id": 47,
+      "message": "دفعت المولدة 30 أمبير الأمبير بـ 12 ألف",
+      "expect": {
+        "transactions": [],
+        "withdrawals": [
+          [
+            360000,
+            "IQD",
+            "مولد"
+          ]
+        ]
+      }
+    },
+    {
+      "id": 48,
+      "message": "شكد حساب أبو علي هالأسبوع؟",
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "customer_statement"
+        ],
+        "reply_has_all": [
+          "15,000"
+        ]
+      }
+    },
+    {
+      "id": 49,
+      "message": "شلون كان الأسبوع؟",
+      "setup": {
+        "sales": [
+          [
+            "طحين",
+            2,
+            "cash"
+          ]
+        ]
+      },
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "week_summary"
+        ],
+        "reply_has_any": [
+          "50,000"
+        ]
+      }
     }
   ]
 }

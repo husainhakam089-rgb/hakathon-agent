@@ -58,7 +58,7 @@ def _walk_numbers(value, out: set) -> None:
     if isinstance(value, bool):
         return
     if isinstance(value, (int, float)):
-        out.add(round(value))
+        out.add(abs(round(value)))  # a loss of -259,000 is said "سالب 259,000"
     elif isinstance(value, str):
         out |= _numbers(value)
     elif isinstance(value, dict):

@@ -180,3 +180,10 @@ def test_alert_endpoints(conn, monkeypatch):
         {"drawer_hour": 19, "overdue_days": 14}
     assert client.delete(f"/recurring/{r['recurring']['id']}").json()["ok"]
     assert client.get("/recurring").json()["recurring"] == []
+
+
+def test_a_loss_said_as_a_positive_figure_is_fine():
+    from app.agent import _walk_numbers
+    allowed = set()
+    _walk_numbers({"net_profit": {"IQD": -259000}}, allowed)
+    assert unsupported_numbers("الربح الصافي سالب 259,000 دينار", allowed) == []

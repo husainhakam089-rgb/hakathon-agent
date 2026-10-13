@@ -187,6 +187,10 @@ def check(case: dict, result: dict, conn, ids: dict, before_max_id: int, seeded:
         if tool in called:
             failures.append(f"استدعى {tool} وهو ممنوع")
 
+    flagged = [c for c in result["tool_calls"] if c["tool"] == "number_check"]
+    if flagged:  # stage 19: a figure in the reply that no tool gave
+        failures.append(f"رقم بالرد ما طلع من الحسابات: {flagged[-1]['result'].get('unsupported')}")
+
     reply = result["reply"]
     if exp.get("reply_has_any") and not any(s in reply for s in exp["reply_has_any"]):
         failures.append(f"الرد ما بيه أي من {exp['reply_has_any']}")
