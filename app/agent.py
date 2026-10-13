@@ -16,6 +16,11 @@ from app.tools import TOOL_SCHEMAS, DebtTools
 log = logging.getLogger("debt_agent")
 
 MAX_ITERATIONS = 6
+# Tools that write something: after one of them, a failed message is never started again.
+WRITE_TOOLS = {"record_debt", "record_payment", "add_customer", "undo_last", "undo_batch", "record_purchase",
+               "record_supplier_payment", "add_supplier", "record_withdrawal", "remember", "forget",
+               "record_cash_in", "count_drawer", "set_drawer_opening", "add_item", "update_item", "record_sale",
+               "add_recurring_expense", "remove_recurring_expense", "record_recurring_expense", "set_reminders"}
 MAX_HISTORY_MESSAGES = 20  # user + assistant text messages kept per session
 
 CONFUSED_REPLY = "صار عندي لبس، عيد الطلب بطريقة أبسط"
@@ -236,12 +241,30 @@ class Agent:
 
         reply = None
         number_retry = None  # index in `turn` of the note asking to fix invented figures
+        restarted = False
+        wrote = False  # a write tool succeeded this message: never start it again
         try:
             llm = self.get_llm()
-            for _ in range(MAX_ITERATIONS):
+            iteration = 0
+            while iteration < MAX_ITERATIONS:
+                iteration += 1
                 # Re-read every call: a remember/forget earlier in this turn shows up at once.
                 system = SYSTEM_PROMPT + memory_block(db.list_memories(self.conn))
-                response = llm.complete(system, session.history() + turn, TOOL_SCHEMAS)
+                try:
+                    response = llm.complete(system, session.history() + turn, TOOL_SCHEMAS)
+                except LLMError as e:
+                    # Mid-message the provider failed (overloaded, too slow, this model's quota). If
+                    # nothing was written yet, start the message again once: at the start the
+                    # model can switch, and the owner does not have to resend it.
+                    if not e.retryable or restarted or wrote:
+                        raise
+                    log.warning("LLM error mid-message, starting it again: %s", e.detail)
+                    self._log_llm_error(e)
+                    restarted, number_retry = True, None
+                    turn[:] = turn[:1]
+                    tool_log.clear()
+                    iteration = 0
+                    continue
                 if response.refused:
                     reply = REFUSED_REPLY
                     break
@@ -267,6 +290,8 @@ class Agent:
                 results = []
                 for call in response.tool_calls:
                     entry = self._run_tool(session, session_id, message, call)
+                    if entry["result"].get("ok") and call.name in WRITE_TOOLS:
+                        wrote = True
                     tool_log.append(entry)
                     results.append({"id": call.id, "name": call.name,
                                     "content": json.dumps(entry["result"], ensure_ascii=False),
@@ -276,6 +301,7 @@ class Agent:
                 reply = _with_done_note(CONFUSED_REPLY, tool_log)
         except LLMError as e:
             log.warning("LLM error: %s", e.detail)
+            self._log_llm_error(e)
             reply = _with_done_note(e.user_message, tool_log)
         except Exception:  # never crash the chat on an unexpected failure
             log.exception("Agent turn failed")
@@ -287,6 +313,19 @@ class Agent:
         session.commit(turn)
         self._save(session_id, message, reply, tool_log, source)
         return {"reply": reply, "tool_calls": tool_log}
+
+    def _log_llm_error(self, e: LLMError) -> None:
+        """Every model failure with its real cause, so it can be checked later (logs/llm_errors.log)."""
+        if self.log_path is None:
+            return
+        try:
+            path = self.log_path.with_name("llm_errors.log")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as f:
+                model = getattr(self.llm, "model", "")
+                f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S}  {model}  {e.detail[:500]}\n")
+        except OSError:
+            pass
 
     def _allowed_numbers(self, session: Session, message: str, turn: list[dict], tool_log: list[dict]) -> set[int]:
         allowed = _owner_numbers(message)

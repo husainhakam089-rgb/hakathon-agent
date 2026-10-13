@@ -106,7 +106,7 @@ def test_gemini_skips_thoughts():
     (400, "INVALID_ARGUMENT", "صار خطأ"),
     (403, "PERMISSION_DENIED", "مفتاح Gemini"),
     (404, "NOT_FOUND", "مو موجود"),
-    (500, "INTERNAL", "بيها مشكلة"),
+    (500, "INTERNAL", "زحمة أو مشكلة"),
 ])
 def test_gemini_errors(status, status_text, needle):
     llm = _gemini([(status, {"error": {"code": status, "message": "x", "status": status_text}})], retry=False)
@@ -297,3 +297,45 @@ def test_anthropic_complete_still_works_after_refactor():
     seen = []
     llm = _anthropic([_claude_message([{"type": "text", "text": "هلا"}], stop="end_turn")], seen)
     assert llm.complete("s", [{"role": "user", "text": "هلو"}], SCHEMAS).text == "هلا"
+
+
+def _gemini_raising(script, models):
+    """Like _gemini, but a step can be an exception (a timeout) instead of a response."""
+    from google import genai
+
+    urls = []
+
+    def handler(req):
+        urls.append(str(req.url))
+        step = script.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return httpx.Response(step[0], json=step[1])
+
+    llm = GeminiLLM(api_key="test")
+    llm.models, llm.model = models, models[0]
+    options = llm.http_options.model_copy(update={
+        "httpx_client": httpx.Client(transport=httpx.MockTransport(handler)),
+        "retry_options": llm.http_options.retry_options.model_copy(update={"attempts": 1})})
+    llm.client = genai.Client(api_key="test", http_options=options)
+    return llm, urls
+
+
+def test_gemini_timeout_is_not_called_no_internet():
+    llm, _ = _gemini_raising([httpx.ReadTimeout("slow")], ["m1"])
+    with pytest.raises(LLMError) as e:
+        llm.complete("s", [{"role": "user", "text": "هلا"}], [])
+    assert "تأخر" in e.value.user_message and "النت عندك" in e.value.user_message and e.value.retryable
+
+
+def test_gemini_no_connection_is_the_owners_internet():
+    llm, _ = _gemini_raising([httpx.ConnectError("no route")], ["m1"])
+    with pytest.raises(LLMError) as e:
+        llm.complete("s", [{"role": "user", "text": "هلا"}], [])
+    assert "تأكد من النت عندك" in e.value.user_message and not e.value.retryable
+
+
+def test_gemini_slow_model_is_skipped_at_turn_start():
+    llm, urls = _gemini_raising([httpx.ReadTimeout("slow"), _ok([{"text": "هلا"}])], ["m1", "m2"])
+    assert llm.complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
+    assert "m1" in urls[0] and "m2" in urls[1] and llm.model == "m2"

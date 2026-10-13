@@ -28,10 +28,13 @@ _FALLBACK_MODELS = {"claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "cl
 class LLMError(Exception):
     """Model call failed. `user_message` is safe to show to the shop owner (Arabic)."""
 
-    def __init__(self, user_message: str, detail: str = ""):
+    def __init__(self, user_message: str, detail: str = "", retryable: bool = False):
         super().__init__(detail or user_message)
         self.user_message = user_message
         self.detail = detail
+        # A passing problem on the provider's side (overloaded, too slow, this model's quota):
+        # starting the message again, on another model if needed, may well work.
+        self.retryable = retryable
 
 
 @dataclass
@@ -202,9 +205,11 @@ class GeminiLLM:
         # Gemini often answers 503 "high demand" for a moment: retry those (then
         # switch model). 429 is not retried: on the free tier it is usually the daily quota.
         self.http_options = types.HttpOptions(
-            timeout=60_000,  # ms, per attempt
+            # ms, per attempt. A timeout is retried too, so a stuck model costs 2 x 40 s at most
+            # before the next model is tried (it used to be 3 x 60 s).
+            timeout=40_000,
             retry_options=types.HttpRetryOptions(
-                attempts=3, initial_delay=1.0, max_delay=4.0,
+                attempts=2, initial_delay=1.0, max_delay=4.0,
                 http_status_codes=[408, 500, 502, 503, 504]))
         self.client = genai.Client(api_key=key, http_options=self.http_options)
 
@@ -287,6 +292,8 @@ class GeminiLLM:
                     raise
                 last_error = e
             except errors.ServerError as e:  # still overloaded after retries
+                last_error = e
+            except self._httpx.TimeoutException as e:  # this model is too slow right now: try the next
                 last_error = e
         if rate_limited:  # every usable model is busy this minute: wait for the first one
             model, first_error = rate_limited[0]
@@ -386,7 +393,8 @@ class GeminiLLM:
             if e.code == 429:
                 if "PerDay" in str(e):
                     if any(self._out_of_quota.get(m) != date.today() for m in self.models):
-                        raise LLMError("خلصت حصة النموذج بنص الطلب. عيد رسالتك وراح أستعمل نموذج ثاني.", str(e))
+                        raise LLMError("خلصت حصة النموذج بنص الطلب. عيد رسالتك وراح أستعمل نموذج ثاني.", str(e),
+                                       retryable=True)
                     raise LLMError(ALL_QUOTA_USED, str(e))
                 raise LLMError("خلصت حصة Gemini المجانية هسه، انتظر دقيقة وعيد.", str(e))
             if e.code in (401, 403) or "API_KEY" in str(e):
@@ -395,9 +403,13 @@ class GeminiLLM:
                 raise LLMError(f"النموذج {self.model} مو موجود. تأكد من GEMINI_MODEL بملف .env", str(e))
             raise LLMError("صار خطأ بالطلب للنموذج، عيد المحاولة.", str(e))
         except errors.APIError as e:
-            raise LLMError("خدمة الذكاء الاصطناعي بيها مشكلة هسه، جرب بعد شوية.", str(e))
+            raise LLMError("خدمة Gemini بيها زحمة أو مشكلة هسه (مو من عندك)، جرب بعد شوية.", str(e), retryable=True)
+        except self._httpx.TimeoutException as e:
+            # The request reached Google but no answer came in time: their side is slow, not the owner's internet.
+            raise LLMError("Gemini تأخر بالرد (زحمة عندهم، مو مشكلة النت عندك). عيد بعد شوية.", f"timeout: {e!r}",
+                           retryable=True)
         except self._httpx.TransportError as e:
-            raise LLMError("ما گدرت أتصل بالإنترنت. تأكد من النت وعيد.", str(e))
+            raise LLMError("ما گدرت أوصل لـ Gemini. تأكد من النت عندك وعيد.", f"{type(e).__name__}: {e}")
 
 
 def make_llm():

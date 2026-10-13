@@ -237,3 +237,62 @@ def test_history_is_capped_when_restoring(conn):
     s = Agent(conn, llm=None, log_path=None).session("long")
     texts = [m["text"] for m in s.history()]
     assert len(texts) == agent_mod.MAX_HISTORY_MESSAGES and texts[0] == "سؤال 20" and texts[-1] == "جواب 29"
+
+
+# ---------- a provider failure in the middle of a message (stage 19 fix) ----------
+
+class _FlakyLLM:
+    """Scripted: a step that is an LLMError is raised instead of returned."""
+
+    def __init__(self, *steps):
+        self.steps = list(steps)
+        self.calls = 0
+
+    def complete(self, system, messages, tools):
+        self.calls += 1
+        step = self.steps.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return step
+
+
+def test_failed_message_is_started_again_when_nothing_was_written(conn):
+    from app.llm import LLMError
+    ali = db.add_customer(conn, "أبو علي")
+    llm = _FlakyLLM(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "find_customer", {"query": "ابو علي"})]),
+        LLMError("زحمة", "503 overloaded", retryable=True),  # after a read only: start again
+        LLMResponse(text="", tool_calls=[ToolCall("b", "find_customer", {"query": "ابو علي"})]),
+        LLMResponse(text="", tool_calls=[ToolCall("c", "record_payment", {"customer_id": ali, "amount": 67000, "currency": "IQD"})]),
+        LLMResponse(text="تمام، أبو علي دفع 67,000 دينار."),
+    )
+    r = Agent(conn, llm=llm, log_path=None).chat("s", "تسديد من ابو علي 67 الف")
+    assert r["reply"] == "تمام، أبو علي دفع 67,000 دينار."
+    assert [c["tool"] for c in r["tool_calls"]] == ["find_customer", "record_payment"]  # the first try is dropped
+    assert db.get_balance(conn, ali)["IQD"] == -67000
+
+
+def test_failed_message_after_a_write_is_not_started_again(conn):
+    from app.llm import LLMError
+    ali = db.add_customer(conn, "أبو علي")
+    llm = _FlakyLLM(
+        LLMResponse(text="", tool_calls=[ToolCall("a", "record_debt", {"customer_id": ali, "amount": 5000, "currency": "IQD"})]),
+        LLMError("زحمة", "503 overloaded", retryable=True),
+    )
+    r = Agent(conn, llm=llm, log_path=None).chat("s", "سجل على ابو علي 5")
+    assert llm.calls == 2 and "انحفظ قبل المشكلة" in r["reply"]  # said what was saved, recorded once
+    assert db.get_balance(conn, ali)["IQD"] == 5000
+
+
+def test_failed_message_is_started_again_only_once(conn):
+    from app.llm import LLMError
+    llm = _FlakyLLM(LLMError("زحمة", "503", retryable=True), LLMError("زحمة ثانية", "503", retryable=True))
+    r = Agent(conn, llm=llm, log_path=None).chat("s", "شكد على ابو علي؟")
+    assert llm.calls == 2 and r["reply"] == "زحمة ثانية"
+
+
+def test_llm_errors_are_logged_to_a_file(conn, tmp_path):
+    from app.llm import LLMError
+    llm = _FlakyLLM(LLMError("مفتاح غلط", "401 API_KEY_INVALID"))
+    Agent(conn, llm=llm, log_path=tmp_path / "tool_calls.jsonl").chat("s", "هلا")
+    assert "401 API_KEY_INVALID" in (tmp_path / "llm_errors.log").read_text(encoding="utf-8")
