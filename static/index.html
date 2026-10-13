@@ -1541,6 +1541,7 @@ async function renderReports() {
       <div class="rep-tiles">${tile('البيع', p.sales.IQD)}${tile('كلفة البضاعة', p.cost_of_goods.IQD)}
         ${tile('الربح من البيع', p.gross_profit.IQD)}${tile('الصرفيات', p.expenses.IQD)}
         ${tile('الربح الصافي', p.net_profit.IQD, 'big')}</div>
+      ${p.owner_draws.IQD ? `<p class="hint">سحبت لنفسك (البيت، شخصي): ${fmt(p.owner_draws.IQD)}، مو مصروف فما انطرح.</p>` : ''}
       <p class="hint">من ${p.based_on.sales} بيعة و${p.based_on.withdrawals} سحب.${p.notes.length ? ' ' + p.notes.map(esc).join('. ') + '.' : ''}</p>`;
     if (p.expenses_by_reason.length) html += `<table class="cash"><tbody>${p.expenses_by_reason.map(e =>
       `<tr><td>${esc(e.reason)}</td><td class="num">${fmt(e.amounts.IQD)}</td></tr>`).join('')}</tbody></table>`;

@@ -248,3 +248,13 @@ def test_drawer_shows_todays_money_before_any_count(conn, tools):
     assert [(x["what"], x["amount"]) for x in d["in"]] == [("تسديد من أبو علي", 45000)]  # not yesterday's 99,000
     assert [(x["what"], x["amount"]) for x in d["out"]] == [("أكل", 5000)]
     assert db.drawer_report(conn)["customer_payments"]["IQD"] == 45000
+
+
+def test_drawer_history_says_the_day_in_words(conn, tools):
+    tools.execute("set_drawer_opening", {"iqd": 0})
+    tools.execute("count_drawer", {"iqd": 1000})
+    tools.execute("count_drawer", {"iqd": 2000})
+    conn.execute("UPDATE drawer_counts SET created_at = datetime('now','localtime','-2 days') WHERE id = 2")
+    conn.commit()
+    days = [c["day"] for c in tools.execute("drawer_history", {})["closes"]]
+    assert days == ["اليوم", "قبل البارحة"]

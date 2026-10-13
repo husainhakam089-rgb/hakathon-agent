@@ -274,9 +274,11 @@ def mark_undone(conn, tx_id: int) -> None:
 
 # ---------- withdrawals (stage 11) ----------
 
-PERIODS = ("today", "week", "month", "all")
+PERIODS = ("today", "yesterday", "week", "month", "last_month", "all")
 _PERIOD_SQL = {
     "today": "date(created_at) = date('now','localtime')",
+    "yesterday": "date(created_at) = date('now','localtime','-1 day')",
+    "last_month": "strftime('%Y-%m', created_at) = strftime('%Y-%m','now','localtime','start of month','-1 month')",
     "week": "date(created_at) > date('now','localtime','-7 days')",  # the last 7 days, today included
     "month": "strftime('%Y-%m', created_at) = strftime('%Y-%m','now','localtime')",
     "all": "1 = 1",
@@ -785,13 +787,11 @@ def sales_summary(conn, period: str = "month", item_id: int | None = None) -> di
                       "qty": r["qty"], "revenue": r["revenue"], "cost": cost,
                       "profit": r["revenue"] - cost if cost is not None else None, "sales": r["sales"]})
     by_payment = {p: {c: 0 for c in CURRENCIES} for p in ("cash", "debt", "electronic")}
-    pay_where = _PERIOD_SQL[period if period in PERIODS else "month"]
-    pay_args: list = []
-    if item_id is not None:
-        pay_where += " AND id IN (SELECT sale_id FROM sale_lines WHERE item_id = ?)"
-        pay_args.append(item_id)
-    for r in conn.execute(f"""SELECT payment, currency, SUM(total) s FROM sales WHERE undone = 0 AND {pay_where}
-                              GROUP BY payment, currency""", pay_args):
+    # by payment: the lines that were asked about (one item: only that item's lines, never the
+    # whole sales it was part of, which would count the other items too)
+    for r in conn.execute(f"""SELECT s.payment, s.currency, SUM(l.line_total) s FROM sale_lines l
+                              JOIN sales s ON s.id = l.sale_id WHERE s.undone = 0 AND {where}
+                              GROUP BY s.payment, s.currency""", args):
         by_payment[r["payment"]][r["currency"]] = r["s"]
     totals = {c: sum(by_payment[p][c] for p in by_payment) for c in CURRENCIES}
     return {"period": period, "items": items, "by_payment": by_payment, "totals": totals}

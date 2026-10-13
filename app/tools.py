@@ -208,11 +208,11 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "list_withdrawals",
-        "description": "مجموع السحوبات لفترة (today = اليوم، month = هالشهر، all = الكل)، لكل عملة ولكل سبب، وآخر السحوبات. reason اختياري: سحوبات سبب واحد بس.",
+        "description": "مجموع السحوبات لفترة (today = اليوم، yesterday = البارحة، week = آخر 7 أيام، month = هالشهر، last_month = الشهر الماضي، all = الكل)، لكل عملة ولكل سبب، وآخر السحوبات. reason اختياري: سحوبات سبب واحد بس.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "period": {"type": "string", "enum": ["today", "month", "all"]},
+                "period": {"type": "string", "enum": ["today", "yesterday", "week", "month", "last_month", "all"]},
                 "reason": {"type": "string"},
             },
             "required": ["period"],
@@ -286,12 +286,13 @@ TOOL_SCHEMAS = [
     {
         "name": "item_sales",
         "description": "شكد انباع: لكل مادة العدد والمبلغ والكلفة والربح، والمجموع حسب طريقة الدفع. "
-                       "item_id اختياري (مادة وحدة: \"شكد بعنا طحين هالشهر؟\"). period: today، week (آخر 7 أيام)، month، all.",
+                       "item_id اختياري (مادة وحدة: \"شكد بعنا طحين هالشهر؟\"؛ مبلغها = items[0].revenue). "
+                       "period: today، yesterday، week (آخر 7 أيام)، month (هالشهر)، last_month (الشهر الماضي)، all.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "item_id": {"type": "integer"},
-                "period": {"type": "string", "enum": ["today", "week", "month", "all"]},
+                "period": {"type": "string", "enum": ["today", "yesterday", "week", "month", "last_month", "all"]},
             },
             "required": ["period"],
         },
@@ -517,6 +518,12 @@ def _drawer_meaning(report: dict) -> str:
     if not parts:
         return "ما گدرت أحسب البيع: لازم عدّة بالبداية وبالنهاية لنفس العملة."
     return "، و".join(parts)
+
+
+def _day_words(at: str) -> str:
+    from datetime import date
+    days = (date.today() - date.fromisoformat(at[:10])).days
+    return {0: "اليوم", 1: "البارحة", 2: "قبل البارحة"}.get(days, f"قبل {days} أيام")
 
 
 def _qty_str(q) -> str:
@@ -1002,7 +1009,10 @@ class DebtTools:
 
     def tool_drawer_history(self, limit=7):
         limit = max(1, min(_as_int(limit) or 7, 60))
-        return {"ok": True, "ledger": "drawer", "closes": db.drawer_closes(self.conn, limit)}
+        closes = db.drawer_closes(self.conn, limit)
+        for c in closes:  # the day in words, so the model never works out dates (found by the mall eval)
+            c["day"] = _day_words(c["counted"]["at"])
+        return {"ok": True, "ledger": "drawer", "closes": closes}
 
     # ----- reports -----
 

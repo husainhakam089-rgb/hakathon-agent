@@ -1,0 +1,84 @@
+"""Write eval/mall/RESULTS.md from checks.json (no model) and question_results.json (model).
+
+    python eval/mall/checks.py && python eval/mall/report.py
+"""
+
+import json
+from datetime import datetime
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+
+NOTES = [
+    "## 6. شنو لگينا وصلحنا أثناء التقييم (بصراحة)",
+    "هالأشياء طلعت من الـ 80 سؤال والبيانات، وانصلحت قبل ما ينشغل الجزء المحجوز. الـ 78/80 فوگ هو **بعد** التصليح،",
+    "فالرقم الأصدق هو الأسئلة المحجوزة (19/20) لأن ما عدّلنا شي عليها.",
+    "",
+    "- **أول تشغيل لـ 45 سؤال: 33/45.** أغلب الغلط من البرنامج، مو من النموذج:",
+    "  - \"شكد بعنا طحين؟\": المجموع حسب طريقة الدفع چان يجمع البيعة كلها (ويا المواد الثانية بيها)، والنموذج قراه. صار يجمع أسطر المادة بس.",
+    "  - \"الشهر الماضي\" و\"البارحة\": أداة البيع ما چان بيها هالفترات، فچان يجاوب بأرقام هالشهر. انضافت.",
+    "  - \"قبل البارحة\": النموذج اختار يوم غلط من عدّات الجرار. صارت كل عدّة مكتوب بيها يومها بالكلام (البارحة، قبل البارحة).",
+    "- **أثناء توليد البيانات:** الفلوس اللي يشيلها صاحب المحل للبيت چانت تنحسب مصروف، فالربح يطلع خسارة كل يوم. صارت تنذكر لحالها وما تنطرح.",
+    "- **بالتصحيح نفسه:** الرصيد السالب (\"مطلوب لك 30,000\") چان ينحسب غلط، صار يقارن الحجم. وبالأخطاء المزروعة، أول توأم سليم للدين القديم چان زبون فعلًا ما مسدد من شهر، فبدلناه بواحد سدد خلال 10 أيام.",
+    "- **اللي بقى غلط:** سؤالين غامضين جاوب بيهن بدل ما يسأل («شكد طلعت؟» فهمها سحوبات اليوم، «شكد عليّ للشركة؟» جاب المجموع)، "
+    "وبالمحجوز قرا رقم يوم غلط من الجرار (160,000 بدل 165,000). وبسؤال واحد الرقم صح بس الشرح ويا مخربط (مندوب البيبسي).",
+    "- النموذج المستعمل: Gemini المجاني (أغلبه flash-lite لأن الحصة خلصت للباقي). نموذج أقوى يحتمل يطلع أحسن.",
+    "",
+]
+
+
+def main() -> None:
+    checks = json.loads((HERE / "checks.json").read_text("utf-8"))
+    qfile = HERE / "question_results.json"
+    results = json.loads(qfile.read_text("utf-8"))["results"] if qfile.exists() else []
+    m, pl, f = checks["paper_month"], checks["planted"], checks["forecast"]
+    out = [f"# نتائج تقييم المول (المرحلة 20)", "",
+           f"_انكتب {datetime.now():%Y-%m-%d %H:%M}. البيانات وهمية (مول 3 أشهر، مولّدة بالكود ببذرة ثابتة)._", "",
+           "## 1. الحساب الورقي (بدون نموذج)",
+           f"الشهر الماضي ورصيد كل زبون ومورد وكل عدّة جرار، محسوبة من الأحداث بطريقة مستقلة عن البرنامج: "
+           f"**{m['equal']}/{m['total']} رقم مطابق**.", ""]
+    bad = [r for r in m["rows"] if not r["equal"]]
+    out += [f"- ⚠ {r['what']}: الورق {r['paper']:,}، البرنامج {r['app']:,}" for r in bad] or ["ما كو أي فرق."]
+    out += ["", "## 2. الأخطاء المزروعة (بدون نموذج: الكود هو اللي يمسكها)",
+            f"**انمسك {pl['caught']}/{pl['planted']}**، وتنبيه غلط على الحالات السليمة **{pl['false_alarms']}/{pl['twins']}**.", "",
+            "| النوع | انمسك | تنبيه غلط |", "|---|---|---|"]
+    out += [f"| {k} | {v['caught']}/{v['planted']} | {v['false_alarms']} |" for k, v in pl["by_kind"].items()]
+    out += ["", "## 3. توقع الكاش",
+            f"بنيناه على أول {f['from_day']} يوم ({f['based_on_days']} يوم بيانات) وقارناه بآخر {f['days']} يوم:", "",
+            "| | المتوقع | الحقيقي | الخطأ |", "|---|---|---|---|",
+            f"| يدخل | {f['predicted_in']:,} | {f['real_in']:,} | {f['error_in_pct']}% |",
+            f"| يطلع (بدون اللي ينشال للبيت) | {f['predicted_out']:,} | {f['real_out']:,} | {f['error_out_pct']}% |", "",
+            "التوقع مبني على المعدل، فما يعرف المواسم ولا الأشياء اللي تصير مرة وحدة.", ""]
+    work = [r for r in results if not r["holdout"]]
+    hold = [r for r in results if r["holdout"]]
+
+    def block(title, rows, total):
+        graded = [r for r in rows if r["status"] != "error"]
+        passed = sum(r["status"] == "pass" for r in graded)
+        lines = [f"## {title}"]
+        if not graded:
+            return lines + ["بعد ما انشغلت.", ""]
+        lines += [f"**{passed}/{len(graded)} صح** (من {total} سؤال؛ {total - len(graded)} بعد ما انسألت أو تنعاد).", "",
+                  "| النوع | صح | المجموع |", "|---|---|---|"]
+        cats = {}
+        for r in graded:
+            c = cats.setdefault(r["category"], [0, 0])
+            c[0] += r["status"] == "pass"
+            c[1] += 1
+        lines += [f"| {k} | {v[0]} | {v[1]} |" for k, v in cats.items()]
+        fails = [r for r in graded if r["status"] == "fail"]
+        if fails:
+            lines += ["", "وين غلط:"] + [f"- {r['id']}. «{r['q']}» → {r['why']}. الرد: {r['reply'][:160]}" for r in fails]
+        models = sorted({r["model"] for r in graded if r["model"]})
+        return lines + ["", f"النماذج: {', '.join(models)}", ""]
+
+    out += block("4. الأسئلة باللهجة (80 سؤال للشغل)", work, 80)
+    out += block("5. الأسئلة المحجوزة (20، تنشغل مرة وحدة بالآخر)", hold, 20)
+    out += NOTES
+    (HERE / "RESULTS.md").write_text("\n".join(out) + "\n", encoding="utf-8")
+    print("\n".join(out))
+
+
+if __name__ == "__main__":
+    main()

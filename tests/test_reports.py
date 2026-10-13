@@ -167,3 +167,16 @@ def test_report_endpoints(conn, shop, monkeypatch):
     other = db.add_customer(conn, "أم حسين")
     db.add_transaction(conn, other, "debt", 777)
     assert "777" not in client.get(f"/statement/{shop['ali']}?period=all").text
+
+
+def test_money_taken_home_is_not_an_expense(conn, shop):
+    _sale(conn, shop["flour"], 4)  # 12,000 profit from the sale
+    db.add_withdrawal(conn, 2000, "IQD", "أكل")
+    db.add_withdrawal(conn, 50000, "IQD", "البيت")
+    db.add_withdrawal(conn, 30000, "IQD", "شخصي")
+    db.add_withdrawal(conn, 10000, "IQD", "للبيت")
+    p = reports.profit(conn, "today")
+    assert p["expenses"]["IQD"] == 2000 and p["owner_draws"]["IQD"] == 90000
+    assert p["net_profit"]["IQD"] == 10000
+    assert [e["reason"] for e in p["expenses_by_reason"]] == ["أكل"]
+    assert not reports.is_owner_draw(db.reason_key("مولدة")) and not reports.is_owner_draw(db.reason_key("بيتزا"))

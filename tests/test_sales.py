@@ -145,3 +145,27 @@ def test_sale_screen_endpoints(conn, monkeypatch):
                                        "lines": [{"item_id": flour}]}).status_code == 422
     today = client.get("/sales").json()
     assert today["today"]["totals"]["IQD"] == 0 and today["recent"] == []
+
+
+def test_item_totals_count_only_that_item(conn, tools, shop):
+    """Found by the mall eval: a sale of flour + oil counted the oil in "شكد بعنا طحين؟"."""
+    tools.execute("record_sale", {"payment": "cash", "lines": [{"item_id": shop["flour"], "qty": 1},
+                                                               {"item_id": shop["oil"], "qty": 5}]})
+    r = tools.execute("item_sales", {"period": "month", "item_id": shop["flour"]})
+    assert r["items"][0]["revenue"] == 25000
+    assert r["by_payment"]["cash"]["IQD"] == 25000 and r["totals"]["IQD"] == 25000  # not 45,000
+
+
+def test_last_month_and_yesterday_periods(conn, tools, shop):
+    """Found by the mall eval: "الشهر الماضي" was answered with this month."""
+    old = db.add_sale(conn, "cash", [{"item_id": shop["flour"], "qty": 2, "unit_price": 25000, "unit_cost": 22000}])
+    conn.execute("UPDATE sales SET created_at = datetime('now','localtime','start of month','-10 days') WHERE id = ?", (old,))
+    y = db.add_sale(conn, "cash", [{"item_id": shop["flour"], "qty": 1, "unit_price": 25000, "unit_cost": 22000}])
+    conn.execute("UPDATE sales SET created_at = datetime('now','localtime','-1 day') WHERE id = ?", (y,))
+    conn.commit()
+    assert tools.execute("item_sales", {"period": "last_month", "item_id": shop["flour"]})["items"][0]["revenue"] == 50000
+    assert tools.execute("item_sales", {"period": "yesterday"})["totals"]["IQD"] == 25000
+    w = db.add_withdrawal(conn, 9000, "IQD", "نقل")
+    conn.execute("UPDATE withdrawals SET created_at = datetime('now','localtime','start of month','-3 days') WHERE id = ?", (w,))
+    conn.commit()
+    assert tools.execute("list_withdrawals", {"period": "last_month"})["totals"]["IQD"] == 9000
