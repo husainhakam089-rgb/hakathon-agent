@@ -451,6 +451,15 @@ def _range(prev: dict | None, count: dict | None) -> dict:
     return {k: ((prev[k] if prev else 0), (count[k] if count else big)) for k in UPTO_KEYS}
 
 
+def _live_range(conn, prev: dict | None, count: dict | None) -> dict:
+    """Like _range, but with no count at all yet the drawer still shows today's money: every
+    payment, sale, cash in and withdrawal since this morning, not the whole history."""
+    if prev is None and count is None:
+        start = _ids_before_today(conn)
+        return {k: (start[k], 1 << 62) for k in UPTO_KEYS}
+    return _range(prev, count)
+
+
 def add_cash_in(conn, amount: int, currency: str, label: str, note=None, source_message=None,
                 source="chat", session_id: str | None = None) -> int:
     cur = conn.execute(
@@ -558,10 +567,10 @@ def drawer_report(conn, count: dict | None = None) -> dict:
                = counted - start - customer payments + suppliers + withdrawals
     """
     prev = last_drawer_count(conn, count["id"] if count else None)
-    moves = drawer_movements(conn, _range(prev, count))
+    moves = drawer_movements(conn, _live_range(conn, prev, count))
     report = {"start": ({"iqd": prev["iqd"], "usd": prev["usd"], "kind": prev["kind"], "at": prev["created_at"]}
                         if prev else None),
-              **moves}
+              "since": "last_count" if prev else "today", **moves}
     if count:
         report["count_id"] = count["id"]
         report["counted"] = {"iqd": count["iqd"], "usd": count["usd"], "at": count["created_at"]}
@@ -587,7 +596,7 @@ def drawer_details(conn, count: dict | None = None) -> dict:
     closes it: in - out = what was counted. count=None: since the last count."""
     report = drawer_report(conn, count)
     prev = last_drawer_count(conn, count["id"] if count else None)
-    rng = _range(prev, count)
+    rng = _live_range(conn, prev, count)
     lines_in, lines_out = [], []
     for cur, key in (("IQD", "iqd"), ("USD", "usd")):
         if prev and prev[key] is not None:
@@ -643,7 +652,8 @@ def drawer_details(conn, count: dict | None = None) -> dict:
             "in": lines_in, "out": lines_out, "totals": totals, "credit_sales": report["credit_sales"],
             "not_from_drawer": report["not_from_drawer"], "sales_electronic": report["sales_electronic"],
             "difference": report.get("difference", {}),
-            "cash_sales": report.get("cash_sales", {}), "complete": bool(count and report.get("difference"))}
+            "cash_sales": report.get("cash_sales", {}), "complete": bool(count and report.get("difference")),
+            "since": report["since"]}
 
 
 def drawer_closes(conn, limit: int = 30) -> list[dict]:

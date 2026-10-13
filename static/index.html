@@ -175,6 +175,11 @@ form .attach-btn:hover { border-color: var(--accent-border); }
 .net b { font-size: 15px; font-variant-numeric: tabular-nums; }
 .net .pos { color: var(--good); } .net .neg { color: var(--bad); }
 td.neg-cell { color: var(--bad); }
+td.drawer-cell { padding: 0; border: none; }
+table.cash td.num.in { color: var(--good); }
+table.cash td.num.out { color: var(--bad); }
+table.counts { width: 100%; }
+.cash-live { margin-bottom: 8px; }
 tr.click { cursor: pointer; }
 td.tap-hint { color: var(--faint); font-size: 12px; text-align: center; border: none; }
 tr.click:hover td { background: var(--accent-soft); }
@@ -1598,31 +1603,44 @@ function cashCell(v) {
 function renderDrawer() {
   const data = ledgers.drawer;
   const closes = data.closes || [];
-  const last = closes[0];
-  const text = TAB_TEXT.drawer;
-  $('statIqd').textContent = text.iqd;
-  $('statUsd').textContent = text.usd;
-  $('statCount').textContent = text.count;
-  const counted = last ? last.counted.iqd : null;
-  $('totalIqd').textContent = counted === null ? '—' : fmt(counted);
-  const cash = last ? money(last.cash_sales, 'IQD') : null;
-  $('totalUsd').textContent = cash === null ? '—' : (cash < 0 ? 'ناقص ' + fmt(-cash) : fmt(cash));
-  const total = last ? money(last.total_sales, 'IQD') : null;
-  $('count').textContent = total === null ? '—' : fmt(total);
-  $('ledgerHead').innerHTML = '<tr><th>العدّة</th><th>بالجرار</th><th>البيع النقدي</th><th>مجموع البيع</th></tr>';
-  $('empty').textContent = text.empty;
-  $('empty').style.display = closes.length ? 'none' : 'block';
-  const since = data.since_last_count;
-  const moved = since && ['customer_payments', 'cash_ins', 'supplier_payments', 'withdrawals'].some(k => since[k].IQD || since[k].USD);
-  const nowRow = since && since.start && moved ? `<tr class="click" data-count="now" title="شنو دخل وطلع من آخر عدّة">
-      <td class="date">هسه</td><td class="num zero" colspan="3">من آخر عدّة · اضغط: كل فلس دخل وطلع</td></tr>` : '';
-  $('rows').innerHTML = nowRow + closes.map(c => {
-    const usd = money(c.cash_sales, 'USD');
-    return `<tr class="click" data-count="${c.count_id}" title="اضغط للوارد والصادر"><td class="date">${esc(shortDate(c.counted.at))}</td>
-      <td class="num">${c.counted.iqd === null ? '—' : fmt(c.counted.iqd)}</td>${cashCell(money(c.cash_sales, 'IQD'))}
-      <td class="num">${money(c.total_sales, 'IQD') === null ? '—' : fmt(c.total_sales.IQD)}${usd !== null ? `<small class="usd"> + ${fmt(usd)}$</small>` : ''}</td></tr>`;
-  }).join('');
-  if (closes.length) $('rows').innerHTML += '<tr><td colspan="4" class="tap-hint">اضغط على أي عدّة حتى تشوف الوارد والصادر والباقي بالجرار</td></tr>';
+  const now = data.now || {in: [], out: [], totals: {}};
+  // Every dinar that came in or went out since the last count (or since this morning), as it happened.
+  const moving = now.in.filter(x => !x.start).length + now.out.length;
+  const tIn = now.in.filter(x => !x.start && x.currency === 'IQD').reduce((t, x) => t + x.amount, 0);
+  const tOut = now.out.filter(x => x.currency === 'IQD').reduce((t, x) => t + x.amount, 0);
+  const startIqd = now.start ? now.start.iqd : null;
+  $('statIqd').textContent = 'دخل للجرار';
+  $('statUsd').textContent = 'طلع من الجرار';
+  $('statCount').textContent = 'المفروض بالجرار هسه';
+  $('totalIqd').textContent = fmt(tIn);
+  $('totalUsd').textContent = fmt(tOut);
+  $('count').textContent = startIqd === null || startIqd === undefined ? '—' : fmt(startIqd + tIn - tOut);
+  $('ledgerHead').innerHTML = '';
+  $('empty').style.display = 'none';
+  const when = now.since === 'today' ? 'اليوم' : 'من آخر عدّة';
+  const lines = [...now.in.filter(x => !x.start).map(x => ({...x, sign: 1})), ...now.out.map(x => ({...x, sign: -1}))]
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  const usd = c => c === 'USD' ? '$' : '';
+  let html = `<div class="cash-live"><h3 class="cash-h">🧾 الوارد والصادر ${when}</h3>`;
+  html += lines.length ? `<table class="cash"><tbody>${lines.map(x => `<tr>
+      <td><bdi>${esc(x.what)}</bdi> <small class="t">${esc(shortDate(x.at).replace('اليوم ', ''))}</small></td>
+      <td class="num ${x.sign > 0 ? 'in' : 'out'}"><bdi dir="ltr">${x.sign > 0 ? '+' : '−'}${fmt(x.amount)}${usd(x.currency)}</bdi></td></tr>`).join('')}
+      </tbody></table>` : `<p class="hint">ما دخل ولا طلع شي ${when}. التسديدات والبيع الكاش والوارد والصادر يطلعن هنا وحدهن.</p>`;
+  if (startIqd === null || startIqd === undefined) html += `<p class="hint">حتى أعرف شكد المفروض بالجرار، گلي الفكة: "الفكة الصبح 50 ألف".</p>`;
+  else if (moving) html += `<p class="hint">چان بالجرار ${fmt(startIqd)} + دخل ${fmt(tIn)} − طلع ${fmt(tOut)} = <b>المفروض هسه ${fmt(startIqd + tIn - tOut)}</b></p>`;
+  html += `</div>`;
+  if (closes.length) {
+    html += `<h3 class="cash-h">العدّات</h3><table class="counts"><thead><tr><th>العدّة</th><th>بالجرار</th><th>البيع النقدي</th><th>مجموع البيع</th></tr></thead><tbody>` +
+      closes.map(c => {
+        const u = money(c.cash_sales, 'USD');
+        return `<tr class="click" data-count="${c.count_id}" title="اضغط للوارد والصادر"><td class="date">${esc(shortDate(c.counted.at))}</td>
+          <td class="num">${c.counted.iqd === null ? '—' : fmt(c.counted.iqd)}</td>${cashCell(money(c.cash_sales, 'IQD'))}
+          <td class="num">${money(c.total_sales, 'IQD') === null ? '—' : fmt(c.total_sales.IQD)}${u !== null ? `<small class="usd"> + ${fmt(u)}$</small>` : ''}</td></tr>`;
+      }).join('') + `<tr><td colspan="4" class="tap-hint">اضغط على أي عدّة حتى تشوف الوارد والصادر والباقي بالجرار</td></tr></tbody></table>`;
+  } else {
+    html += `<p class="hint">آخر اليوم عدّ الجرار وگول: "سديت، بالجرار كذا"، وأگلك أكو زيادة لو نقص.</p>`;
+  }
+  $('rows').innerHTML = `<tr><td colspan="4" class="drawer-cell">${html}</td></tr>`;
 }
 
 function balanceCell(v, tab = 'customer') {

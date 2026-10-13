@@ -232,3 +232,19 @@ def test_cash_ins_survive_an_old_count(conn, tools):
     conn.execute("UPDATE drawer_counts SET ci_upto = 0"); conn.commit()
     tools.execute("record_cash_in", {"amount": 7000, "currency": "IQD", "label": "بيع"})
     assert tools.execute("count_drawer", {"iqd": 7000})["difference"]["IQD"] == 0
+
+
+def test_drawer_shows_todays_money_before_any_count(conn, tools):
+    """Hussein: "ابو علي سدد 45" must show in the drawer even if it was never counted."""
+    ali, zain = _parties(conn)
+    old = db.add_transaction(conn, ali, "payment", 99000)
+    conn.execute("UPDATE transactions SET created_at = datetime('now','localtime','-1 day') WHERE id = ?", (old,))
+    conn.commit()
+    r = tools.execute("record_payment", {"customer_id": ali, "amount": 45000, "currency": "IQD"})
+    assert r["drawer"] == "دخلت للجرار"
+    tools.execute("record_withdrawal", {"amount": 5000, "currency": "IQD", "reason": "أكل"})
+    d = db.drawer_details(conn)
+    assert d["since"] == "today" and d["start"] is None
+    assert [(x["what"], x["amount"]) for x in d["in"]] == [("تسديد من أبو علي", 45000)]  # not yesterday's 99,000
+    assert [(x["what"], x["amount"]) for x in d["out"]] == [("أكل", 5000)]
+    assert db.drawer_report(conn)["customer_payments"]["IQD"] == 45000

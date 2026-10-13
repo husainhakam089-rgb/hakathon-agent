@@ -611,6 +611,8 @@ class DebtTools:
             }
         if tx_type == "payment" and from_drawer is False:
             result["from_drawer"] = False
+        elif tx_type == "payment":  # cash: it shows in the drawer at once (stage 15)
+            result["drawer"] = "دخلت للجرار" if kind == "customer" else "طلعت من الجرار"
         if tx_type == "payment" and value > before[currency]:
             result["overpayment"] = True
             result["overpaid_by"] = value - max(before[currency], 0)
