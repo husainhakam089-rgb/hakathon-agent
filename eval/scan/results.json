@@ -1,0 +1,2615 @@
+[
+  {
+    "lines": [
+      {
+        "expected": {
+          "name": "ابو علي",
+          "amount": 25000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو علي ابو الخضرة    25"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو علي ابو الخضرة",
+          "amount": 25000,
+          "amount_as_written": "25",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام حسين",
+          "amount": 15000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام حسين    ١٥"
+        },
+        "found": true,
+        "read": {
+          "name": "ام حسين",
+          "amount": 15000,
+          "amount_as_written": "١٥",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "الحجي كريم",
+          "amount": 150000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "الحجي كريم    150 الف"
+        },
+        "found": true,
+        "read": {
+          "name": "الحجي كريم",
+          "amount": 150000,
+          "amount_as_written": "150 الف",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "سعد",
+          "amount": 10000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "واصل من سعد    10"
+        },
+        "found": true,
+        "read": {
+          "name": "سعد",
+          "amount": 10000,
+          "amount_as_written": "10",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "حيدر التكسي",
+          "amount": 7500,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "حيدر التكسي    7500"
+        },
+        "found": true,
+        "read": {
+          "name": "حيدر التكسي",
+          "amount": 7500,
+          "amount_as_written": "7500",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو زينب    50 $"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "amount_as_written": "50",
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "مصطفى الحلاق",
+          "amount": 30000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": true,
+          "written": "مصطفى الحلاق    ٣٠"
+        },
+        "found": true,
+        "read": {
+          "name": "مصطفى الحلاق",
+          "amount": 30000,
+          "amount_as_written": "٣٠",
+          "currency": "IQD",
+          "type": "unknown",
+          "crossed_out": true,
+          "confidence": "medium",
+          "selected": false
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "جاسم",
+          "amount": 20000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "جاسم    -20"
+        },
+        "found": true,
+        "read": {
+          "name": "جاسم",
+          "amount": 20000,
+          "amount_as_written": "-20",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام زهراء    ٨"
+        },
+        "found": true,
+        "read": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "amount_as_written": "٨",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "علي الصباغ",
+          "amount": 45000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "علي الصباغ    45000"
+        },
+        "found": true,
+        "read": {
+          "name": "علي الصباغ",
+          "amount": 45000,
+          "amount_as_written": "45000",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      }
+    ],
+    "extra": [],
+    "page": "page_1.jpg",
+    "seconds": 82.0,
+    "model": "gemini-3.5-flash-lite",
+    "unreadable": [],
+    "notes": "التاريخ في أعلى الصفحة ١٢/١٠"
+  },
+  {
+    "lines": [
+      {
+        "expected": {
+          "name": "ابو مريم",
+          "amount": 22000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو مريم    ٢٢"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو مريم",
+          "amount": 22000,
+          "amount_as_written": "٢٢",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو علي",
+          "amount": 15000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "سدد ابو علي    15"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو علي",
+          "amount": 15000,
+          "amount_as_written": "15",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "كرار",
+          "amount": 12500,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "كرار    ١٢٥٠٠"
+        },
+        "found": true,
+        "read": {
+          "name": "كرار",
+          "amount": 12500,
+          "amount_as_written": "١٢٥٠٠",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "الحجي كريم",
+          "amount": 50000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "الحجي كريم    واصل 50"
+        },
+        "found": true,
+        "read": {
+          "name": "الحجي كريم",
+          "amount": 50000,
+          "amount_as_written": "50",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام حسين",
+          "amount": 6000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام حسين    ٦"
+        },
+        "found": true,
+        "read": {
+          "name": "ام حسين",
+          "amount": 6000,
+          "amount_as_written": "٦",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "منتظر",
+          "amount": 100,
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "منتظر    100 $"
+        },
+        "found": true,
+        "read": {
+          "name": "منتظر",
+          "amount": 100,
+          "amount_as_written": "100",
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "نور الهدى",
+          "amount": 18000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "نور الهدى    ١٨"
+        },
+        "found": true,
+        "read": {
+          "name": "نور الهدى",
+          "amount": 18000,
+          "amount_as_written": "18",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو حيدر الفيتر",
+          "amount": 35000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو حيدر الفيتر    35"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو حيدر الفيتد",
+          "amount": 35000,
+          "amount_as_written": "35",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": false,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": false,
+        "silent_wrong": false
+      }
+    ],
+    "extra": [],
+    "page": "page_2.jpg",
+    "seconds": 1.9,
+    "model": "gemini-3.5-flash-lite",
+    "unreadable": [],
+    "notes": "صفحة يوم 13/10"
+  },
+  {
+    "lines": [
+      {
+        "expected": {
+          "name": "سعد",
+          "amount": 20000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "سعد    ٢٠"
+        },
+        "found": true,
+        "read": {
+          "name": "سعد",
+          "amount": 20000,
+          "amount_as_written": "٢٠",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "ام زهراء    واصل ٨"
+        },
+        "found": true,
+        "read": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "amount_as_written": "٨",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "رسول",
+          "amount": 9000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "رسول    9"
+        },
+        "found": true,
+        "read": {
+          "name": "رسول",
+          "amount": 9000,
+          "amount_as_written": "٩",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "currency": "USD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "ابو زينب    -50 $"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "amount_as_written": "٥٠",
+          "currency": "USD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "حسين البقال",
+          "amount": 40000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": true,
+          "written": "حسين البقال    ٤٠"
+        },
+        "found": true,
+        "read": {
+          "name": "حسين البقال",
+          "amount": null,
+          "amount_as_written": null,
+          "currency": "unknown",
+          "type": "unknown",
+          "crossed_out": true,
+          "confidence": "high",
+          "selected": false
+        },
+        "name": true,
+        "amount": false,
+        "currency": false,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": false,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "حسين البقال",
+          "amount": 45000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "حسين البقال    ٤٥"
+        },
+        "found": true,
+        "read": {
+          "name": "حسين البقال",
+          "amount": 45000,
+          "amount_as_written": "٤٥",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ضياء",
+          "amount": 16500,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ضياء    16500"
+        },
+        "found": true,
+        "read": {
+          "name": "ضياء",
+          "amount": 16500,
+          "amount_as_written": "16500",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو مريم",
+          "amount": 10000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "ابو مريم    سدد ١٠"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو مريم",
+          "amount": 10000,
+          "amount_as_written": "١٠",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "زهير",
+          "amount": 7000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "زهير    ٧"
+        },
+        "found": true,
+        "read": {
+          "name": "زهير",
+          "amount": 7000,
+          "amount_as_written": "٧",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام علي",
+          "amount": 30000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام علي    ٣٠"
+        },
+        "found": true,
+        "read": {
+          "name": "ام علي",
+          "amount": 30000,
+          "amount_as_written": "٣٠",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "عباس",
+          "amount": 55000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "عباس    55"
+        },
+        "found": true,
+        "read": {
+          "name": "عباس",
+          "amount": 55000,
+          "amount_as_written": "٥٥",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      }
+    ],
+    "extra": [],
+    "page": "page_3.jpg",
+    "seconds": 2.2,
+    "model": "gemini-3.5-flash-lite",
+    "unreadable": [],
+    "notes": "التاريخ أعلى الصفحة ١٤/١٠"
+  },
+  {
+    "lines": [
+      {
+        "expected": {
+          "name": "ابو علي",
+          "amount": 25000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو علي ابو الخضرة    25"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو علي ابو الخضرة",
+          "amount": 25000,
+          "amount_as_written": "25",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام حسين",
+          "amount": 15000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام حسين    ١٥"
+        },
+        "found": true,
+        "read": {
+          "name": "ام حسين",
+          "amount": 15000,
+          "amount_as_written": "١٥",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "الحجي كريم",
+          "amount": 150000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "الحجي كريم    150 الف"
+        },
+        "found": true,
+        "read": {
+          "name": "الحجي كريم",
+          "amount": 150000,
+          "amount_as_written": "150 الف",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "سعد",
+          "amount": 10000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "واصل من سعد    10"
+        },
+        "found": true,
+        "read": {
+          "name": "سعد",
+          "amount": 10000,
+          "amount_as_written": "10",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "حيدر التكسي",
+          "amount": 7500,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "حيدر التكسي    7500"
+        },
+        "found": true,
+        "read": {
+          "name": "حيدر التكسي",
+          "amount": 7500,
+          "amount_as_written": "7500",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو زينب    50 $"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "amount_as_written": "50",
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "مصطفى الحلاق",
+          "amount": 30000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": true,
+          "written": "مصطفى الحلاق    ٣٠"
+        },
+        "found": true,
+        "read": {
+          "name": "مصطفى الحلاق",
+          "amount": 30000,
+          "amount_as_written": "٣٠",
+          "currency": "IQD",
+          "type": "unknown",
+          "crossed_out": true,
+          "confidence": "low",
+          "selected": false
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "جاسم",
+          "amount": 20000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "جاسم    -20"
+        },
+        "found": true,
+        "read": {
+          "name": "جاسم",
+          "amount": 20000,
+          "amount_as_written": "-20",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام زهراء    ٨"
+        },
+        "found": true,
+        "read": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "amount_as_written": "٨",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "low",
+          "selected": false
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "علي الصباغ",
+          "amount": 45000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "علي الصباغ    45000"
+        },
+        "found": true,
+        "read": {
+          "name": "علي الصباغ",
+          "amount": 45000,
+          "amount_as_written": "45000",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      }
+    ],
+    "extra": [],
+    "page": "page_1.jpg",
+    "seconds": 2.5,
+    "model": "gemini-3.5-flash-lite",
+    "unreadable": [],
+    "notes": "صفحة تاريخ 12/10"
+  },
+  {
+    "lines": [
+      {
+        "expected": {
+          "name": "ابو مريم",
+          "amount": 22000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو مريم    ٢٢"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو مريم",
+          "amount": 22000,
+          "amount_as_written": "٢٢",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو علي",
+          "amount": 15000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "سدد ابو علي    15"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو علي",
+          "amount": 15000,
+          "amount_as_written": "15",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "كرار",
+          "amount": 12500,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "كرار    ١٢٥٠٠"
+        },
+        "found": true,
+        "read": {
+          "name": "كرار",
+          "amount": 12500,
+          "amount_as_written": "12500",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "الحجي كريم",
+          "amount": 50000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "الحجي كريم    واصل 50"
+        },
+        "found": true,
+        "read": {
+          "name": "الحجي كريم",
+          "amount": 50000,
+          "amount_as_written": "50",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام حسين",
+          "amount": 6000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام حسين    ٦"
+        },
+        "found": true,
+        "read": {
+          "name": "ام حسين",
+          "amount": 6000,
+          "amount_as_written": "٦",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "منتظر",
+          "amount": 100,
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "منتظر    100 $"
+        },
+        "found": true,
+        "read": {
+          "name": "منتظر",
+          "amount": 100,
+          "amount_as_written": "100",
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "نور الهدى",
+          "amount": 18000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "نور الهدى    ١٨"
+        },
+        "found": true,
+        "read": {
+          "name": "نور الهدى",
+          "amount": 18000,
+          "amount_as_written": "18",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو حيدر الفيتر",
+          "amount": 35000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو حيدر الفيتر    35"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو حيدر الفيتد",
+          "amount": 35000,
+          "amount_as_written": "35",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": false,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": false,
+        "silent_wrong": false
+      }
+    ],
+    "extra": [],
+    "page": "page_2.jpg",
+    "seconds": 1.8,
+    "model": "gemini-3.5-flash-lite",
+    "unreadable": [],
+    "notes": "صفحة تاريخ ١٣/١٠"
+  },
+  {
+    "lines": [
+      {
+        "expected": {
+          "name": "سعد",
+          "amount": 20000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "سعد    ٢٠"
+        },
+        "found": true,
+        "read": {
+          "name": "سعد",
+          "amount": 20000,
+          "amount_as_written": "٢٠",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "ام زهراء    واصل ٨"
+        },
+        "found": true,
+        "read": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "amount_as_written": "٨",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "رسول",
+          "amount": 9000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "رسول    9"
+        },
+        "found": true,
+        "read": {
+          "name": "رسول",
+          "amount": 9000,
+          "amount_as_written": "٩",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "currency": "USD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "ابو زينب    -50 $"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "amount_as_written": "٥٠",
+          "currency": "USD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "حسين البقال",
+          "amount": 40000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": true,
+          "written": "حسين البقال    ٤٠"
+        },
+        "found": true,
+        "read": {
+          "name": "حسين البقال",
+          "amount": null,
+          "amount_as_written": null,
+          "currency": "unknown",
+          "type": "unknown",
+          "crossed_out": true,
+          "confidence": "high",
+          "selected": false
+        },
+        "name": true,
+        "amount": false,
+        "currency": false,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": false,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "حسين البقال",
+          "amount": 45000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "حسين البقال    ٤٥"
+        },
+        "found": true,
+        "read": {
+          "name": "حسين البقال",
+          "amount": 45000,
+          "amount_as_written": "٤٥",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ضياء",
+          "amount": 16500,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ضياء    16500"
+        },
+        "found": true,
+        "read": {
+          "name": "ضياء",
+          "amount": 16500,
+          "amount_as_written": "16500",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو مريم",
+          "amount": 10000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "ابو مريم    سدد ١٠"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو مريم",
+          "amount": 10000,
+          "amount_as_written": "١٠",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "زهير",
+          "amount": 7000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "زهير    ٧"
+        },
+        "found": true,
+        "read": {
+          "name": "زهير",
+          "amount": 7000,
+          "amount_as_written": "٧",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام علي",
+          "amount": 30000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام علي    ٣٠"
+        },
+        "found": true,
+        "read": {
+          "name": "ام علي",
+          "amount": 30000,
+          "amount_as_written": "٣٠",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "عباس",
+          "amount": 55000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "عباس    55"
+        },
+        "found": true,
+        "read": {
+          "name": "عباس",
+          "amount": 55000,
+          "amount_as_written": "٥٥",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      }
+    ],
+    "extra": [],
+    "page": "page_3.jpg",
+    "seconds": 2.1,
+    "model": "gemini-3.5-flash-lite",
+    "unreadable": [],
+    "notes": "صفحة بتاريخ 14/10"
+  },
+  {
+    "lines": [
+      {
+        "expected": {
+          "name": "ابو علي",
+          "amount": 25000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو علي ابو الخضرة    25"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو علي ابو الخضرة",
+          "amount": 25000,
+          "amount_as_written": "25",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام حسين",
+          "amount": 15000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام حسين    ١٥"
+        },
+        "found": true,
+        "read": {
+          "name": "ام حسين",
+          "amount": 15000,
+          "amount_as_written": "١٥",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "الحجي كريم",
+          "amount": 150000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "الحجي كريم    150 الف"
+        },
+        "found": true,
+        "read": {
+          "name": "الحجي كريم",
+          "amount": 150000,
+          "amount_as_written": "150 الف",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "سعد",
+          "amount": 10000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "واصل من سعد    10"
+        },
+        "found": true,
+        "read": {
+          "name": "سعد",
+          "amount": 10000,
+          "amount_as_written": "10",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "حيدر التكسي",
+          "amount": 7500,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "حيدر التكسي    7500"
+        },
+        "found": true,
+        "read": {
+          "name": "حيدر التكسي",
+          "amount": 7500,
+          "amount_as_written": "7500",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو زينب    50 $"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "amount_as_written": "50",
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "مصطفى الحلاق",
+          "amount": 30000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": true,
+          "written": "مصطفى الحلاق    ٣٠"
+        },
+        "found": true,
+        "read": {
+          "name": "مصطفى الحلاق",
+          "amount": 30000,
+          "amount_as_written": "٣٠",
+          "currency": "IQD",
+          "type": "unknown",
+          "crossed_out": true,
+          "confidence": "medium",
+          "selected": false
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "جاسم",
+          "amount": 20000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "جاسم    -20"
+        },
+        "found": true,
+        "read": {
+          "name": "جاسم",
+          "amount": 20000,
+          "amount_as_written": "-20",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام زهراء    ٨"
+        },
+        "found": true,
+        "read": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "amount_as_written": "٨",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "علي الصباغ",
+          "amount": 45000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "علي الصباغ    45000"
+        },
+        "found": true,
+        "read": {
+          "name": "علي الصباغ",
+          "amount": 45000,
+          "amount_as_written": "45000",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      }
+    ],
+    "extra": [],
+    "page": "page_1.jpg",
+    "seconds": 2.4,
+    "model": "gemini-3.5-flash-lite",
+    "unreadable": [],
+    "notes": "التاريخ في أعلى الصفحة ١٢/١٠"
+  },
+  {
+    "lines": [
+      {
+        "expected": {
+          "name": "ابو مريم",
+          "amount": 22000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو مريم    ٢٢"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو مريم",
+          "amount": 22000,
+          "amount_as_written": "22",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو علي",
+          "amount": 15000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "سدد ابو علي    15"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو علي",
+          "amount": 15000,
+          "amount_as_written": "15",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "كرار",
+          "amount": 12500,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "كرار    ١٢٥٠٠"
+        },
+        "found": true,
+        "read": {
+          "name": "كرار",
+          "amount": 12500,
+          "amount_as_written": "12500",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "الحجي كريم",
+          "amount": 50000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "الحجي كريم    واصل 50"
+        },
+        "found": true,
+        "read": {
+          "name": "الحجي كريم",
+          "amount": 50000,
+          "amount_as_written": "50",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام حسين",
+          "amount": 6000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام حسين    ٦"
+        },
+        "found": true,
+        "read": {
+          "name": "ام حسين",
+          "amount": 6000,
+          "amount_as_written": "6",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "منتظر",
+          "amount": 100,
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "منتظر    100 $"
+        },
+        "found": true,
+        "read": {
+          "name": "منتظر",
+          "amount": 100,
+          "amount_as_written": "100",
+          "currency": "USD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "نور الهدى",
+          "amount": 18000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "نور الهدى    ١٨"
+        },
+        "found": true,
+        "read": {
+          "name": "نور الهدى",
+          "amount": 18000,
+          "amount_as_written": "18",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو حيدر الفيتر",
+          "amount": 35000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ابو حيدر الفيتر    35"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو حيدر الفيتير",
+          "amount": 35000,
+          "amount_as_written": "35",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": false,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": false,
+        "silent_wrong": false
+      }
+    ],
+    "extra": [],
+    "page": "page_2.jpg",
+    "seconds": 2.2,
+    "model": "gemini-3.5-flash-lite",
+    "unreadable": [],
+    "notes": "صفحة بتاريخ 13/10"
+  },
+  {
+    "lines": [
+      {
+        "expected": {
+          "name": "سعد",
+          "amount": 20000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "سعد    ٢٠"
+        },
+        "found": true,
+        "read": {
+          "name": "سعد",
+          "amount": 20000,
+          "amount_as_written": "٢٠",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "ام زهراء    واصل ٨"
+        },
+        "found": true,
+        "read": {
+          "name": "ام زهراء",
+          "amount": 8000,
+          "amount_as_written": "٨",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "رسول",
+          "amount": 9000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "رسول    9"
+        },
+        "found": true,
+        "read": {
+          "name": "رسول",
+          "amount": 9000,
+          "amount_as_written": "٩",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "currency": "USD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "ابو زينب    -50 $"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو زينب",
+          "amount": 50,
+          "amount_as_written": "50",
+          "currency": "USD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "حسين البقال",
+          "amount": 40000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": true,
+          "written": "حسين البقال    ٤٠"
+        },
+        "found": true,
+        "read": {
+          "name": "حسين البقال",
+          "amount": null,
+          "amount_as_written": null,
+          "currency": "unknown",
+          "type": "unknown",
+          "crossed_out": true,
+          "confidence": "low",
+          "selected": false
+        },
+        "name": true,
+        "amount": false,
+        "currency": false,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": false,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "حسين البقال",
+          "amount": 45000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "حسين البقال    ٤٥"
+        },
+        "found": true,
+        "read": {
+          "name": "حسين البقال",
+          "amount": 45000,
+          "amount_as_written": "٤٥",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ضياء",
+          "amount": 16500,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ضياء    16500"
+        },
+        "found": true,
+        "read": {
+          "name": "ضياء",
+          "amount": 16500,
+          "amount_as_written": "16500",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "high",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ابو مريم",
+          "amount": 10000,
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "written": "ابو مريم    سدد ١٠"
+        },
+        "found": true,
+        "read": {
+          "name": "ابو مريم",
+          "amount": 10000,
+          "amount_as_written": "١٠",
+          "currency": "IQD",
+          "type": "payment",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "زهير",
+          "amount": 7000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "زهير    ٧"
+        },
+        "found": true,
+        "read": {
+          "name": "زهير",
+          "amount": 7000,
+          "amount_as_written": "٧",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "ام علي",
+          "amount": 30000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "ام علي    ٣٠"
+        },
+        "found": true,
+        "read": {
+          "name": "ام علي",
+          "amount": 30000,
+          "amount_as_written": "٣٠",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      },
+      {
+        "expected": {
+          "name": "عباس",
+          "amount": 55000,
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "written": "عباس    55"
+        },
+        "found": true,
+        "read": {
+          "name": "عباس",
+          "amount": 55000,
+          "amount_as_written": "55",
+          "currency": "IQD",
+          "type": "debt",
+          "crossed_out": false,
+          "confidence": "medium",
+          "selected": true
+        },
+        "name": true,
+        "amount": true,
+        "currency": true,
+        "crossed": true,
+        "type": true,
+        "unticked_if_crossed": true,
+        "all": true,
+        "silent_wrong": false
+      }
+    ],
+    "extra": [],
+    "page": "page_3.jpg",
+    "seconds": 2.1,
+    "model": "gemini-3.5-flash-lite",
+    "unreadable": [],
+    "notes": "التاريخ أعلى الصفحة ١٤/١٠"
+  }
+]

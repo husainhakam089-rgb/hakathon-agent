@@ -66,3 +66,35 @@ def test_scanned_pages_can_be_shown_again(client):
 def test_scan_screen_is_in_the_page(client):
     html = client.get("/").text
     assert 'id="scanBtn"' in html and "سكان الدفتر" in html and 'capture="environment"' in html
+
+
+def test_a_name_written_as_null_is_empty():
+    """Found by the scan eval: the model wrote the word "null" for a date line's name."""
+    from app import extraction
+
+    class LLM:
+        def extract(self, *a):
+            return {"rows": [{"name": "null", "amount": None, "raw_text": "١٤/١٠"},
+                             {"name": "سعد", "amount": 20000, "currency": "IQD", "type": "debt"}]}
+
+    rows = extraction.extract_file(LLM(), b"x", "image/jpeg")["rows"]
+    assert rows[0]["name"] is None and rows[1]["name"] == "سعد"
+
+
+def test_payment_words_left_in_the_name_make_it_a_payment():
+    """Found by the scan eval: "سدد ابو علي 15" came back as a debt of "سد ابو علي"."""
+    from app import extraction
+
+    class LLM:
+        def extract(self, *a):
+            return {"rows": [
+                {"name": "سد ابو علي", "amount": 15000, "amount_as_written": "15", "type": "debt", "confidence": "high"},
+                {"name": "واصل من سعد", "amount": 10000, "type": "debt"},
+                {"name": "جاسم", "amount": 20000, "amount_as_written": "-20", "type": "debt"},
+                {"name": "سعد", "amount": 20000, "amount_as_written": "20", "type": "debt"},
+                {"name": "سدير", "amount": 5000, "type": "debt"}]}
+
+    rows = extraction.extract_file(LLM(), b"x", "image/jpeg")["rows"]
+    assert [(r["name"], r["type"]) for r in rows] == [
+        ("ابو علي", "payment"), ("سعد", "payment"), ("جاسم", "payment"), ("سعد", "debt"), ("سدير", "debt")]
+    assert rows[0]["confidence"] == "medium"

@@ -1,0 +1,85 @@
+{
+  "date": "١٢/١٠",
+  "rows": [
+    {
+      "name": "ابو علي",
+      "amount": 25000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "ابو علي ابو الخضرة    25"
+    },
+    {
+      "name": "ام حسين",
+      "amount": 15000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "ام حسين    ١٥"
+    },
+    {
+      "name": "الحجي كريم",
+      "amount": 150000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "الحجي كريم    150 الف"
+    },
+    {
+      "name": "سعد",
+      "amount": 10000,
+      "currency": "IQD",
+      "type": "payment",
+      "crossed_out": false,
+      "written": "واصل من سعد    10"
+    },
+    {
+      "name": "حيدر التكسي",
+      "amount": 7500,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "حيدر التكسي    7500"
+    },
+    {
+      "name": "ابو زينب",
+      "amount": 50,
+      "currency": "USD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "ابو زينب    50 $"
+    },
+    {
+      "name": "مصطفى الحلاق",
+      "amount": 30000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": true,
+      "written": "مصطفى الحلاق    ٣٠"
+    },
+    {
+      "name": "جاسم",
+      "amount": 20000,
+      "currency": "IQD",
+      "type": "payment",
+      "crossed_out": false,
+      "written": "جاسم    -20"
+    },
+    {
+      "name": "ام زهراء",
+      "amount": 8000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "ام زهراء    ٨"
+    },
+    {
+      "name": "علي الصباغ",
+      "amount": 45000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "علي الصباغ    45000"
+    }
+  ]
+}

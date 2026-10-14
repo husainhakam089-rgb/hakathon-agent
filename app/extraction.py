@@ -36,6 +36,7 @@ these field names; if you rename one, rename it there too):
 """
 
 import copy
+import re
 
 from app import db
 from app.arabic import normalize
@@ -149,6 +150,27 @@ def _to_int(value):
     return int(text) if text.isdigit() and int(text) > 0 else None
 
 
+# Words that mark a payment in the notebook ("سدد ابو علي 15", "واصل من سعد 10"). No name
+# starts with them, so when the model leaves one inside the name, the code takes it out and
+# the line is a payment: a payment read as a debt would charge the customer twice.
+_PAYMENT_LEAD = re.compile(r"^\s*(?:سدد|سدّد|سد|واصل|واصله|واصلة|دفع|استلمت)\s+(?:من\s+)?")
+
+
+def _payment_words_guard(r: dict) -> None:
+    name = r.get("name")
+    if name and _PAYMENT_LEAD.match(name):
+        rest = _PAYMENT_LEAD.sub("", name).strip()
+        if rest:
+            r["name"] = rest
+            r["type"] = "payment"
+            if r.get("confidence") == "high":
+                r["confidence"] = "medium"
+    written = str(r.get("amount_as_written") or "").strip()
+    if written.startswith("-") or written.endswith("-"):  # "-20" / "20-": a minus = paid
+        if r.get("type") == "debt":
+            r["type"] = "payment"
+
+
 def extract_file(llm, file_bytes: bytes, mime: str, note: str | None = None) -> dict:
     """Ask the model to read the page. Returns the extraction, cleaned up a little."""
     from app.prompts import EXTRACTION_PROMPT
@@ -170,7 +192,11 @@ def extract_file(llm, file_bytes: bytes, mime: str, note: str | None = None) -> 
         if not isinstance(r, dict):
             continue
         r = dict(r)
+        # some models write the word "null" instead of leaving the name empty
+        if str(r.get("name") or "").strip().lower() in ("", "null", "none", "unknown"):
+            r["name"] = None
         r["amount"] = _to_int(r.get("amount"))
+        _payment_words_guard(r)
         r["crossed_out"] = bool(r.get("crossed_out"))
         rows.append(r)
     return {

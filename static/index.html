@@ -1189,6 +1189,25 @@ async function readScanPages() {
     : left ? '' : '✓ انقرت كل الصفحات. دوس "اعرض الجدول".');
 }
 
+// Found by scanning a test notebook: "ابو علي ابو الخضرة" on one page and "ابو علي" on the next
+// became two customers, and the second one's payment left him at minus. Say so before saving.
+const nameKey = n => String(n || '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+  .replace(/[\u064B-\u0652ـ]/g, '').replace(/\s+/g, ' ').trim();
+function sameperson(rows) {
+  const names = [...new Set(rows.map(r => nameKey(r.name)).filter(Boolean))];
+  const out = [];
+  const pairs = [];
+  for (const a of names) for (const b of names)
+    if (a !== b && b.startsWith(a + ' ')) pairs.push(`«${a}» و«${b}»`);
+  if (pairs.length) out.push(`⚠ يمكن نفس الشخص، وحّد الاسم إذا هو نفسه: ${pairs.slice(0, 6).join('، ')}.`);
+  // a payment from a name that has no debt anywhere in these pages and is not in the notebook yet
+  const owes = new Set(rows.filter(r => r.type === 'debt').map(r => nameKey(r.name)));
+  const odd = rows.filter(r => r.type === 'payment' && r.name && !owes.has(nameKey(r.name))
+    && !(r.match && r.match.status === 'existing')).map(r => `${r.name} (ص ${r.page})`);
+  if (odd.length) out.push(`⚠ تسديد من اسم ما عليه دين بهالصفحات ولا بالدفتر: ${[...new Set(odd)].slice(0, 6).join('، ')}. تأكد من الاسم.`);
+  return out;
+}
+
 function reviewScan() {
   const st = scanState();
   const rows = [], unreadable = [], seen = {};
@@ -1204,7 +1223,8 @@ function reviewScan() {
   const twice = Object.entries(seen).filter(([, pages]) => pages.size > 1)
     .map(([name, pages]) => `${name} (ص ${[...pages].join('، ')})`);
   const notes = [`من ${st.pages.filter(p => p.status === 'done').length} صفحة.`,
-    twice.length ? `⚠ أسماء بأكثر من صفحة، تأكد ما تنحسب مرتين: ${twice.slice(0, 8).join('، ')}` : ''].filter(Boolean).join(' ');
+    twice.length ? `⚠ أسماء بأكثر من صفحة، تأكد ما تنحسب مرتين: ${twice.slice(0, 8).join('، ')}` : '',
+    ...sameperson(rows)].filter(Boolean).join(' ');
   closeDrawer();
   $('welcome')?.remove();
   renderReview({rows, notes, unreadable_lines: unreadable, file_id: null, source_kind: 'scan',
