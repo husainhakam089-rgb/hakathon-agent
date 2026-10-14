@@ -1049,6 +1049,36 @@
           "50,000"
         ]
       }
+    },
+    {
+      "id": 50,
+      "message": "ذكّر أبو علي بالدين",
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "draft_reminder"
+        ]
+      }
+    },
+    {
+      "id": 51,
+      "message": "سويله رابط دفع زين كاش لأبو علي",
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "create_payment_link"
+        ]
+      }
+    },
+    {
+      "id": 52,
+      "message": "رقم أبو علي 07701234567",
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "set_customer_phone"
+        ]
+      }
     }
   ]
 }

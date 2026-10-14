@@ -107,9 +107,14 @@ def profit(conn, period: str = "month", today: date | None = None) -> dict:
 
 def week_summary(conn, today: date | None = None) -> dict:
     """The last 7 days at a glance."""
-    start, end = period_range("week", today)
+    return period_summary(conn, "week", today)
+
+
+def period_summary(conn, period: str = "week", today: date | None = None) -> dict:
+    """A period at a glance (the week summary, and the daily report for "today")."""
+    start, end = period_range(period, today)
     rng = (start, end)
-    p = profit(conn, "week", today)
+    p = profit(conn, period, today)
     pay = {k: _zero() for k in ("cash", "debt", "electronic")}
     for r in conn.execute("""SELECT payment, currency, SUM(total) s FROM sales
                              WHERE undone = 0 AND created_at >= ? AND created_at < ? GROUP BY payment, currency""", rng):

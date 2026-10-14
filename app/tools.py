@@ -9,7 +9,7 @@ import os
 import re
 import sys
 
-from app import db, reports
+from app import db, payments, reports
 from app.arabic import normalize
 
 USD_LARGE_AMOUNT = 1000  # treated as equivalent to LARGE_AMOUNT_IQD (no FX conversion in v0)
@@ -445,6 +445,38 @@ TOOL_SCHEMAS = [
             "properties": {"drawer_hour": {"type": "integer"}, "overdue_days": {"type": "integer"}},
         },
     },
+    # ----- Zain Cash links and reminders (stage 22) -----
+    {
+        "name": "set_customer_phone",
+        "description": "يحفظ رقم موبايل الزبون (حتى التذكير ينبعث له بالواتساب). \"رقم أبو علي 07701234567\".",
+        "input_schema": {
+            "type": "object",
+            "properties": {"customer_id": {"type": "integer"}, "phone": {"type": "string"}},
+            "required": ["customer_id", "phone"],
+        },
+    },
+    {
+        "name": "create_payment_link",
+        "description": "يسوي رابط دفع بزين كاش لزبون (بالدينار). المبلغ افتراضيًا كل اللي عليه. لما يدفع منه، "
+                       "التسديد ينسجل بالدفتر وحده (إلكتروني، ما يدخل الجرار). \"سويله رابط دفع\".",
+        "input_schema": {
+            "type": "object",
+            "properties": {"customer_id": {"type": "integer"},
+                           "amount": {"type": "integer", "description": "بس إذا صاحب المحل حدد مبلغ"}},
+            "required": ["customer_id"],
+        },
+    },
+    {
+        "name": "draft_reminder",
+        "description": "يكتب رسالة تذكير لزبون عليه دين، بيها رصيده ورابط دفع زين كاش. الرسالة ما تنبعث: "
+                       "صاحب المحل يشوفها ويدوس \"أرسل بالواتساب\". \"ذكّر أبو علي\"، \"ابعث تذكير للمتأخرين\" "
+                       "(واحد واحد). note = سطر يريده صاحب المحل بالرسالة (اختياري).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"customer_id": {"type": "integer"}, "note": {"type": "string"}},
+            "required": ["customer_id"],
+        },
+    },
     # ----- memory (stage 12): things the owner teaches -----
     {
         "name": "remember",
@@ -566,6 +598,8 @@ class DebtTools:
         # Entries made in this message: two equal lines in ONE message ("دفع 10 ودفع 10") are
         # not a resent message. The agent clears it each turn.
         self._turn_entries: set[int] = set()
+        # Where customers open payment links (stage 22); main sets it from the request.
+        self.base_url = ""
 
     # ----- dispatcher -----
 
@@ -1041,6 +1075,63 @@ class DebtTools:
         st["lines"] = st["lines"][-40:]  # the model needs the recent ones; the page shows them all
         st["page"] = f"/statement/{customer['id']}?period={period}"
         return {"ok": True, **st}
+
+    # ----- Zain Cash links and reminders (stage 22) -----
+
+    def tool_set_customer_phone(self, customer_id, phone):
+        customer, err = self._customer_or_error(customer_id)
+        if err:
+            return err
+        p = payments.normalize_phone(str(phone or ""))
+        if not p:
+            return _error("invalid_phone", "الرقم لازم يكون موبايل عراقي، مثل 07701234567")
+        db.set_phone(self.conn, customer["id"], p)
+        return {"ok": True, "customer_id": customer["id"], "customer_name": customer["name"], "phone": p}
+
+    def _link(self, customer, amount=None):
+        """A pending link for this customer, for all they owe unless an amount is given. An older
+        pending link is cancelled so the customer cannot pay the same debt twice."""
+        owed = db.get_balance(self.conn, customer["id"])["IQD"]
+        value = _as_int(amount) if amount is not None else owed
+        if owed <= 0 and amount is None:
+            return None, _error("nothing_owed", f"{customer['name']} ما عليه شي بالدينار هسه", balance=owed)
+        if value is None or value < payments.MIN_AMOUNT:
+            return None, _error("invalid_amount", f"المبلغ لازم يكون {payments.MIN_AMOUNT} دينار أو أكثر")
+        self.conn.execute("UPDATE payment_links SET status = 'cancelled' WHERE customer_id = ? AND status = 'pending'",
+                          (customer["id"],))
+        link = db.add_payment_link(self.conn, customer["id"], value, "IQD", payments.provider_name())
+        url = payments.pay_url(link["token"], payments.base_url(self.base_url))
+        return {"link_id": link["id"], "url": url, "amount": value, "balance": owed,
+                "provider": "زين كاش" if link["provider"] == "zaincash" else "زين كاش (وضع تجربة: ما تتحرك فلوس حقيقية)"}, None
+
+    def tool_create_payment_link(self, customer_id, amount=None):
+        customer, err = self._customer_or_error(customer_id)
+        if err:
+            return err
+        link, err = self._link(customer, amount)
+        if err:
+            return err
+        return {"ok": True, "customer_id": customer["id"], "customer_name": customer["name"], **link,
+                "meaning": "لما الزبون يدفع من الرابط، التسديد ينسجل وحده ويطلعلك تنبيه"}
+
+    def tool_draft_reminder(self, customer_id, note=None):
+        customer, err = self._customer_or_error(customer_id)
+        if err:
+            return err
+        link, err = self._link(customer)
+        if err:
+            return err
+        shop = db.get_setting(self.conn, "shop_name")
+        text = payments.reminder_text(customer["name"], link["amount"], link["url"], shop, note)
+        phone = db.get_customer(self.conn, customer["id"]).get("phone")
+        last = db.last_reminder(self.conn, customer["id"])
+        out = {"ok": True, "customer_id": customer["id"], "customer_name": customer["name"], "text": text,
+               "phone": phone, "whatsapp": payments.whatsapp_url(phone, text), **link,
+               "last_reminded": last["created_at"] if last else None,
+               "meaning": "الرسالة جاهزة وما انبعثت. صاحب المحل يدوس أرسل بالواتساب تحت الرد"}
+        if not phone:
+            out["no_phone"] = "ما عندي رقمه: الواتساب راح يسألك لمن تبعثها، أو گلي رقمه وأحفظه"
+        return out
 
     # ----- reminders and alerts -----
 

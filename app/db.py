@@ -164,6 +164,36 @@ CREATE TABLE IF NOT EXISTS settings (
   key               TEXT PRIMARY KEY,
   value             TEXT NOT NULL
 );
+-- Stage 22: payment links ("ادفع بزين كاش") for a customer, and reminders the owner sent.
+-- provider: 'simulated' (a clearly marked test checkout) or a real one when its keys are set.
+CREATE TABLE IF NOT EXISTS payment_links (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  token             TEXT NOT NULL UNIQUE,
+  customer_id       INTEGER NOT NULL REFERENCES customers(id),
+  amount            INTEGER NOT NULL CHECK (amount > 0),
+  currency          TEXT NOT NULL DEFAULT 'IQD',
+  provider          TEXT NOT NULL DEFAULT 'simulated',
+  status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','cancelled')),
+  tx_id             INTEGER REFERENCES transactions(id),
+  announced         INTEGER NOT NULL DEFAULT 0,   -- the owner was told it was paid
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  paid_at           TEXT
+);
+CREATE TABLE IF NOT EXISTS reminders (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id       INTEGER NOT NULL REFERENCES customers(id),
+  text              TEXT NOT NULL,
+  link_id           INTEGER REFERENCES payment_links(id),
+  channel           TEXT NOT NULL DEFAULT 'whatsapp',
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+-- Stage 22: the daily report, made and sent by itself.
+CREATE TABLE IF NOT EXISTS daily_reports (
+  day               TEXT PRIMARY KEY,
+  text              TEXT NOT NULL,
+  sent_via          TEXT,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
 -- Fixed monthly expenses (rent, generator, salaries): on their day the owner is asked
 -- "record it?"; nothing is recorded without a yes. done_month: 'YYYY-MM' recorded or skipped.
 CREATE TABLE IF NOT EXISTS recurring_expenses (
@@ -800,11 +830,13 @@ def sales_summary(conn, period: str = "month", item_id: int | None = None) -> di
 # ---------- reminders and alerts (stage 19) ----------
 
 DEFAULT_SETTINGS = {"drawer_hour": "21", "overdue_days": "30"}
+# stage 22 settings: kept apart so the alert settings above stay what the old screens expect
+EXTRA_SETTINGS = {"report_hour": "23", "shop_name": "المحل"}
 
 
 def get_setting(conn, key: str) -> str:
     row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
-    return row["value"] if row else DEFAULT_SETTINGS[key]
+    return row["value"] if row else {**DEFAULT_SETTINGS, **EXTRA_SETTINGS}[key]
 
 
 def set_setting(conn, key: str, value) -> None:
@@ -897,6 +929,68 @@ def recent_duplicate(conn, customer_id: int, tx_type: str, amount: int, currency
     return dict(row) if row else None
 
 
+def set_phone(conn, customer_id: int, phone: str | None) -> None:
+    conn.execute("UPDATE customers SET phone = ? WHERE id = ?", (phone, customer_id))
+    conn.commit()
+
+
+# ---------- payment links and reminders (stage 22) ----------
+
+def add_payment_link(conn, customer_id: int, amount: int, currency: str = "IQD", provider: str = "simulated") -> dict:
+    import secrets
+    token = secrets.token_urlsafe(12)
+    cur = conn.execute("INSERT INTO payment_links (token, customer_id, amount, currency, provider) VALUES (?, ?, ?, ?, ?)",
+                       (token, customer_id, amount, currency, provider))
+    conn.commit()
+    return get_payment_link(conn, cur.lastrowid)
+
+
+def get_payment_link(conn, link_id: int | None = None, token: str | None = None):
+    if token is not None:
+        row = conn.execute("SELECT * FROM payment_links WHERE token = ?", (token,)).fetchone()
+    else:
+        row = conn.execute("SELECT * FROM payment_links WHERE id = ?", (link_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def pay_link(conn, link: dict, source: str = "zaincash") -> int:
+    """The customer paid through the link: their payment goes into the notebook by itself
+    (electronic: not into the drawer). Returns the transaction id. Paying twice does nothing."""
+    if link["status"] != "pending":
+        return link["tx_id"]
+    tx = add_transaction(conn, link["customer_id"], "payment", link["amount"], link["currency"],
+                         note=f"زين كاش ({'تجربة' if link['provider'] == 'simulated' else link['provider']}) · رابط #{link['id']}",
+                         source=source, commit=False, from_drawer=False)
+    conn.execute("UPDATE payment_links SET status = 'paid', tx_id = ?, paid_at = datetime('now','localtime') WHERE id = ?",
+                 (tx, link["id"]))
+    conn.commit()
+    return tx
+
+
+def unannounced_payments(conn) -> list[dict]:
+    rows = conn.execute(
+        """SELECT p.id, p.amount, p.currency, p.paid_at, c.name FROM payment_links p JOIN customers c ON c.id = p.customer_id
+           WHERE p.status = 'paid' AND p.announced = 0 ORDER BY p.id""").fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_announced(conn, ids: list[int]) -> None:
+    conn.executemany("UPDATE payment_links SET announced = 1 WHERE id = ?", [(i,) for i in ids])
+    conn.commit()
+
+
+def add_reminder(conn, customer_id: int, text: str, link_id: int | None, channel: str = "whatsapp") -> int:
+    cur = conn.execute("INSERT INTO reminders (customer_id, text, link_id, channel) VALUES (?, ?, ?, ?)",
+                       (customer_id, text, link_id, channel))
+    conn.commit()
+    return cur.lastrowid
+
+
+def last_reminder(conn, customer_id: int):
+    row = conn.execute("SELECT * FROM reminders WHERE customer_id = ? ORDER BY id DESC LIMIT 1", (customer_id,)).fetchone()
+    return dict(row) if row else None
+
+
 def alerts(conn, now=None) -> dict:
     """Everything the agent should bring up by itself, worked out by code."""
     now = _now(now)
@@ -905,9 +999,18 @@ def alerts(conn, now=None) -> dict:
         "drawer_not_counted": now.hour >= hour and not drawer_counted_today(conn, now),
         "drawer_hour": hour,
         "recurring_due": recurring_due(conn, now),
-        "overdue": overdue_debts(conn, None, now),
+        "overdue": _with_reminders(conn, overdue_debts(conn, None, now)),
         "overdue_days": int(get_setting(conn, "overdue_days")),
+        "paid_links": unannounced_payments(conn),
     }
+
+
+def _with_reminders(conn, rows: list[dict]) -> list[dict]:
+    for r in rows:
+        last = last_reminder(conn, r["id"])
+        r["reminded_at"] = last["created_at"] if last else None
+        r["phone"] = get_customer(conn, r["id"]).get("phone")
+    return rows
 
 
 # ---------- batches (imports) ----------

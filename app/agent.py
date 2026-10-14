@@ -20,7 +20,8 @@ MAX_ITERATIONS = 6
 WRITE_TOOLS = {"record_debt", "record_payment", "add_customer", "undo_last", "undo_batch", "record_purchase",
                "record_supplier_payment", "add_supplier", "record_withdrawal", "remember", "forget",
                "record_cash_in", "count_drawer", "set_drawer_opening", "add_item", "update_item", "record_sale",
-               "add_recurring_expense", "remove_recurring_expense", "record_recurring_expense", "set_reminders"}
+               "add_recurring_expense", "remove_recurring_expense", "record_recurring_expense", "set_reminders",
+               "set_customer_phone"}
 MAX_HISTORY_MESSAGES = 20  # user + assistant text messages kept per session
 
 CONFUSED_REPLY = "صار عندي لبس، عيد الطلب بطريقة أبسط"

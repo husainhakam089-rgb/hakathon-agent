@@ -5,18 +5,19 @@ import re
 import threading
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 load_dotenv()
 
 from app import db  # noqa: E402  (after load_dotenv: DB_PATH comes from .env)
-from app import backup, export, extraction, reports, spreadsheet  # noqa: E402
+from app import auth, backup, daily, export, extraction, payments, reports, spreadsheet  # noqa: E402
 from app.agent import Agent  # noqa: E402
 from app.llm import LLMError  # noqa: E402
 
@@ -26,7 +27,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "17"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "18"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -52,16 +53,60 @@ def _daily_backups(stop: threading.Event) -> None:
             return
 
 
+REPORT_CHECK_SECONDS = 300
+
+
+def _daily_report(stop: threading.Event) -> None:
+    """Stage 22: the day's report at the owner's hour, by itself (Telegram if set, and in the program)."""
+    while True:
+        try:
+            with agent.lock:
+                made = daily.ensure_today(agent.conn)
+            if made:
+                print("انكتب تقرير اليوم" + (" وانبعث بالتلگرام" if daily.telegram_ready() else ""))
+        except Exception as e:
+            print(f"ما گدرت أسوي تقرير اليوم: {e}")
+        if stop.wait(REPORT_CHECK_SECONDS):
+            return
+
+
 @asynccontextmanager
 async def lifespan(_app):
+    if os.getenv("REQUIRE_PASSWORD") and not auth.enabled():
+        # online (the Docker image sets REQUIRE_PASSWORD): never serve the notebook without a password
+        raise RuntimeError("APP_PASSWORD is not set: the notebook would be open to anyone on the internet.")
     stop = threading.Event()
     threading.Thread(target=_daily_backups, args=(stop,), daemon=True).start()
+    threading.Thread(target=_daily_report, args=(stop,), daemon=True).start()
     yield
     stop.set()
 
 
 app = FastAPI(title="دفتر الديون", lifespan=lifespan)
+app.middleware("http")(auth.middleware)
 agent = Agent(db.connect())
+
+
+@app.get("/login")
+def login_form():
+    return auth.login_page() if auth.enabled() else RedirectResponse("/", status_code=303)
+
+
+@app.post("/login")
+async def login(request: Request):
+    if auth.too_many(request):
+        return auth.login_page("محاولات هواية. انتظر 10 دقايق.")
+    form = (await request.body()).decode("utf-8", "replace")
+    from urllib.parse import parse_qs
+    given = (parse_qs(form).get("password") or [""])[0]
+    import hmac
+    if not auth.enabled() or not hmac.compare_digest(given.encode(), auth.password().encode()):
+        auth.failed(request)
+        return auth.login_page("كلمة السر غلط.")
+    resp = RedirectResponse("/", status_code=303)
+    secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    resp.set_cookie(auth.COOKIE, auth.make_cookie(), max_age=auth.DAYS * 86400, httponly=True, samesite="lax", secure=secure)
+    return resp
 
 
 class ChatRequest(BaseModel):
@@ -82,7 +127,8 @@ def version():
 
 
 @app.post("/chat")
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, request: Request):
+    agent.session(req.session_id).tools.base_url = str(request.base_url)
     return agent.chat(req.session_id, req.message, req.source)
 
 
@@ -338,10 +384,17 @@ class RecurringAction(BaseModel):
 class SettingsRequest(BaseModel):
     drawer_hour: int | None = Field(default=None, ge=0, le=23)
     overdue_days: int | None = Field(default=None, ge=1, le=365)
+    report_hour: int | None = Field(default=None, ge=0, le=23)
+    shop_name: str | None = Field(default=None, min_length=1, max_length=60)
 
 
 def _settings() -> dict:
     return {k: int(db.get_setting(agent.conn, k)) for k in db.DEFAULT_SETTINGS}
+
+
+def _extra_settings() -> dict:
+    return {"report_hour": int(db.get_setting(agent.conn, "report_hour")),
+            "shop_name": db.get_setting(agent.conn, "shop_name")}
 
 
 @app.get("/alerts")
@@ -353,7 +406,7 @@ def alerts():
 @app.get("/recurring")
 def recurring():
     with agent.lock:
-        return {"recurring": db.list_recurring(agent.conn), "settings": _settings()}
+        return {"recurring": db.list_recurring(agent.conn), "settings": _settings(), "extra": _extra_settings()}
 
 
 @app.post("/recurring")
@@ -396,7 +449,210 @@ def settings(req: SettingsRequest):
             db.set_setting(agent.conn, "drawer_hour", req.drawer_hour)
         if req.overdue_days is not None:
             db.set_setting(agent.conn, "overdue_days", req.overdue_days)
-        return {"ok": True, "settings": _settings()}
+        if req.report_hour is not None:
+            db.set_setting(agent.conn, "report_hour", req.report_hour)
+        if req.shop_name:
+            db.set_setting(agent.conn, "shop_name", req.shop_name.strip())
+        return {"ok": True, "settings": _settings(), "extra": _extra_settings()}
+
+
+# ---------- stage 22: Zain Cash links, reminders, the daily report ----------
+
+class LinkRequest(BaseModel):
+    customer_id: int
+    amount: int | None = Field(default=None, gt=0, le=1_000_000_000)
+    note: str | None = Field(default=None, max_length=200)
+
+
+class PhoneRequest(BaseModel):
+    phone: str = Field(min_length=1, max_length=30)
+
+
+class SentRequest(BaseModel):
+    customer_id: int
+    text: str = Field(min_length=1, max_length=2000)
+    link_id: int | None = None
+    channel: Literal["whatsapp", "copy"] = "whatsapp"
+
+
+class SeenRequest(BaseModel):
+    ids: list[int]
+
+
+def _owner_tools(request: Request):
+    tools = agent.session("_owner_screens").tools
+    tools.base_url = str(request.base_url)
+    return tools
+
+
+def _tool_response(result: dict):
+    if not result.get("ok"):
+        return JSONResponse(result, status_code=422)
+    return result
+
+
+@app.post("/payment-links")
+def payment_link(req: LinkRequest, request: Request):
+    with agent.lock:
+        return _tool_response(_owner_tools(request).execute(
+            "create_payment_link", {"customer_id": req.customer_id, "amount": req.amount}))
+
+
+@app.post("/reminders/draft")
+def draft_reminder(req: LinkRequest, request: Request):
+    """The button under an overdue customer: the reminder written, ready to send with one press."""
+    with agent.lock:
+        return _tool_response(_owner_tools(request).execute(
+            "draft_reminder", {"customer_id": req.customer_id, "note": req.note}))
+
+
+@app.post("/reminders/sent")
+def reminder_sent(req: SentRequest):
+    """The owner pressed send: kept, so the next reminder says when the last one went."""
+    with agent.lock:
+        if not db.get_customer(agent.conn, req.customer_id):
+            return _error(404, "ما لگيت هالزبون.")
+        rid = db.add_reminder(agent.conn, req.customer_id, req.text, req.link_id, req.channel)
+    return {"ok": True, "id": rid}
+
+
+@app.post("/customers/{customer_id}/phone")
+def customer_phone(customer_id: int, req: PhoneRequest):
+    with agent.lock:
+        return _tool_response(agent.session("_owner_screens").tools.execute(
+            "set_customer_phone", {"customer_id": customer_id, "phone": req.phone}))
+
+
+@app.post("/alerts/seen-payments")
+def seen_payments(req: SeenRequest):
+    with agent.lock:
+        db.mark_announced(agent.conn, req.ids)
+    return {"ok": True}
+
+
+@app.get("/daily-reports")
+def daily_reports():
+    with agent.lock:
+        return {"reports": daily.recent(agent.conn), "telegram": daily.telegram_ready(),
+                "report_hour": int(db.get_setting(agent.conn, "report_hour"))}
+
+
+@app.post("/daily-reports/now")
+def daily_report_now():
+    """Make today's report now (and send it), without waiting for its hour."""
+    with agent.lock:
+        text = daily.build(agent.conn)
+        sent = daily.send_telegram(text)
+        daily.save(agent.conn, datetime.now().date().isoformat(), text, "telegram" if sent else None)
+    return {"ok": True, "text": text, "sent": sent, "telegram": daily.telegram_ready()}
+
+
+def _notify_paid(name: str, amount: int) -> None:
+    """Tell the owner on Telegram straight away (if set); the program shows it in the alerts anyway."""
+    text = f"💳 {name} دفع {amount:,} دينار بزين كاش، وانسجل تسديد بحسابه وحده."
+    threading.Thread(target=daily.send_telegram, args=(text,), daemon=True).start()
+
+
+def _pay_html(link: dict, customer: dict, shop: str, lines: list[dict], message: str = "") -> str:
+    from html import escape
+    simulated = link["provider"] == "simulated"
+    balance = db.get_balance(agent.conn, customer["id"])["IQD"]
+    banner = ("<div class=test>🧪 وضع تجربة: هاي محاكاة لزين كاش. ما تتحرك فلوس حقيقية، بس التسديد ينسجل "
+              "بالدفتر بالضبط مثل الحقيقي.</div>" if simulated else "")
+    if link["status"] == "paid":
+        body = f"<div class=ok>✓ انسجل التسديد: {link['amount']:,} دينار<br><small>{escape(link['paid_at'] or '')}</small></div>"
+    elif link["status"] == "cancelled":
+        body = "<div class=bad>هذا الرابط قديم وانلغى. اطلب رابط جديد من المحل.</div>"
+    elif balance <= 0:
+        body = "<div class=ok>حسابك صافي، ما عليك شي هسه 🌷</div>"
+    elif simulated:
+        body = (f"<form method=post action='/pay/{link['token']}/confirm'><button>ادفع {link['amount']:,} دينار بزين كاش "
+                f"(تجربة)</button></form>")
+    else:
+        body = f"<a class=btn href='/pay/{link['token']}/go'>ادفع {link['amount']:,} دينار بزين كاش</a>"
+    word = {"debt": "دين", "payment": "تسديد"}
+    # date, kind and amount only: the owner's own notes stay in the shop
+    rows = "".join(f"<tr><td class=d>{escape(l['at'][:10])}</td><td>{word[l['type']]}</td>"
+                   f"<td class=n>{l['amount']:,}</td></tr>" for l in lines if l["currency"] == "IQD")
+    table = (f"<details><summary>آخر الحركات بحسابك</summary><table>{rows}</table></details>" if rows else "")
+    note = f"<div class=msg>{escape(message)}</div>" if message else ""
+    return f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>تسديد حساب: {escape(shop)}</title>
+<style>body{{font-family:system-ui,'Segoe UI',Tahoma,sans-serif;margin:0;background:#f4f4f6;color:#111}}
+.card{{max-width:440px;margin:24px auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 2px 12px #0001}}
+h1{{font-size:18px;margin:0 0 4px}} .sub{{color:#666;font-size:14px}} .amt{{font-size:30px;font-weight:700;margin:16px 0}}
+.test{{background:#fff4d6;border:1px solid #f0c040;border-radius:10px;padding:10px;font-size:13px;margin-bottom:14px}}
+button,.btn{{display:block;width:100%;box-sizing:border-box;text-align:center;padding:14px;font-size:17px;border:0;border-radius:12px;
+background:#e4007c;color:#fff;cursor:pointer;text-decoration:none;font-family:inherit}}
+.ok{{background:#e7f7ec;border-radius:10px;padding:14px;text-align:center;font-size:17px}}
+.bad{{background:#fde8e8;border-radius:10px;padding:14px;text-align:center}} .msg{{margin-top:10px;color:#a00;font-size:14px}}
+details{{margin-top:16px;font-size:13px}} table{{width:100%;border-collapse:collapse;margin-top:8px}}
+td{{border-bottom:1px solid #eee;padding:6px 4px}} .n{{white-space:nowrap;text-align:left}} .d{{white-space:nowrap;color:#555}}
+</style></head><body><div class=card>{banner}
+<h1>{escape(shop)}</h1><div class=sub>حساب: {escape(customer['name'])}</div>
+<div class=amt>{link['amount']:,} دينار</div>{body}{note}{table}</div></body></html>"""
+
+
+def _pay_page(token: str, message: str = "", status: int = 200):
+    link = db.get_payment_link(agent.conn, token=token)
+    if not link:
+        return HTMLResponse("<p dir=rtl style='font-family:sans-serif;padding:24px'>الرابط غلط أو انتهى.</p>", status_code=404)
+    customer = db.get_customer(agent.conn, link["customer_id"])
+    lines = reports.customer_statement(agent.conn, customer["id"], "all")["lines"][-8:]
+    return HTMLResponse(_pay_html(link, customer, db.get_setting(agent.conn, "shop_name"), lines, message),
+                        status_code=status, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/pay/{token}")
+def pay_page(token: str):
+    """Public: what the customer opens from the reminder. It shows their own account only."""
+    with agent.lock:
+        return _pay_page(token)
+
+
+@app.post("/pay/{token}/confirm")
+def pay_confirm(token: str):
+    """The simulated checkout: pressing pay records the payment by itself."""
+    with agent.lock:
+        link = db.get_payment_link(agent.conn, token=token)
+        if not link:
+            return _pay_page(token)
+        if link["provider"] != "simulated":
+            return _pay_page(token, "الدفع يصير من صفحة زين كاش.", 400)
+        if link["status"] == "pending" and db.get_balance(agent.conn, link["customer_id"])["IQD"] > 0:
+            db.pay_link(agent.conn, link, source="zaincash_test")
+            _notify_paid(db.get_customer(agent.conn, link["customer_id"])["name"], link["amount"])
+        return _pay_page(token)
+
+
+@app.get("/pay/{token}/go")
+def pay_go(token: str, request: Request):
+    """Real Zain Cash: off to their checkout; they send the customer back to /callback."""
+    with agent.lock:
+        link = db.get_payment_link(agent.conn, token=token)
+        if not link or link["status"] != "pending" or link["provider"] != "zaincash":
+            return _pay_page(token)
+    back = f"{payments.base_url(str(request.base_url))}/pay/{token}/callback"
+    try:
+        return RedirectResponse(payments.zaincash_checkout(link, back), status_code=303)
+    except Exception as e:
+        print(f"زين كاش: {e}")
+        with agent.lock:
+            return _pay_page(token, "زين كاش ما ردّت هسه. جرب بعد شوية.", 502)
+
+
+@app.get("/pay/{token}/callback")
+def pay_callback(token: str, request: Request):
+    result = payments.zaincash_result(request.query_params.get("token", ""))
+    with agent.lock:
+        link = db.get_payment_link(agent.conn, token=token)
+        if not link or not result or result.get("orderid") != token:
+            return _pay_page(token, "ما گدرت أتأكد من الدفع. إذا انسحبت الفلوس راجع المحل.", 400)
+        if result.get("status") == "success" and link["status"] == "pending":
+            db.pay_link(agent.conn, link, source="zaincash")
+            _notify_paid(db.get_customer(agent.conn, link["customer_id"])["name"], link["amount"])
+            return _pay_page(token)
+        return _pay_page(token, "الدفع ما تم. تگدر تعيد.")
 
 
 # ---------- backups and Excel export ----------
@@ -682,6 +938,11 @@ def main() -> None:
     import uvicorn
 
     port = int(os.getenv("PORT") or 8000)
+    # HOST=0.0.0.0 opens it to the phone on the shop's Wi-Fi (or online); only with a password
+    host = os.getenv("HOST") or "127.0.0.1"
+    if host != "127.0.0.1" and not auth.enabled():
+        print("HOST يفتح البرنامج لغير هالحاسبة: لازم تحط APP_PASSWORD بملف .env أول.")
+        raise SystemExit(1)
     url = f"http://127.0.0.1:{port}"
     if port_in_use(port):
         if running_version(url) == APP_VERSION:
@@ -698,7 +959,9 @@ def main() -> None:
     print(f"دفتر الديون شغال على: {url}  (للإيقاف: Ctrl+C)")
     if not os.getenv("NO_BROWSER"):
         threading.Timer(1.5, webbrowser.open, [url]).start()
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    if host != "127.0.0.1":
+        print(f"ومن الموبايل على نفس الواي فاي: http://<IP مال هالحاسبة>:{port}  (ويطلب كلمة السر)")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":

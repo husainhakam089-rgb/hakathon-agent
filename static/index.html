@@ -317,6 +317,13 @@ tr.flash td { animation: flash 1.6s ease-out; }
   background: var(--card-strong); color: var(--text); cursor: pointer; font: inherit; font-size: 13px; }
 .alert-card .row button.yes { background: var(--accent); color: #0f172a; border-color: var(--accent); font-weight: 700; }
 .alert-card small { color: var(--muted); }
+/* stage 22: the reminder / payment link card under a reply */
+.remind-card { align-self: flex-end; max-width: 85%; margin-top: 6px; border: 1px dashed var(--accent); }
+.remind-card .text { white-space: pre-wrap; font-size: 14px; line-height: 1.7; background: var(--card); border-radius: 10px; padding: 8px 10px; word-break: break-word; }
+.remind-card a.yes { flex: 1; min-width: 90px; padding: 8px; border-radius: 10px; text-align: center; text-decoration: none;
+  background: #25d366; color: #fff; font-weight: 700; font-size: 14px; }
+.remind-card input { flex: 2; min-width: 120px; padding: 8px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+.daily-text { white-space: pre-wrap; font-size: 14px; line-height: 1.8; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
 .agent.proactive { border-inline-start: 3px solid var(--accent); }
 #ledgerBtn .dot { position: static; margin-inline-start: auto; }  /* in the menu: at the row's end */
 .ledger-top { display: none; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border-soft); font-size: 16px; }
@@ -408,6 +415,9 @@ main.ledger-off .debtors { display: none; }
         <button class="chip">شلون كان الأسبوع؟</button>
         <button class="chip fill" data-fill="كشف حساب ">كشف حساب …</button>
         <button class="chip">شنو عندي تنبيهات؟</button>
+        <button class="chip fill" data-fill="ذكّر ">ذكّر …</button>
+        <button class="chip">ذكّر المتأخرين</button>
+        <button class="chip fill" data-fill="سويله رابط دفع زين كاش لـ ">رابط دفع لـ …</button>
         <button class="chip">شطب آخر وحدة</button>
       </div>
       <div class="attachment" id="attachment">
@@ -465,6 +475,13 @@ main.ledger-off .debtors { display: none; }
 </aside>
 
 <script>
+// Online with a password (stage 22): a session that ran out goes back to the login page.
+const _fetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const res = await _fetch(...args);
+  if (res.status === 401) location.href = '/login';
+  return res;
+};
 /* ---------- small helpers ---------- */
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -549,9 +566,57 @@ function addAgent(text, toolCalls, isError) {
     list.innerHTML = toolCalls.map(toolHtml).join('');
     btn.onclick = () => { list.classList.toggle('open'); if (list.classList.contains('open')) scrollDown(); };
     wrap.append(btn, list);
+    for (const c of toolCalls) if (c.result && c.result.ok && (c.tool === 'draft_reminder' || c.tool === 'create_payment_link')) wrap.append(remindCard(c.tool, c.result));
   }
   $('messages').appendChild(wrap);
   scrollDown();
+}
+
+/* ---------- stage 22: the agent writes the reminder, the owner sends it with one press ---------- */
+function waLink(phone, text) {
+  const to = phone && /^07\d{9}$/.test(phone) ? '964' + phone.slice(1) : '';
+  return `https://wa.me/${to}?text=${encodeURIComponent(text)}`;
+}
+function remindCard(tool, r) {
+  const card = document.createElement('div');
+  card.className = 'alert-card remind-card';
+  const post = (url, body) => fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (tool === 'create_payment_link') {
+    card.innerHTML = `<b>💳 رابط دفع ${esc(r.customer_name)}: ${fmt(r.amount)} دينار</b><div class="text" dir="ltr">${esc(r.url)}</div>
+      <small>${esc(r.provider)}. لما يدفع منه ينسجل التسديد وحده.</small>
+      <div class="row"><button class="yes" data-copy>📋 انسخ الرابط</button><button data-open>🔗 افتحه</button></div>`;
+    card.querySelector('[data-copy]').onclick = e => { navigator.clipboard?.writeText(r.url); e.target.textContent = '✓ انسخ'; };
+    card.querySelector('[data-open]').onclick = () => window.open(r.url, '_blank');
+    return card;
+  }
+  const last = r.last_reminded ? `<small>⚠ آخر تذكير انبعثله: ${esc(shortDate(r.last_reminded))}</small>` : '';
+  card.innerHTML = `<b>✉️ تذكير لـ ${esc(r.customer_name)} (ما انبعث بعد)</b><div class="text">${esc(r.text)}</div>${last}
+    ${r.phone ? '' : `<div class="row"><input data-phone inputmode="tel" placeholder="رقمه 07xxxxxxxxx"><button data-save-phone>احفظ الرقم</button></div>`}
+    <div class="row"><a class="yes" target="_blank" rel="noopener" data-wa href="${esc(r.whatsapp)}">📤 أرسل بالواتساب</a><button data-copy>📋 انسخ</button></div>`;
+  let phone = r.phone;
+  const sent = channel => post('/reminders/sent', {customer_id: r.customer_id, text: r.text, link_id: r.link_id, channel})
+    .then(() => { card.querySelector('b').textContent = `✉️ تذكير لـ ${r.customer_name} ✓ ${channel === 'copy' ? 'انسخ' : 'انفتح بالواتساب'}`; checkAlerts(false); });
+  card.querySelector('[data-wa]').onclick = () => sent('whatsapp');
+  card.querySelector('[data-copy]').onclick = () => { navigator.clipboard?.writeText(r.text); sent('copy'); };
+  const save = card.querySelector('[data-save-phone]');
+  if (save) save.onclick = async () => {
+    const res = await post(`/customers/${r.customer_id}/phone`, {phone: card.querySelector('[data-phone]').value});
+    const data = await res.json();
+    if (!data.ok) { save.textContent = 'الرقم غلط'; return; }
+    phone = data.phone; card.querySelector('[data-wa]').href = waLink(phone, r.text);
+    save.parentElement.remove();
+  };
+  return card;
+}
+
+async function remindFromAlerts(customerId) {
+  const res = await fetch('/reminders/draft', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({customer_id: customerId})});
+  const r = await res.json();
+  closeDrawer();
+  $('welcome')?.remove();
+  if (!r.ok) return addAgent(r.message || 'ما گدرت أكتب التذكير.', []);
+  addAgent(`كتبتلك تذكير لـ ${r.customer_name} بيه رصيده (${fmt(r.amount)} دينار) ورابط دفع زين كاش. شوفه ودوس أرسل.`,
+    [{tool: 'draft_reminder', input: {customer_id: customerId}, result: r}]);
 }
 
 function setBusy(on) {
@@ -1416,7 +1481,7 @@ async function loadSalesToday() {
 let lastAlerts = null;
 
 function alertCount(a) {
-  return (a.drawer_not_counted ? 1 : 0) + a.recurring_due.length + (a.overdue.length ? 1 : 0);
+  return (a.drawer_not_counted ? 1 : 0) + a.recurring_due.length + (a.overdue.length ? 1 : 0) + (a.paid_links || []).length;
 }
 
 async function checkAlerts(speak) {
@@ -1442,7 +1507,14 @@ function speakAlerts(a) {
   for (const r of a.recurring_due) if (key('rec' + r.id)) lines.push(`موعد ${r.reason} (${fmt(r.amount)} ${r.currency === 'USD' ? 'دولار' : 'دينار'}) إجه وما انسجل. أسجله؟ من ☰ ← 🔔 التنبيهات.`);
   if (a.overdue.length && key('overdue')) {
     const top = a.overdue.slice(0, 3).map(o => `${o.name} (${fmt(o.balance.IQD)}، ${o.days} يوم)`).join('، ');
-    lines.push(`${a.overdue.length === 1 ? 'زبون' : a.overdue.length + ' زباين'} ما سددوا من أكثر من ${a.overdue_days} يوم: ${top}.`);
+    lines.push(`${a.overdue.length === 1 ? 'زبون' : a.overdue.length + ' زباين'} ما سددوا من أكثر من ${a.overdue_days} يوم: ${top}. أكتبلهم تذكير بزين كاش؟ من ☰ ← 🔔 دوس ✉️ ذكّره.`);
+  }
+  // paid from a Zain Cash link: said every time (once per payment), then marked as told
+  const paid = a.paid_links || [];
+  for (const p of paid) lines.push(`💳 ${p.name} دفع ${fmt(p.amount)} دينار بزين كاش، وانسجل تسديد بحسابه وحده (ما دخل الجرار).`);
+  if (paid.length) {
+    fetch('/alerts/seen-payments', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: paid.map(p => p.id)})})
+      .then(() => { loadDebtors(true, 'customer'); checkAlerts(false); });
   }
   if (!lines.length) return;
   store.set('debt_alerts_said', JSON.stringify(said));
@@ -1462,9 +1534,14 @@ function renderAlerts() {
   for (const r of a.recurring_due) html += `<div class="alert-card"><b>📅 ${esc(r.reason)}: ${fmt(r.amount)} ${word(r.currency)}</b>
     <small>صرفية ثابتة يوم ${r.day_of_month} بالشهر، وما انسجلت هالشهر.</small>
     <div class="row"><button class="yes" data-rec="${r.id}">✓ سجّلها</button><button data-rec-skip="${r.id}">مو هالشهر</button></div></div>`;
+  for (const p of (a.paid_links || [])) html += `<div class="alert-card"><b>💳 ${esc(p.name)} دفع ${fmt(p.amount)} دينار بزين كاش</b>
+    <small>انسجل تسديد بحسابه وحده (${esc(shortDate(p.paid_at))}).</small></div>`;
   if (a.overdue.length) html += `<div class="alert-card"><b>⏰ ديون متأخرة (أكثر من ${a.overdue_days} يوم بدون تسديد)</b>
-    ${a.overdue.slice(0, 15).map(o => `<div class="row" style="justify-content:space-between"><span>${esc(o.name)}</span>
-      <span>${fmt(o.balance.IQD)}${o.balance.USD ? ' + ' + fmt(o.balance.USD) + '$' : ''} · ${o.days} يوم</span></div>`).join('')}</div>`;
+    <small>دوس ✉️ وأكتبلك تذكير بيه رصيده ورابط دفع زين كاش، وإنت ترسله بضغطة.</small>
+    ${a.overdue.slice(0, 15).map(o => `<div class="row" style="justify-content:space-between;align-items:center"><span>${esc(o.name)}
+      ${o.reminded_at ? `<small>· ذكّرته ${esc(shortDate(o.reminded_at))}</small>` : ''}</span>
+      <span>${fmt(o.balance.IQD)}${o.balance.USD ? ' + ' + fmt(o.balance.USD) + '$' : ''} · ${o.days} يوم
+      ${o.balance.IQD > 0 ? `<button data-remind="${o.id}" style="flex:0;min-width:0">✉️ ذكّره</button>` : ''}</span></div>`).join('')}</div>`;
   if (!html) html = '<p class="hint">ما كو تنبيهات هسه ✓</p>';
   html += `<details><summary>⚙️ الصرفيات الثابتة والإعدادات</summary><div id="recurringBox"><p class="hint">…</p></div></details>`;
   $('drawerBody').innerHTML = html;
@@ -1488,6 +1565,8 @@ async function loadRecurring() {
       <div class="fields" style="margin-top:12px">
         <div class="field"><label>ذكرني بالجرار بعد الساعة</label><input id="setHour" inputmode="numeric" value="${data.settings.drawer_hour}"></div>
         <div class="field"><label>الدين متأخر بعد (يوم)</label><input id="setDays" inputmode="numeric" value="${data.settings.overdue_days}"></div>
+        <div class="field"><label>التقرير اليومي الساعة</label><input id="setReport" inputmode="numeric" value="${data.extra ? data.extra.report_hour : 23}"></div>
+        <div class="field"><label>اسم المحل (بالتذكير)</label><input id="setShop" value="${esc(data.extra ? data.extra.shop_name : '')}"></div>
       </div>
       <div class="actions" style="margin-top:8px"><button class="big secondary" id="setSave">احفظ الإعدادات</button></div>
       <div id="recNote"></div>`;
@@ -1502,6 +1581,7 @@ $('drawerBody').addEventListener('click', async e => {
   if (t.dataset.fillChat !== undefined) {
     closeDrawer(); $('input').value = t.dataset.fillChat; $('input').focus(); return;
   }
+  if (t.dataset.remind) { t.disabled = true; return remindFromAlerts(+t.dataset.remind); }
   if (t.dataset.rec || t.dataset.recSkip) {
     t.disabled = true;
     const data = await post(`/recurring/${t.dataset.rec || t.dataset.recSkip}/record`, {session_id: sessionId, skip: !!t.dataset.recSkip});
@@ -1518,7 +1598,9 @@ $('drawerBody').addEventListener('click', async e => {
   }
   if (t.id === 'setSave') {
     const hour = toInt($('setHour').value), days = toInt($('setDays').value);
-    const data = await post('/settings', {drawer_hour: hour ?? undefined, overdue_days: days || undefined});
+    const report = toInt($('setReport').value), shop = $('setShop').value.trim();
+    const data = await post('/settings', {drawer_hour: hour ?? undefined, overdue_days: days || undefined,
+      report_hour: report ?? undefined, shop_name: shop || undefined});
     $('recNote').innerHTML = data.ok ? '<p class="msg-ok">✓ انحفظت.</p>' : '<p class="msg-bad">الساعة من 0 لـ 23، والأيام من 1 لـ 365.</p>';
     return checkAlerts(false);
   }
@@ -1559,14 +1641,33 @@ async function renderReports() {
     html += `<h3 class="cash-h">🧾 كشف حساب زبون</h3><p class="hint">صفحة بيها حساب زبون واحد بس، تطبعها أو تدزها إله.</p>
       <select id="stCustomer"><option value="">اختار الزبون…</option>${customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
       <div class="actions" style="margin-top:8px"><button class="big secondary" id="stOpen">افتح الكشف (${REP_PERIODS[repPeriod]})</button></div>`;
+    html += `<h3 class="cash-h">📨 التقرير اليومي (ينكتب وحده)</h3><div id="dailyBox"><p class="hint">…</p></div>`;
     body.innerHTML = html;
+    loadDaily();
   } catch (e) {
     body.innerHTML = '<p class="hint">ما گدرت أجيب التقارير.</p>';
   }
 }
+async function loadDaily(note) {
+  try {
+    const d = await (await fetch('/daily-reports')).json();
+    const box = $('dailyBox');
+    if (!box) return;
+    const last = d.reports[0];
+    box.innerHTML = `<p class="hint">كل يوم الساعة ${d.report_hour} البرنامج يكتب تقرير اليوم وحده
+      ${d.telegram ? 'ويبعثه لتلگرامك ✓' : '(وإذا تربط تلگرام بالإعدادات، يوصلك عالموبايل)'}.</p>
+      ${last ? `<div class="daily-text">${esc(last.text)}</div><p class="hint">${last.sent_via ? 'انبعث بالتلگرام' : 'محفوظ هنا'} · ${esc(shortDate(last.created_at))}</p>` : ''}
+      <div class="actions"><button class="big secondary" id="dailyNow">سوّي تقرير اليوم هسه</button></div>${note || ''}`;
+  } catch (e) { /* ignore */ }
+}
 $('reportsBtn').onclick = () => { openDrawer('reports', '📊 التقارير والربح'); renderReports(); };
-$('drawerBody').addEventListener('click', e => {
+$('drawerBody').addEventListener('click', async e => {
   if (drawerKind !== 'reports') return;
+  if (e.target.id === 'dailyNow') {
+    e.target.disabled = true;
+    const r = await (await fetch('/daily-reports/now', {method: 'POST'})).json();
+    return loadDaily(r.sent ? '<p class="msg-ok">✓ انبعث بالتلگرام.</p>' : '');
+  }
   if (e.target.dataset.period) { repPeriod = e.target.dataset.period; return renderReports(); }
   if (e.target.id === 'stOpen') {
     const id = $('stCustomer').value;
