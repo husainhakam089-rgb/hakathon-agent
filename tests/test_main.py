@@ -132,3 +132,23 @@ def test_sessions_endpoints(client, conn):
     m = c.get("/sessions/old").json()["messages"]
     assert [x["role"] for x in m] == ["user", "assistant"] and m[1]["tool_calls"][0]["tool"] == "record_debt"
     assert c.get("/sessions/nothing").json()["messages"] == []
+
+
+def test_names_for_completion(conn, monkeypatch):
+    """Stage 24: the names Tab completes, the most recently used first."""
+    from fastapi.testclient import TestClient
+
+    from app import main as main_mod
+    from app.agent import Agent
+
+    monkeypatch.setattr(main_mod, "agent", Agent(conn, llm=object(), log_path=None))
+    old = db.add_customer(conn, "أبو علي")
+    new = db.add_customer(conn, "أم حسين")
+    db.add_customer(conn, "زبون بدون قيود")
+    db.add_transaction(conn, old, "debt", 1000)
+    conn.execute("UPDATE transactions SET created_at = datetime('now','localtime','-5 days')")
+    db.add_transaction(conn, new, "debt", 1000)
+    db.add_customer(conn, "شركة الريان", kind="supplier")
+    db.add_item(conn, "طحين", 25000)
+    n = TestClient(main_mod.app).get("/names").json()
+    assert n == {"customers": ["أم حسين", "أبو علي", "زبون بدون قيود"], "suppliers": ["شركة الريان"], "items": ["طحين"]}

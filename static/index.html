@@ -92,6 +92,16 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1
   cursor: pointer; color: var(--muted); }
 .chip:hover { color: var(--accent-text); border-color: var(--accent-border); }
 .chip.fill { border-style: dashed; }  /* starts the sentence, you finish it */
+/* completion as you type: the rest of the command or name shows faded, Tab (or a tap) takes it */
+.chip-hint { font-size: 11px; color: var(--muted); align-self: center; white-space: nowrap; }
+.chips.suggest { padding-top: 0; }
+.chips[hidden] { display: none; }
+.suggest-chip { border-color: var(--accent-border); color: var(--accent-text); }
+.input-wrap { position: relative; flex: 1; min-width: 0; display: flex; background: var(--card-strong); border-radius: 14px; }
+.input-wrap #input { flex: 1; min-width: 0; position: relative; background: transparent; z-index: 1; }
+.input-wrap .ghost { position: absolute; inset: 0; pointer-events: none; white-space: pre; overflow: hidden; direction: rtl; text-align: right; }
+.ghost .typed { visibility: hidden; }
+.ghost .rest { color: var(--muted); opacity: .75; }
 form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border-soft); }
 form input { flex: 1; min-width: 0; background: var(--card-strong); border: 1px solid var(--border); border-radius: 14px;
   padding: 12px 14px; font-size: 15px; outline: none; }
@@ -365,6 +375,7 @@ main.ledger-off .debtors { display: none; }
   .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 8px; }
   .chips::-webkit-scrollbar { display: none; }
   .chip { flex-shrink: 0; white-space: nowrap; }
+  .chip-hint { display: none; }  /* no Tab key on a phone: the suggestion is a button there */
 }
 </style>
 </head>
@@ -409,29 +420,11 @@ main.ledger-off .debtors { display: none; }
       <div class="chips" id="chips">
         <button class="chip fill" data-fill="سجل على ">سجل على …</button>
         <button class="chip fill" data-fill="تسديد من ">تسديد من …</button>
-        <button class="chip fill" data-fill="شكد باقي على ">شكد باقي على …؟</button>
         <button class="chip">منو عليهم ديون؟</button>
-        <button class="chip fill" data-fill="أخذت بضاعة من ">أخذت بضاعة من …</button>
-        <button class="chip fill" data-fill="دفعت لـ">دفعت لـ …</button>
-        <button class="chip">شكد عليّ للشركات؟</button>
-        <button class="chip fill" data-fill="بعت ">بعت …</button>
-        <button class="chip fill" data-fill="شكد بعنا ">شكد بعنا … هالشهر؟</button>
-        <button class="chip fill" data-fill="وارد ">وارد …</button>
-        <button class="chip fill" data-fill="صادر ">صادر …</button>
-        <button class="chip fill" data-fill="سحبت ">سحبت …</button>
-        <button class="chip">شكد سحبت اليوم؟</button>
-        <button class="chip fill" data-fill="سديت، بالجرار ">سديت، بالجرار …</button>
-        <button class="chip">شكد بعت اليوم؟</button>
-        <button class="chip">شنو الوارد والصادر اليوم؟</button>
-        <button class="chip">شكد ربحت هالشهر؟</button>
-        <button class="chip">شلون كان الأسبوع؟</button>
-        <button class="chip fill" data-fill="كشف حساب ">كشف حساب …</button>
-        <button class="chip">شنو عندي تنبيهات؟</button>
-        <button class="chip fill" data-fill="ذكّر ">ذكّر …</button>
-        <button class="chip">ذكّر المتأخرين</button>
-        <button class="chip fill" data-fill="سويله رابط دفع زين كاش لـ ">رابط دفع لـ …</button>
         <button class="chip">شطب آخر وحدة</button>
+        <span class="chip-hint">أو اكتب أول حروف وتدوس Tab ↹</span>
       </div>
+      <div class="chips suggest" id="suggestRow" hidden><button type="button" class="chip suggest-chip" id="suggestChip"></button></div>
       <div class="attachment" id="attachment">
         <span id="attThumb"></span>
         <div class="info"><span id="attName"></span><small id="attSize"></small></div>
@@ -445,7 +438,8 @@ main.ledger-off .debtors { display: none; }
         <input type="file" id="file" accept="image/*,application/pdf,.csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
         <button type="button" class="attach-btn" id="attach" title="صوّر صفحة من الدفتر، أو اختار صورة / PDF / Excel / CSV">📎</button>
         <button type="button" class="mic-btn" id="mic" title="احچي (دوس مرة تبدي، ومرة توگف)">🎤</button>
-        <input id="input" placeholder="اكتب رسالتك هنا..." maxlength="2000">
+        <div class="input-wrap"><div class="ghost" id="ghost" aria-hidden="true"></div>
+          <input id="input" placeholder="اكتب رسالتك هنا..." maxlength="2000"></div>
         <button id="send" type="submit">إرسال</button>
       </form>
     </section>
@@ -673,6 +667,7 @@ async function send(text) {
     const okCalls = (data.tool_calls || []).filter(c => c.result && c.result.ok);
     const wrote = okCalls.some(c => WRITE_TOOLS.includes(c.tool));
     loadDebtors(wrote, ledgerOf(okCalls));
+    if (wrote) loadNames();  // a new customer or item can be completed straight away
     if (drawerKind === 'memory' && okCalls.some(c => c.tool === 'remember' || c.tool === 'forget')) renderMemory();
     checkAlerts(false);
   } catch (e) {
@@ -1331,6 +1326,97 @@ function unreadableHtml(lines) {
   if (!lines || !lines.length) return '';
   return `<div class="unreadable">أسطر ما انقرأت (ضيفها بالكتابة إذا تريد):<ul>${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul></div>`;
 }
+/* ---------- complete as you type: Tab takes the rest (stage 24) ---------- */
+const COMMANDS = ['سجل على ', 'تسديد من ', 'شكد باقي على ', 'منو عليهم ديون؟', 'أخذت بضاعة من ', 'دفعت لـ',
+  'شكد عليّ للشركات؟', 'بعت ', 'شكد بعنا ', 'وارد ', 'صادر ', 'سحبت ', 'شكد سحبت اليوم؟', 'سديت، بالجرار ',
+  'شكد بعت اليوم؟', 'شنو الوارد والصادر اليوم؟', 'شكد ربحت هالشهر؟', 'شلون كان الأسبوع؟', 'كشف حساب ',
+  'شنو عندي تنبيهات؟', 'ذكّر ', 'ذكّر المتأخرين', 'سويله رابط دفع زين كاش لـ ', 'شطب آخر وحدة', 'شنو الوارد والصادر اليوم؟'];
+let names = [];
+async function loadNames() {
+  try {
+    const n = await (await fetch('/names')).json();
+    names = [...new Set([...n.customers, ...n.suppliers, ...n.items])];
+  } catch (e) { /* completion is a help, never in the way */ }
+}
+const NORM = {'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ة': 'ه', 'ى': 'ي'};
+const isMark = c => /[\u064B-\u0652\u0640]/.test(c);
+// The rest of `full` after `typed`, comparing loosely (أ = ا, ة = ه, no tashkeel), or null.
+function restAfter(typed, full) {
+  const t = [...typed].filter(c => !isMark(c)).map(c => NORM[c] || c);
+  let i = 0, j = 0;
+  while (i < t.length && j < full.length) {
+    const c = full[j];
+    if (isMark(c)) { j++; continue; }
+    if ((NORM[c] || c) !== t[i]) return null;
+    i++; j++;
+  }
+  if (i < t.length) return null;
+  while (j < full.length && isMark(full[j])) j++;
+  return j < full.length ? full.slice(j) : null;
+}
+function suggestion(value) {
+  if (!value || /\s$/.test(value) && !value.trim()) return null;
+  const lead = value.replace(/^\s+/, '');
+  if (lead.length >= 3) {
+    // "ذكر" could be "ذكّر " or "ذكّر المتأخرين": a rest that is more than a space is worth a Tab
+    const rests = COMMANDS.map(c => restAfter(lead, c)).filter(Boolean);
+    const r = rests.find(x => x.trim()) || null;
+    if (r) return r;
+  }
+  if (/\s$/.test(value)) return null;
+  // the last one to three words may be the start of a name: "سجل على ابو ع" -> "لي"
+  const words = value.split(/\s+/);
+  for (let k = Math.min(3, words.length); k >= 1; k--) {
+    const tail = words.slice(-k).join(' ');
+    // "دفعت لـشركة": the لـ stuck to the name is not part of it
+    for (const t of [tail, tail.replace(/^لـ?(?=\S)/, '')]) {
+      if (t.replace(/[\sـ]/g, '').length < 2) continue;
+      for (const n of names) { const r = restAfter(t, n); if (r) return r + ' '; }
+    }
+  }
+  return null;
+}
+let currentRest = null;
+function updateSuggestion() {
+  const input = $('input'), value = input.value;
+  const atEnd = input.selectionStart === value.length;
+  currentRest = atEnd ? suggestion(value) : null;
+  const ghost = $('ghost');
+  const fits = input.scrollWidth <= input.clientWidth + 1;
+  ghost.innerHTML = currentRest && fits ? `<span class="typed">${esc(value)}</span><span class="rest">${esc(currentRest)}</span>` : '';
+  $('suggestRow').hidden = !currentRest;
+  $('chips').hidden = !!currentRest;
+  if (currentRest) $('suggestChip').textContent = '↹ ' + (value + currentRest).trim();
+}
+function takeSuggestion() {
+  if (!currentRest) return false;
+  const input = $('input');
+  input.value += currentRest;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  updateSuggestion();
+  return true;
+}
+// copy the input's look to the faded text so the two line up exactly
+function syncGhost() {
+  const cs = getComputedStyle($('input')), g = $('ghost');
+  for (const k of ['font', 'letterSpacing', 'paddingTop', 'paddingBottom', 'paddingLeft', 'paddingRight',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'lineHeight']) g.style[k] = cs[k];
+  g.style.borderStyle = 'solid'; g.style.borderColor = 'transparent';
+  g.style.display = 'flex'; g.style.alignItems = 'center'; g.style.justifyContent = 'flex-start';
+}
+$('input').addEventListener('input', updateSuggestion);
+$('input').addEventListener('click', updateSuggestion);
+$('input').addEventListener('keydown', e => {
+  if (e.key === 'Tab' && !e.shiftKey && currentRest) { e.preventDefault(); takeSuggestion(); }
+  else if (e.key === 'Escape' && currentRest) { currentRest = null; $('ghost').innerHTML = ''; $('suggestRow').hidden = true; $('chips').hidden = false; }
+});
+$('suggestChip').onclick = () => takeSuggestion();
+$('form').addEventListener('submit', () => setTimeout(updateSuggestion, 0));
+window.addEventListener('resize', syncGhost);
+syncGhost();
+loadNames();
+
 $('chips').onclick = e => {
   const chip = e.target.closest('.chip');
   if (!chip) return;

@@ -27,7 +27,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "19"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "20"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -270,6 +270,18 @@ def update_item(item_id: int, req: ItemUpdate):
         db.update_item(agent.conn, item_id, price=req.price, cost=req.cost, unit=req.unit,
                        active=None if req.active is None else int(req.active))
         return {"ok": True, "item": db.get_item(agent.conn, item_id)}
+
+
+@app.get("/names")
+def names():
+    """Names for completing as you type (Tab): customers and suppliers by latest activity, then items."""
+    with agent.lock:
+        rows = agent.conn.execute(
+            """SELECT c.name, c.kind FROM customers c LEFT JOIN transactions t ON t.customer_id = c.id
+               GROUP BY c.id ORDER BY MAX(t.created_at) IS NULL, MAX(t.created_at) DESC, c.id""").fetchall()
+        items = [i["name"] for i in db.all_items(agent.conn)]
+    return {"customers": [r["name"] for r in rows if r["kind"] == "customer"],
+            "suppliers": [r["name"] for r in rows if r["kind"] == "supplier"], "items": items}
 
 
 @app.get("/customers")
