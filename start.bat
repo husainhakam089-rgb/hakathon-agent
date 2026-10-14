@@ -2,7 +2,7 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 set PYTHONUTF8=1
-title دفتر الديون
+title مساعد التاجر
 
 where py >nul 2>nul
 if errorlevel 1 (

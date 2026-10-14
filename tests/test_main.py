@@ -25,7 +25,7 @@ def client(conn, monkeypatch):
 
 def test_index_page(client):
     r = client().get("/")
-    assert r.status_code == 200 and "دفتر الديون" in r.text and 'dir="rtl"' in r.text
+    assert r.status_code == 200 and "مساعد التاجر" in r.text and 'dir="rtl"' in r.text
     assert r.headers["cache-control"] == "no-cache"
 
 

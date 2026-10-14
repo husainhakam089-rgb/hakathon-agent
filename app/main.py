@@ -82,7 +82,7 @@ async def lifespan(_app):
     stop.set()
 
 
-app = FastAPI(title="دفتر الديون", lifespan=lifespan)
+app = FastAPI(title="مساعد التاجر", lifespan=lifespan)
 app.middleware("http")(auth.middleware)
 agent = Agent(db.connect())
 
@@ -982,7 +982,7 @@ def main() -> None:
         print("سدها أول، أو اكتب بـ PowerShell:  taskkill /F /IM python.exe /IM py.exe")
         print("وبعدين شغّل start.bat من جديد.")
         raise SystemExit(1)
-    print(f"دفتر الديون شغال على: {url}  (للإيقاف: Ctrl+C)")
+    print(f"مساعد التاجر شغال على: {url}  (للإيقاف: Ctrl+C)")
     if not os.getenv("NO_BROWSER"):
         threading.Timer(1.5, webbrowser.open, [url]).start()
     if host != "127.0.0.1":

@@ -19,7 +19,7 @@ def main() -> None:
     agent = Agent(db.connect())
     session_id = uuid.uuid4().hex
     verbose = True
-    print("دفتر الديون - اكتب رسالتك.")
+    print("مساعد التاجر - اكتب رسالتك.")
     print(HELP)
 
     while True:

@@ -226,7 +226,7 @@ def run_case(case: dict, base: dict, llm) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="تقييم وكيل دفتر الديون")
+    parser = argparse.ArgumentParser(description="تقييم مساعد التاجر")
     parser.add_argument("ids", nargs="*", type=int, help="أرقام الحالات (فارغ = الكل)")
     parser.add_argument("-v", "--verbose", action="store_true", help="اطبع تفاصيل الأدوات")
     args = parser.parse_args()

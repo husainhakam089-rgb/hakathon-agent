@@ -83,13 +83,13 @@ async def middleware(request: Request, call_next):
 def login_page(message: str = "") -> HTMLResponse:
     note = f"<p class=bad>{escape(message)}</p>" if message else ""
     return HTMLResponse(f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>دخول: دفتر الديون</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>دخول: مساعد التاجر</title>
 <style>body{{font-family:system-ui,'Segoe UI',Tahoma,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;
 display:flex;min-height:100vh;align-items:center;justify-content:center}}
 form{{background:#1e293b;border-radius:16px;padding:24px;width:min(340px,90vw);display:flex;flex-direction:column;gap:12px}}
 h1{{font-size:20px;margin:0}} input,button{{font:inherit;padding:12px;border-radius:10px;border:1px solid #334155}}
 input{{background:#0f172a;color:inherit}} button{{background:#38bdf8;color:#0f172a;font-weight:700;border:0;cursor:pointer}}
 .bad{{color:#f87171;margin:0}}</style></head><body>
-<form method="post" action="/login"><h1>📒 دفتر الديون</h1>{note}
+<form method="post" action="/login"><h1>🧾 مساعد التاجر</h1>{note}
 <input type="password" name="password" placeholder="كلمة السر" autofocus autocomplete="current-password">
 <button>ادخل</button></form></body></html>""", headers={"Cache-Control": "no-store"})
