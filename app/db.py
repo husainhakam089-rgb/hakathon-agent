@@ -1033,7 +1033,8 @@ def import_batch(conn, rows: list[dict], batch_id: str, source: str, note: str |
                     created[key] = add_customer(conn, row["new_customer"], commit=False)
                 cid = created[key]
             tx_ids.append(add_transaction(conn, cid, row["type"], row["amount"], row["currency"],
-                                          note=note, batch_id=batch_id, source=source, commit=False))
+                                          note=row.get("note", note), batch_id=batch_id, source=source,
+                                          commit=False))
         conn.commit()
     except Exception:
         conn.rollback()

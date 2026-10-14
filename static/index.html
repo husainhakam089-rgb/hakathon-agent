@@ -246,6 +246,17 @@ form .mic-btn.on { background: #e11d48; border-color: #e11d48; animation: pulse 
 .review input.amount { direction: ltr; text-align: right; font-variant-numeric: tabular-nums; }
 .review td.n { width: 28px; text-align: center; }
 .review .raw { display: block; color: var(--faint); font-size: 11px; margin-top: 3px; }
+.review .pg { display: inline-block; font-size: 10px; padding: 0 5px; margin-inline-start: 4px; border-radius: 6px; background: var(--card-strong); color: var(--muted); }
+/* stage 23: scanning the notebook page after page */
+.scan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin: 10px 0; }
+.scan-page { position: relative; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--card); }
+.scan-page img { width: 100%; height: 110px; object-fit: cover; display: block; }
+.scan-page .cap { font-size: 12px; padding: 4px 6px; display: flex; justify-content: space-between; gap: 4px; }
+.scan-page .x { position: absolute; top: 4px; inset-inline-start: 4px; border: 0; border-radius: 8px; background: #000a; color: #fff; cursor: pointer; padding: 2px 7px; }
+.scan-page.done { border-color: var(--accent); }
+.scan-page.error { border-color: #f87171; }
+.scan-status { font-size: 14px; margin: 6px 0; }
+button.link { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
 .review .written { display: block; color: var(--accent-text); font-size: 11px; margin-top: 3px; }
 .review tr.low td { background: rgba(250,204,21,0.10); }
 .review tr.crossed .raw { text-decoration: line-through; }
@@ -372,6 +383,7 @@ main.ledger-off .debtors { display: none; }
         <button role="menuitem" id="alertsBtn"><span class="ic">🔔</span><span>التنبيهات</span><b class="badge" id="alertsCount"></b></button>
         <button role="menuitem" id="reportsBtn"><span class="ic">📊</span>التقارير والربح</button>
         <button role="menuitem" id="saleBtn"><span class="ic">🛒</span>شاشة البيع</button>
+        <button role="menuitem" id="scanBtn"><span class="ic">📷</span>سكان الدفتر</button>
         <button role="menuitem" id="ledgerBtn" aria-expanded="false"><span class="ic">📒</span><span id="ledgerLbl">افتح الحسابات</span><i class="dot"></i></button>
         <button role="menuitem" id="sessionsBtn"><span class="ic">🗂</span>المحادثات القديمة</button>
         <button role="menuitem" id="memoryBtn"><span class="ic">🧠</span>ذاكرة الوكيل</button>
@@ -955,7 +967,7 @@ function renderReview(data) {
       : `<input type="text" class="f-name" value="${esc(r.name || '')}" placeholder="الاسم">`;
     tr.innerHTML = `
       <td class="n"><input type="checkbox" class="f-sel" ${r.selected ? 'checked' : ''}></td>
-      <td>${nameCell}<span class="raw" title="النص مثل ما انقرأ">${esc(r.raw_text || '')}</span></td>
+      <td>${nameCell}<span class="raw" title="النص مثل ما انقرأ">${esc(r.raw_text || '')}${r.page ? `<span class="pg">ص ${r.page}</span>` : ''}</span></td>
       <td><input type="text" inputmode="numeric" class="amount f-amount"><span class="written"></span></td>
       <td><select class="f-cur"><option value="">؟</option><option value="IQD">دينار</option><option value="USD">دولار</option></select></td>
       <td><select class="f-type"><option value="">؟</option><option value="debt">دين</option><option value="payment">تسديد</option></select></td>
@@ -1066,7 +1078,8 @@ function renderReview(data) {
         file_id: data.file_id,
         migrated: card.querySelector('.o-migrated').checked,
         source_kind: data.source_kind || 'image',
-        rows: picked.map(r => ({name: r.name, customer_id: r.customer_id, amount: r.amount, currency: r.currency, type: r.type})),
+        rows: picked.map(r => ({name: r.name, customer_id: r.customer_id, amount: r.amount, currency: r.currency, type: r.type,
+          ...(r.page ? {page: r.page} : {})})),
       });
       if (!res.ok) {
         errorsEl.innerHTML = [res.data.message, ...(res.data.errors || [])].filter(Boolean).map(p => `<li>${esc(p)}</li>`).join('');
@@ -1074,6 +1087,7 @@ function renderReview(data) {
       }
       finish(`انسجل ✓ (${res.data.count} قيد)`);
       addAgent(res.data.reply, []);
+      if (data.onCommitted) data.onCommitted();
       loadDebtors(true, 'customer');
     } catch (e) {
       errorsEl.innerHTML = '<li>ما گدرت أوصل للسيرفر. ما انسجل شي، عيد المحاولة.</li>';
@@ -1084,6 +1098,134 @@ function renderReview(data) {
   update();
   scrollDown();
 }
+
+/* ---------- stage 23: scan the notebook, page after page ----------
+   Each photo is uploaded as soon as it is taken (nothing is lost if the phone sleeps), then the
+   pages are read one by one. What was read is kept in this browser, so a quota that runs out
+   at page 7 of 20 carries on from page 8 later. One review table for all pages, one "سجّل". */
+const SCAN_KEY = 'debt_scan';
+let scanBusy = false;
+function scanState() {
+  try { return JSON.parse(store.get(SCAN_KEY) || '') || {pages: []}; } catch (e) { return {pages: []}; }
+}
+function saveScan(st) { store.set(SCAN_KEY, JSON.stringify(st)); }
+
+function renderScan(message) {
+  if (drawerKind !== 'scan') return;
+  const st = scanState();
+  const done = st.pages.filter(p => p.status === 'done');
+  const rows = done.reduce((n, p) => n + (p.rows || []).length, 0);
+  const todo = st.pages.filter(p => p.status !== 'done').length;
+  $('drawerBody').innerHTML = `<p class="hint">صوّر الدفتر <b>صفحة ورا صفحة</b>. كل صورة تنرفع أول ما تصورها.
+      بعدين دوس "اقرا الصفحات" وأطلعلك جدول واحد بكل الأسطر، تراجعه وتسجله بدوسة وحدة.
+      إذا عندك أرصدة بس (كل زبون شكد عليه)، أشّر "أرصدة منقولة" بالجدول.</p>
+    <div class="actions">
+      <button class="big primary" id="scanShoot">📷 صوّر صفحة</button>
+      <button class="big secondary" id="scanPick">🖼 من الصور</button>
+    </div>
+    <input type="file" id="scanCam" accept="image/*" capture="environment" hidden>
+    <input type="file" id="scanFiles" accept="image/*" multiple hidden>
+    <div class="scan-grid">${st.pages.map((p, i) => `<div class="scan-page ${p.status}">
+        <img src="/uploads/${p.file_id}" alt="ص ${i + 1}" loading="lazy">
+        <button class="x" data-scan-del="${i}" title="شيل الصفحة">✕</button>
+        <div class="cap"><b>ص ${i + 1}</b><span>${p.status === 'done' ? '✓ ' + (p.rows || []).length + ' سطر'
+          : p.status === 'error' ? '⚠ تنعاد' : p.status === 'reading' ? '…' : '⏳'}</span></div></div>`).join('')}</div>
+    <div class="scan-status" id="scanStatus">${message || (st.pages.length ? `${st.pages.length} صفحة، انقرت ${done.length}.` : 'ما كو صفحات بعد.')}</div>
+    <div class="actions">
+      <button class="big primary" id="scanRead" ${!todo || scanBusy ? 'disabled' : ''}>📖 اقرا الصفحات (${todo})</button>
+      <button class="big secondary" id="scanReview" ${!done.length || scanBusy ? 'disabled' : ''}>📋 اعرض الجدول (${rows} سطر)</button>
+    </div>
+    ${st.pages.length ? '<p class="hint"><button class="link" id="scanReset">🗑 ابدي من جديد</button></p>' : ''}`;
+  $('scanCam').onchange = e => addScanPages(e.target.files);
+  $('scanFiles').onchange = e => addScanPages(e.target.files);
+}
+
+async function addScanPages(files) {
+  files = [...(files || [])];
+  for (const [n, file] of files.entries()) {
+    renderScan(`دا أرفع ${files.length > 1 ? `${n + 1} من ${files.length}` : 'الصفحة'}…`);
+    try {
+      const blob = await shrinkImage(file);
+      const up = await fetch('/upload', {method: 'POST', body: blob,
+        headers: {'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name || 'page.jpg')}});
+      const data = await up.json();
+      if (!up.ok) return renderScan('⚠ ' + (data.message || 'ما گدرت أرفع الصورة.'));
+      const st = scanState();
+      st.pages.push({file_id: data.file_id, status: 'new'});
+      saveScan(st);
+    } catch (e) {
+      return renderScan('⚠ ما گدرت أرفع الصورة. تأكد من النت وعيد.');
+    }
+  }
+  renderScan();
+}
+
+async function readScanPages() {
+  scanBusy = true;
+  let st = scanState();
+  const todo = st.pages.map((p, i) => i).filter(i => st.pages[i].status !== 'done');
+  let stopped = '';
+  for (const [n, i] of todo.entries()) {
+    st = scanState();
+    if (!st.pages[i]) break;
+    st.pages[i].status = 'reading'; saveScan(st);
+    renderScan(`دا أقرا صفحة ${i + 1} (${n + 1} من ${todo.length})…`);
+    const ex = await postJson('/extract', {file_id: st.pages[i].file_id, note: null}).catch(() => ({ok: false, data: {}}));
+    st = scanState();
+    if (!st.pages[i]) continue;
+    if (ex.ok) {
+      st.pages[i] = {...st.pages[i], status: 'done', rows: ex.data.rows || [], notes: ex.data.notes || '',
+        unreadable: ex.data.unreadable_lines || []};
+      saveScan(st);
+    } else {
+      st.pages[i].status = 'error'; saveScan(st);
+      stopped = ex.data.message || 'ما گدرت أوصل للسيرفر.';
+      break;  // quota or the model is busy: the rest waits, nothing is lost
+    }
+  }
+  scanBusy = false;
+  const left = scanState().pages.filter(p => p.status !== 'done').length;
+  renderScan(stopped ? `⚠ وقفت: ${stopped} اللي انقرا محفوظ، دوس "اقرا الصفحات" بعدين ويكمّل من وين وقف.`
+    : left ? '' : '✓ انقرت كل الصفحات. دوس "اعرض الجدول".');
+}
+
+function reviewScan() {
+  const st = scanState();
+  const rows = [], unreadable = [], seen = {};
+  st.pages.forEach((p, i) => {
+    if (p.status !== 'done') return;
+    for (const r of p.rows || []) {
+      rows.push({...r, page: i + 1});
+      const key = (r.name || '').replace(/\s+/g, ' ').trim();
+      if (key) (seen[key] = seen[key] || new Set()).add(i + 1);
+    }
+    for (const u of p.unreadable || []) unreadable.push(`ص ${i + 1}: ${typeof u === 'string' ? u : (u.text || JSON.stringify(u))}`);
+  });
+  const twice = Object.entries(seen).filter(([, pages]) => pages.size > 1)
+    .map(([name, pages]) => `${name} (ص ${[...pages].join('، ')})`);
+  const notes = [`من ${st.pages.filter(p => p.status === 'done').length} صفحة.`,
+    twice.length ? `⚠ أسماء بأكثر من صفحة، تأكد ما تنحسب مرتين: ${twice.slice(0, 8).join('، ')}` : ''].filter(Boolean).join(' ');
+  closeDrawer();
+  $('welcome')?.remove();
+  renderReview({rows, notes, unreadable_lines: unreadable, file_id: null, source_kind: 'scan',
+    onCommitted: () => saveScan({pages: []})});
+}
+
+$('scanBtn').onclick = () => { openDrawer('scan', '📷 سكان الدفتر'); renderScan(); };
+$('drawerBody').addEventListener('click', e => {
+  if (drawerKind !== 'scan') return;
+  const t = e.target;
+  if (t.id === 'scanShoot') return $('scanCam').click();
+  if (t.id === 'scanPick') return $('scanFiles').click();
+  if (t.id === 'scanRead' && !scanBusy) return readScanPages();
+  if (t.id === 'scanReview') return reviewScan();
+  if (t.dataset.scanDel !== undefined && !scanBusy) {
+    const st = scanState(); st.pages.splice(+t.dataset.scanDel, 1); saveScan(st); return renderScan();
+  }
+  if (t.id === 'scanReset' && !scanBusy && confirm('أشيل كل الصفحات وأبدي من جديد؟ (ما ينمسح شي من الدفتر)')) {
+    saveScan({pages: []}); return renderScan();
+  }
+});
 
 /* ---------- Excel / CSV (stage 7) ----------
    Read by the server's code. Known column names map directly; otherwise the model

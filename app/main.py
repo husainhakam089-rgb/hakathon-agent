@@ -27,7 +27,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "18"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "19"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -792,6 +792,15 @@ def extract(req: ExtractRequest):
     return {"ok": True, "file_id": req.file_id, **review}
 
 
+@app.get("/uploads/{file_id}")
+def uploaded_image(file_id: str):
+    """A page photographed for the notebook scan (stage 23), to show it again."""
+    found = _uploaded_file(file_id) if FILE_ID_RE.match(file_id) else None
+    if not found or not found[1].startswith("image/"):
+        return _error(404, "ما لگيت الصورة.")
+    return FileResponse(found[0], media_type=found[1], headers={"Cache-Control": "private, max-age=86400"})
+
+
 # ---------- stage 7: Excel / CSV ----------
 
 class FileRequest(BaseModel):
@@ -869,6 +878,7 @@ class CommitRow(BaseModel):
     amount: int | str | None = None
     currency: str | None = None
     type: str | None = None
+    page: int | None = Field(default=None, ge=1, le=1000)  # stage 23: the notebook page it came from
 
 
 class CommitRequest(BaseModel):
@@ -876,7 +886,7 @@ class CommitRequest(BaseModel):
     file_id: str | None = Field(default=None, max_length=64)
     rows: list[CommitRow] = Field(max_length=extraction.MAX_ROWS)
     migrated: bool = False  # "these are balances carried over from the old notebook"
-    source_kind: Literal["image", "file"] = "image"
+    source_kind: Literal["image", "file", "scan"] = "image"
 
 
 def _money(amount: int, currency: str) -> str:
@@ -892,6 +902,10 @@ def import_commit(req: CommitRequest):
         rows, errors = extraction.prepare_commit(agent.conn, [r.model_dump() for r in req.rows])
         if errors:
             return _error(422, "صلّح هالصفوف وعيد:", errors=errors)
+        # stage 23: a scanned notebook keeps each line's page, so a doubt goes back to the paper
+        for given, row in zip(req.rows, rows):
+            if given.page:
+                row["note"] = " · ".join(([MIGRATED_NOTE] if req.migrated else []) + [f"سكان الدفتر ص {given.page}"])
         batch_id = uuid.uuid4().hex[:12]
         source = f"{req.source_kind}:{req.file_id}" if req.file_id else req.source_kind
         db.import_batch(agent.conn, rows, batch_id, source, MIGRATED_NOTE if req.migrated else None)
