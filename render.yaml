@@ -1,0 +1,25 @@
+# Render blueprint (stage 22): New > Blueprint > pick this repo. Render asks for the secrets
+# marked sync: false. The disk keeps the notebook across deploys (disks need a paid instance).
+services:
+  - type: web
+    name: debt-agent
+    runtime: docker
+    plan: starter
+    healthCheckPath: /version
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: APP_PASSWORD
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: BASE_URL
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
