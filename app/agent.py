@@ -84,7 +84,10 @@ def _word_numbers(text: str) -> set[int]:
     for word in re.split(r"[\s،,.]+", text or ""):
         joined = word.startswith("و") and word[1:] in _UNITS and run
         word = word[1:] if joined else word
-        if word in _UNITS:
+        if word in ("عشر", "عشرة") and not joined and 0 < run < 10:
+            run += 10  # "خمسة عشر" = 15 (how the voice typing writes it)
+            out.add(run)
+        elif word in _UNITS:
             run = run + _UNITS[word] if joined else _UNITS[word]
             out.add(run)
         else:

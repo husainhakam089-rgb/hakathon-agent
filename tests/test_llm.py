@@ -339,3 +339,115 @@ def test_gemini_slow_model_is_skipped_at_turn_start():
     llm, urls = _gemini_raising([httpx.ReadTimeout("slow"), _ok([{"text": "هلا"}])], ["m1", "m2"])
     assert llm.complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
     assert "m1" in urls[0] and "m2" in urls[1] and llm.model == "m2"
+
+
+# ---------- Groq, the backup when Gemini's quota runs out (no network: a fake Groq) ----------
+
+import json as _json  # noqa: E402
+
+import httpx  # noqa: E402
+
+from app.llm import FallbackLLM, GroqLLM, LLMError, LLMResponse, ToolCall  # noqa: E402
+
+
+def _groq(handler):
+    return GroqLLM(api_key="k", client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def _reply(message, finish="stop"):
+    return httpx.Response(200, json={"choices": [{"message": message, "finish_reason": finish}]})
+
+
+def test_groq_sends_tools_and_reads_tool_calls():
+    seen = {}
+
+    def handler(req):
+        seen.update(_json.loads(req.content), auth=req.headers["authorization"])
+        return _reply({"content": None, "tool_calls": [{"id": "c1", "type": "function", "function": {
+            "name": "get_balance", "arguments": '{"customer_id": 3}'}}]})
+
+    tools = [{"name": "get_balance", "description": "رصيد", "input_schema": {"type": "object", "properties": {
+        "customer_id": {"type": "integer"}}}}]
+    history = [{"role": "user", "text": "سجل على ابو علي 25"},
+               {"role": "assistant", "text": "", "tool_calls": [ToolCall("t0", "record_debt", {"amount": 25000})], "raw": object()},
+               {"role": "tool", "results": [{"id": "t0", "content": '{"ok": true}'}]},
+               {"role": "assistant", "text": "سجلت", "tool_calls": []},
+               {"role": "user", "text": "شكد عليه؟"}]
+    r = _groq(handler).complete("نظام", history, tools)
+    assert r.tool_calls == [ToolCall("c1", "get_balance", {"customer_id": 3})]
+    assert seen["auth"] == "Bearer k" and seen["tools"][0]["function"]["name"] == "get_balance"
+    roles = [m["role"] for m in seen["messages"]]
+    assert roles == ["system", "user", "assistant", "tool", "assistant", "user"]
+    assert seen["messages"][2]["tool_calls"][0]["function"]["arguments"] == '{"amount": 25000}'
+
+
+def test_groq_moves_to_the_next_model_when_one_is_busy():
+    tried = []
+
+    def handler(req):
+        model = _json.loads(req.content)["model"]
+        tried.append(model)
+        return httpx.Response(429, text="rate limit") if len(tried) == 1 else _reply({"content": "هلا"})
+
+    llm = _groq(handler)
+    assert llm.complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
+    assert tried[0] != tried[1] and llm.model == tried[1]
+
+
+def test_groq_errors_are_readable():
+    assert "مفتاح Groq" in pytest.raises(LLMError, _groq(lambda r: httpx.Response(401)).complete,
+                                         "s", [{"role": "user", "text": "x"}], []).value.user_message
+    with pytest.raises(LLMError) as e:
+        _groq(lambda r: httpx.Response(503)).complete("s", [{"role": "user", "text": "x"}], [])
+    assert e.value.retryable
+
+
+class _Down:
+    model = "gemini-x"
+
+    def __init__(self, message="خدمة Gemini بيها زحمة"):
+        self.calls, self.message = 0, message
+
+    def complete(self, *a):
+        self.calls += 1
+        raise LLMError(self.message, retryable=True)
+
+    extract = complete
+
+
+class _Up:
+    model = "groq-x"
+
+    def complete(self, *a):
+        return LLMResponse(text="من Groq")
+
+    def extract(self, *a):
+        return {"rows": []}
+
+
+def test_fallback_uses_groq_when_gemini_fails_and_rests_gemini():
+    from app.llm import ALL_QUOTA_USED
+
+    gem = _Down()
+    f = FallbackLLM(gem, _Up())
+    assert f.complete("s", [], []).text == "من Groq" and f.model == "groq-x"
+    f.complete("s", [], [])
+    assert gem.calls == 1  # resting for 5 minutes, not asked again
+    out = _Down(ALL_QUOTA_USED)
+    f2 = FallbackLLM(out, _Up())
+    f2.complete("s", [], [])
+    f2._skip_until = 0
+    f2.complete("s", [], [])
+    assert out.calls == 1  # out for the whole day
+    assert f2.extract("s", "t", b"x", "image/jpeg", {"name": "n"}) == {"rows": []}
+
+
+def test_make_llm_with_a_groq_key_falls_back(monkeypatch):
+    from app.llm import make_llm
+
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g")
+    monkeypatch.setenv("GROQ_API_KEY", "q")
+    assert isinstance(make_llm(), FallbackLLM)
+    monkeypatch.delenv("GROQ_API_KEY")
+    assert type(make_llm()).__name__ == "GeminiLLM"  # gemini is the default now

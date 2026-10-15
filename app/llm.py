@@ -412,9 +412,167 @@ class GeminiLLM:
             raise LLMError("ما گدرت أوصل لـ Gemini. تأكد من النت عندك وعيد.", f"{type(e).__name__}: {e}")
 
 
+# ---------- Groq: the backup when Gemini's free quota runs out ----------
+
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+DEFAULT_GROQ_MODELS = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "moonshotai/kimi-k2-instruct"]
+
+
+class GroqLLM:
+    """Groq's OpenAI-compatible chat API (free tier: far more requests a day than Gemini's).
+    Same complete() as the others. Images are read by Gemini only: extract() here handles
+    images with a vision model when one is set (GROQ_VISION_MODEL), never PDFs."""
+
+    def __init__(self, model: str | None = None, api_key: str | None = None, max_tokens: int = 4096,
+                 client=None):
+        import httpx
+
+        self._httpx = httpx
+        self.key = api_key or os.getenv("GROQ_API_KEY")
+        if not self.key:
+            raise LLMError("ما كو مفتاح Groq. حط GROQ_API_KEY بملف .env", "missing GROQ_API_KEY")
+        first = model or os.getenv("GROQ_MODEL") or DEFAULT_GROQ_MODELS[0]
+        self.models = list(dict.fromkeys([first] + DEFAULT_GROQ_MODELS))
+        self.model = first
+        self.max_tokens = max_tokens
+        self.client = client or httpx.Client(timeout=40)
+
+    @staticmethod
+    def _tools(tools: list[dict]) -> list[dict]:
+        return [{"type": "function", "function": {
+            "name": t["name"], "description": t.get("description", ""),
+            "parameters": t.get("input_schema") or {"type": "object", "properties": {}}}} for t in tools]
+
+    @staticmethod
+    def _messages(system: str, messages: list[dict]) -> list[dict]:
+        out = [{"role": "system", "content": system}]
+        for m in messages:  # the neutral format; any provider's raw content is ignored
+            if m["role"] == "user":
+                out.append({"role": "user", "content": m["text"]})
+            elif m["role"] == "assistant":
+                msg = {"role": "assistant", "content": m.get("text") or None}
+                if m.get("tool_calls"):
+                    msg["tool_calls"] = [{"id": tc.id, "type": "function", "function": {
+                        "name": tc.name, "arguments": json.dumps(tc.input, ensure_ascii=False)}}
+                        for tc in m["tool_calls"]]
+                out.append(msg)
+            elif m["role"] == "tool":
+                for r in m["results"]:
+                    out.append({"role": "tool", "tool_call_id": r["id"], "content": r["content"]})
+        return out
+
+    def _post(self, body: dict) -> dict:
+        last = None
+        for model in [self.model] + [m for m in self.models if m != self.model]:
+            try:
+                r = self.client.post(GROQ_URL, json={**body, "model": model},
+                                     headers={"Authorization": f"Bearer {self.key}"})
+            except self._httpx.TimeoutException as e:
+                raise LLMError("Groq تأخر بالرد. عيد بعد شوية.", f"timeout: {e!r}", retryable=True)
+            except self._httpx.TransportError as e:
+                raise LLMError("ما گدرت أوصل لـ Groq. تأكد من النت عندك وعيد.", f"{type(e).__name__}: {e}")
+            if r.status_code == 200:
+                self.model = model
+                return r.json()
+            last = f"{r.status_code}: {r.text[:300]}"
+            if r.status_code in (401, 403):
+                raise LLMError("مفتاح Groq غلط. تأكد من GROQ_API_KEY بملف .env", last)
+            if r.status_code in (404, 429, 500, 502, 503) or "model" in r.text[:200].lower() and r.status_code == 400:
+                continue  # this model is gone, busy or out of quota: the next one
+            raise LLMError("صار خطأ بالطلب لـ Groq، عيد المحاولة.", last)
+        raise LLMError("Groq هم مشغول أو خلصت حصته هسه. جرب بعد شوية.", last or "", retryable=True)
+
+    def complete(self, system: str, messages: list[dict], tools: list[dict]) -> LLMResponse:
+        body = {"messages": self._messages(system, messages), "max_tokens": self.max_tokens}
+        if tools:
+            body.update(tools=self._tools(tools), tool_choice="auto")
+        choice = self._post(body)["choices"][0]
+        if choice.get("finish_reason") == "length":
+            raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens")
+        msg = choice.get("message") or {}
+        calls = []
+        for i, tc in enumerate(msg.get("tool_calls") or []):
+            fn = tc.get("function") or {}
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            calls.append(ToolCall(tc.get("id") or f"groq_{len(messages)}_{i}", fn.get("name", ""), args))
+        return LLMResponse(text=(msg.get("content") or "").strip(), tool_calls=calls)
+
+    def extract(self, system: str, text: str, file_bytes: bytes | None, mime: str | None, tool: dict) -> dict:
+        vision = os.getenv("GROQ_VISION_MODEL")
+        if file_bytes is not None and (not vision or not (mime or "").startswith("image/")):
+            raise LLMError("قراية الصور تحتاج Gemini، وهو مو متوفر هسه. جرب بعد شوية.", "groq: no vision")
+        import base64
+        content = [{"type": "text", "text": text}]
+        if file_bytes is not None:
+            content.insert(0, {"type": "image_url", "image_url": {
+                "url": f"data:{mime};base64,{base64.b64encode(file_bytes).decode()}"}})
+        body = {"messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
+                "tools": self._tools([tool]), "max_tokens": self.max_tokens,
+                "tool_choice": {"type": "function", "function": {"name": tool["name"]}}}
+        if vision and file_bytes is not None:
+            self.model = vision
+        msg = self._post(body)["choices"][0].get("message") or {}
+        for tc in msg.get("tool_calls") or []:
+            if (tc.get("function") or {}).get("name") == tool["name"]:
+                return json.loads(tc["function"].get("arguments") or "{}")
+        raise LLMError("النموذج ما رجّع جدول، عيد المحاولة.", "groq: no tool call")
+
+
+class FallbackLLM:
+    """Gemini first; when it fails (quota, busy, down), the same call goes to the backup.
+    After Gemini says every model is out of today's quota, the backup is used for the rest of
+    the day; after another failure, for 5 minutes. The agent's neutral messages work for both,
+    so a turn can even switch halfway."""
+
+    COOL_DOWN = 300  # seconds
+
+    def __init__(self, primary, backup):
+        self.primary, self.backup = primary, backup
+        self._skip_until = 0.0
+        self._skip_day = None
+
+    @property
+    def model(self):
+        return getattr(self._current(), "model", "")
+
+    def _current(self):
+        if self._skip_day == date.today() or time.time() < self._skip_until:
+            return self.backup
+        return self.primary
+
+    def _call(self, name, *args):
+        if self._current() is self.primary:
+            try:
+                return getattr(self.primary, name)(*args)
+            except LLMError as e:
+                if e.user_message == ALL_QUOTA_USED:
+                    self._skip_day = date.today()
+                else:
+                    self._skip_until = time.time() + self.COOL_DOWN
+        return getattr(self.backup, name)(*args)
+
+    def complete(self, system, messages, tools):
+        return self._call("complete", system, messages, tools)
+
+    def extract(self, system, text, file_bytes, mime, tool):
+        # pages are read by Gemini when it can; the backup only gets what it can read
+        try:
+            return self.primary.extract(system, text, file_bytes, mime, tool)
+        except LLMError:
+            return self.backup.extract(system, text, file_bytes, mime, tool)
+
+
 def make_llm():
-    """Factory: the one place to change when switching provider (LLM_PROVIDER in .env)."""
-    provider = (os.getenv("LLM_PROVIDER") or "anthropic").strip().lower()
-    if provider == "gemini":
-        return GeminiLLM()
-    return AnthropicLLM()
+    """Factory: the one place to change when switching provider (LLM_PROVIDER in .env).
+    Gemini by default; with GROQ_API_KEY set, Groq takes over when Gemini's quota runs out."""
+    provider = (os.getenv("LLM_PROVIDER") or "gemini").strip().lower()
+    if provider == "anthropic":
+        return AnthropicLLM()
+    if provider == "groq":
+        return GroqLLM()
+    if os.getenv("GROQ_API_KEY"):
+        return FallbackLLM(GeminiLLM(), GroqLLM())
+    return GeminiLLM()
