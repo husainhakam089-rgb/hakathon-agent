@@ -156,10 +156,56 @@ def test_simulated_checkout_end_to_end(conn, client, ali):
     page = client.get(f"/pay/{token}").text
     assert "وضع تجربة" in page and "45,000" in page and "أبو علي" in page and "طحين" not in page  # no owner notes
     done = client.post(f"/pay/{token}/confirm").text
-    assert "انسجل التسديد" in done and db.get_balance(conn, ali)["IQD"] == 0
-    assert client.post(f"/pay/{token}/confirm").status_code == 200 and db.get_balance(conn, ali)["IQD"] == 0
-    assert client.get("/alerts").json()["paid_links"][0]["amount"] == 45000
+    # security: the customer's press on a TEST page is only a claim, the debt stays
+    assert "ينسجل التسديد بحسابك لما صاحب المحل يتأكد" in done and db.get_balance(conn, ali)["IQD"] == 45000
+    client.post(f"/pay/{token}/confirm")
+    claims = client.get("/alerts").json()["claimed_links"]
+    assert [(c["name"], c["amount"]) for c in claims] == [("أبو علي", 45000)]
+    # the owner confirms: now it is recorded, once
+    ok = client.post(f"/payment-links/{claims[0]['id']}/confirm").json()
+    assert ok["ok"] and ok["balance"]["IQD"] == 0 and db.get_balance(conn, ali)["IQD"] == 0
+    assert client.post(f"/payment-links/{claims[0]['id']}/confirm").status_code == 409
+    a = client.get("/alerts").json()
+    assert a["claimed_links"] == [] and a["paid_links"] == []  # the owner did it himself: nothing to announce
+    assert "انسجل التسديد" in client.get(f"/pay/{token}").text
     assert client.get("/pay/nope").status_code == 404
+
+
+def test_a_customer_cannot_clear_his_own_debt(conn, client, ali):
+    """Reported: a customer opened the test link, pressed pay, and his 100,000 became 0."""
+    db.add_transaction(conn, ali, "debt", 55000)
+    token = client.post("/payment-links", json={"customer_id": ali}).json()["url"].rsplit("/", 1)[1]
+    for _ in range(5):
+        client.post(f"/pay/{token}/confirm")
+    assert db.get_balance(conn, ali)["IQD"] == 100000
+    # the owner says nothing came: the claim goes away, the link stays usable
+    link = db.get_payment_link(conn, token=token)
+    assert client.post(f"/payment-links/{link['id']}/reject").json()["ok"]
+    assert client.get("/alerts").json()["claimed_links"] == [] and db.get_balance(conn, ali)["IQD"] == 100000
+    # and confirming is the owner's: behind the password once online
+    import os
+    os.environ["APP_PASSWORD"] = "x"
+    try:
+        client.post(f"/pay/{token}/confirm")
+        assert client.post(f"/payment-links/{link['id']}/confirm").status_code == 401
+    finally:
+        del os.environ["APP_PASSWORD"]
+    assert db.get_balance(conn, ali)["IQD"] == 100000
+
+
+def test_a_forged_success_without_a_secret_is_refused(conn, client, ali, monkeypatch):
+    """Reported: with ZAINCASH_SECRET unset, /callback took a "success" signed with an empty key."""
+    monkeypatch.delenv("ZAINCASH_SECRET", raising=False)
+    token = client.post("/payment-links", json={"customer_id": ali}).json()["url"].rsplit("/", 1)[1]
+    for key in ("", "anything"):
+        forged = payments.jwt_encode({"status": "success", "orderid": token}, key)
+        assert client.get(f"/pay/{token}/callback", params={"token": forged}).status_code == 400
+    # even with a secret set later, a simulated link never takes a Zain Cash result
+    monkeypatch.setenv("ZAINCASH_SECRET", "s3cret")
+    good = payments.jwt_encode({"status": "success", "orderid": token}, "s3cret")
+    assert client.get(f"/pay/{token}/callback", params={"token": good}).status_code == 400
+    assert db.get_balance(conn, ali)["IQD"] == 45000
+    assert payments.jwt_decode(payments.jwt_encode({"a": 1}, ""), "") is None
 
 
 def test_callback_refuses_a_forged_result(conn, client, ali, monkeypatch):
@@ -251,6 +297,7 @@ def test_password_guards_everything_but_pay_pages(conn, client, ali, monkeypatch
 def test_login_is_slowed_after_five_wrong_tries(client, monkeypatch):
     from app import auth
 
+    monkeypatch.setattr(auth, "WRONG_DELAY", 0)
     monkeypatch.setenv("APP_PASSWORD", "sirr-123")
     auth._tries.clear()
     for _ in range(5):
@@ -268,3 +315,40 @@ def test_cookie_signature_and_expiry(monkeypatch):
     assert not auth.valid_cookie(auth.make_cookie(now=0))  # expired
     monkeypatch.setenv("APP_PASSWORD", "b")
     assert not auth.valid_cookie(c)  # a new password logs everyone out
+
+
+def test_faked_addresses_do_not_buy_more_tries(client, monkeypatch):
+    """Reported: 30 wrong passwords, each with a made-up X-Forwarded-For, and none was blocked."""
+    from app import auth
+
+    monkeypatch.setattr(auth, "WRONG_DELAY", 0)
+    monkeypatch.setenv("APP_PASSWORD", "sirr-123")
+    auth._tries.clear()
+    blocked = 0
+    for i in range(30):
+        r = client.post("/login", data={"password": f"guess{i}"}, headers={"X-Forwarded-For": f"10.0.0.{i}"})
+        blocked += "محاولات هواية" in r.text
+    assert blocked >= 25  # without a proxy the header is ignored: one address, closed after 5
+    assert "محاولات هواية" in client.post("/login", data={"password": "sirr-123"},
+                                          headers={"X-Forwarded-For": "10.9.9.9"}).text
+    auth._tries.clear()
+
+
+def test_behind_our_proxy_only_its_own_entry_counts(client, monkeypatch):
+    from app import auth
+
+    monkeypatch.setattr(auth, "WRONG_DELAY", 0)
+    monkeypatch.setenv("APP_PASSWORD", "sirr-123")
+    monkeypatch.setenv("TRUST_PROXY", "1")
+    auth._tries.clear()
+    # the attacker writes the front of the header; the proxy adds his real address at the end
+    for i in range(6):
+        r = client.post("/login", data={"password": "x"}, headers={"X-Forwarded-For": f"1.2.3.{i}, 5.5.5.5"})
+    assert "محاولات هواية" in r.text
+    # many real addresses together still hit the backstop
+    auth._tries.clear()
+    for i in range(auth.MAX_TRIES_ALL):
+        client.post("/login", data={"password": "x"}, headers={"X-Forwarded-For": f"6.6.6.{i}"})
+    assert "محاولات هواية" in client.post("/login", data={"password": "sirr-123"},
+                                          headers={"X-Forwarded-For": "7.7.7.7"}).text
+    auth._tries.clear()

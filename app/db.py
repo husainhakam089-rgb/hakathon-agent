@@ -245,6 +245,9 @@ def _migrate(conn) -> None:
     for col in ("ci_upto", "sa_upto"):
         if col not in dc_columns:
             conn.execute(f"ALTER TABLE drawer_counts ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+    # Security fix: a simulated payment is only the customer's word until the owner confirms it
+    if "claimed_at" not in {r["name"] for r in conn.execute("PRAGMA table_info(payment_links)")}:
+        conn.execute("ALTER TABLE payment_links ADD COLUMN claimed_at TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_batch ON transactions(batch_id)")
     conn.commit()
 
@@ -967,6 +970,30 @@ def pay_link(conn, link: dict, source: str = "zaincash") -> int:
     return tx
 
 
+def claim_link(conn, link: dict) -> bool:
+    """The customer pressed pay on the TEST page. Nothing is recorded: a test page moves no
+    money, so anyone holding the link could otherwise clear their own debt. The owner sees
+    "X says he paid" and confirms it himself (confirm_claim) or turns it down."""
+    if link["status"] != "pending" or link.get("claimed_at"):
+        return False
+    conn.execute("UPDATE payment_links SET claimed_at = datetime('now','localtime') WHERE id = ?", (link["id"],))
+    conn.commit()
+    return True
+
+
+def claimed_links(conn) -> list[dict]:
+    rows = conn.execute(
+        """SELECT p.id, p.amount, p.currency, p.claimed_at, p.customer_id, c.name FROM payment_links p
+           JOIN customers c ON c.id = p.customer_id
+           WHERE p.status = 'pending' AND p.claimed_at IS NOT NULL ORDER BY p.id""").fetchall()
+    return [dict(r) for r in rows]
+
+
+def reject_claim(conn, link_id: int) -> None:
+    conn.execute("UPDATE payment_links SET claimed_at = NULL WHERE id = ? AND status = 'pending'", (link_id,))
+    conn.commit()
+
+
 def unannounced_payments(conn) -> list[dict]:
     rows = conn.execute(
         """SELECT p.id, p.amount, p.currency, p.paid_at, c.name FROM payment_links p JOIN customers c ON c.id = p.customer_id
@@ -1002,6 +1029,7 @@ def alerts(conn, now=None) -> dict:
         "overdue": _with_reminders(conn, overdue_debts(conn, None, now)),
         "overdue_days": int(get_setting(conn, "overdue_days")),
         "paid_links": unannounced_payments(conn),
+        "claimed_links": claimed_links(conn),
     }
 
 

@@ -2,7 +2,8 @@
 
 Without APP_PASSWORD nothing changes (the program on the shop's own computer). With it, every
 page and API needs the login cookie, except what a customer or a health check opens:
-the payment pages (/pay/...), /login and /version. Wrong passwords are slowed down per address.
+the payment pages (/pay/...), /login and /version. Wrong passwords are limited per address AND
+for everyone together, so faking addresses (X-Forwarded-For) does not buy more tries.
 The cookie is signed with the password (and SECRET_KEY if set), so changing the password logs
 everyone out.
 """
@@ -19,8 +20,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 COOKIE = "dafter_login"
 DAYS = 30
 OPEN_PREFIXES = ("/pay/", "/login", "/version")
-MAX_TRIES = 5
+MAX_TRIES = 5          # wrong passwords per address in TRY_WINDOW
+MAX_TRIES_ALL = 20     # wrong passwords from everyone together in TRY_WINDOW: the backstop
 TRY_WINDOW = 600  # seconds
+ALL = "*all*"
+WRONG_DELAY = 1.0  # seconds a wrong password waits
 
 _tries: dict[str, list[float]] = {}
 
@@ -53,19 +57,32 @@ def valid_cookie(value: str | None, now: float | None = None) -> bool:
 
 
 def _client(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    return fwd.split(",")[0].strip() or (request.client.host if request.client else "?")
+    """Who is trying. X-Forwarded-For is written by whoever sends the request, so it is only
+    read behind a proxy we run (TRUST_PROXY=1, set in the Dockerfile), and then only its LAST
+    entry, the one the proxy itself added. Anything the sender put before it is ignored."""
+    if os.getenv("TRUST_PROXY"):
+        fwd = [p.strip() for p in request.headers.get("x-forwarded-for", "").split(",") if p.strip()]
+        if fwd:
+            return fwd[-1]
+    return request.client.host if request.client else "?"
+
+
+def _recent(key: str, now: float) -> list[float]:
+    _tries[key] = [t for t in _tries.get(key, []) if now - t < TRY_WINDOW]
+    return _tries[key]
 
 
 def too_many(request: Request, now: float | None = None) -> bool:
-    now = now or time.time()
-    recent = [t for t in _tries.get(_client(request), []) if now - t < TRY_WINDOW]
-    _tries[_client(request)] = recent
-    return len(recent) >= MAX_TRIES
+    """Five wrong tries from one address, or twenty from everyone together, close the login for
+    10 minutes. The owner is not locked out of what he already opened: his cookie lasts 30 days."""
+    now = time.time() if now is None else now
+    return len(_recent(_client(request), now)) >= MAX_TRIES or len(_recent(ALL, now)) >= MAX_TRIES_ALL
 
 
 def failed(request: Request) -> None:
-    _tries.setdefault(_client(request), []).append(time.time())
+    now = time.time()
+    _tries.setdefault(_client(request), []).append(now)
+    _tries.setdefault(ALL, []).append(now)
 
 
 def is_open(path: str) -> bool:

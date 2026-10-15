@@ -1729,7 +1729,7 @@ async function loadSalesToday() {
 let lastAlerts = null;
 
 function alertCount(a) {
-  return (a.drawer_not_counted ? 1 : 0) + a.recurring_due.length + (a.overdue.length ? 1 : 0) + (a.paid_links || []).length;
+  return (a.drawer_not_counted ? 1 : 0) + a.recurring_due.length + (a.overdue.length ? 1 : 0) + (a.paid_links || []).length + (a.claimed_links || []).length;
 }
 
 async function checkAlerts(speak) {
@@ -1758,6 +1758,8 @@ function speakAlerts(a) {
     lines.push(`${a.overdue.length === 1 ? 'زبون' : a.overdue.length + ' زباين'} ما سددوا من أكثر من ${a.overdue_days} يوم: ${top}. أكتبلهم تذكير بزين كاش؟ من ☰ ← 🔔 دوس ✉️ ذكّره.`);
   }
   // paid from a Zain Cash link: said every time (once per payment), then marked as told
+  for (const c of (a.claimed_links || [])) if (key('claim' + c.id))
+    lines.push(`💳 ${c.name} يگول دفع ${fmt(c.amount)} دينار بزين كاش (تجربة). إذا وصلتك، أكدها من ☰ ← 🔔 وينسجل التسديد.`);
   const paid = a.paid_links || [];
   for (const p of paid) lines.push(`💳 ${p.name} دفع ${fmt(p.amount)} دينار بزين كاش، وانسجل تسديد بحسابه وحده (ما دخل الجرار).`);
   if (paid.length) {
@@ -1782,6 +1784,9 @@ function renderAlerts() {
   for (const r of a.recurring_due) html += `<div class="alert-card"><b>📅 ${esc(r.reason)}: ${fmt(r.amount)} ${word(r.currency)}</b>
     <small>صرفية ثابتة يوم ${r.day_of_month} بالشهر، وما انسجلت هالشهر.</small>
     <div class="row"><button class="yes" data-rec="${r.id}">✓ سجّلها</button><button data-rec-skip="${r.id}">مو هالشهر</button></div></div>`;
+  for (const c of (a.claimed_links || [])) html += `<div class="alert-card"><b>💳 ${esc(c.name)} يگول دفع ${fmt(c.amount)} دينار بزين كاش</b>
+    <small>وضع تجربة: ما تتحرك فلوس، فما ينسجل شي إلا تأكد إنت إنها وصلتك (${esc(shortDate(c.claimed_at))}).</small>
+    <div class="row"><button class="yes" data-claim-ok="${c.id}">✓ وصلت، سجّل التسديد</button><button data-claim-no="${c.id}">✕ ما وصلت</button></div></div>`;
   for (const p of (a.paid_links || [])) html += `<div class="alert-card"><b>💳 ${esc(p.name)} دفع ${fmt(p.amount)} دينار بزين كاش</b>
     <small>انسجل تسديد بحسابه وحده (${esc(shortDate(p.paid_at))}).</small></div>`;
   if (a.overdue.length) html += `<div class="alert-card"><b>⏰ ديون متأخرة (أكثر من ${a.overdue_days} يوم بدون تسديد)</b>
@@ -1830,6 +1835,17 @@ $('drawerBody').addEventListener('click', async e => {
     closeDrawer(); $('input').value = t.dataset.fillChat; $('input').focus(); return;
   }
   if (t.dataset.remind) { t.disabled = true; return remindFromAlerts(+t.dataset.remind); }
+  if (t.dataset.claimOk || t.dataset.claimNo) {
+    t.disabled = true;
+    const id = t.dataset.claimOk || t.dataset.claimNo;
+    const data = await post(`/payment-links/${id}/${t.dataset.claimOk ? 'confirm' : 'reject'}`, {});
+    if (data.ok && t.dataset.claimOk) {
+      $('welcome')?.remove();
+      addAgent(`سجلت تسديد من ${data.customer_name} ${fmt(data.amount)} دينار بزين كاش (ما دخل الجرار). صار رصيده ${fmt(data.balance.IQD)}.`, []);
+      loadDebtors(true, 'customer');
+    }
+    return checkAlerts(false).then(renderAlerts);
+  }
   if (t.dataset.rec || t.dataset.recSkip) {
     t.disabled = true;
     const data = await post(`/recurring/${t.dataset.rec || t.dataset.recSkip}/record`, {session_id: sessionId, skip: !!t.dataset.recSkip});

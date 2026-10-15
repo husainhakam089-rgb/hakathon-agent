@@ -3,8 +3,9 @@
 The customer gets a link to a page on this program (/pay/<token>). What happens there depends
 on the provider:
 
-- simulated (the default): a page marked clearly "وضع تجربة". Pressing pay records the payment in
-  the notebook by itself, exactly as a real one would. No money moves.
+- simulated (the default): a page marked clearly "وضع تجربة". No money moves, so pressing pay
+  records NOTHING by itself: the owner gets "X says he paid" and confirms it with one press
+  (otherwise anyone holding the link could clear their own debt).
 - zaincash: set ZAINCASH_MERCHANT_ID, ZAINCASH_SECRET and ZAINCASH_MSISDN (and ZAINCASH_ENV=live
   for real money; test by default). The page sends the customer to Zain Cash's own checkout
   (their merchant API: transaction/init, then transaction/pay), and when Zain Cash sends them
@@ -103,7 +104,10 @@ def jwt_encode(payload: dict, secret: str) -> str:
 
 
 def jwt_decode(token: str, secret: str) -> dict | None:
-    """The payload when the signature is right, else None (a forged "success" is refused)."""
+    """The payload when the signature is right, else None (a forged "success" is refused).
+    No secret = nothing is trusted: anyone could sign with an empty key."""
+    if not secret:
+        return None
     try:
         head, body, sig = token.split(".")
         good = hmac.new(secret.encode(), f"{head}.{body}".encode(), hashlib.sha256).digest()

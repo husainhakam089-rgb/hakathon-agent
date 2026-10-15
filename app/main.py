@@ -102,6 +102,8 @@ async def login(request: Request):
     import hmac
     if not auth.enabled() or not hmac.compare_digest(given.encode(), auth.password().encode()):
         auth.failed(request)
+        import asyncio
+        await asyncio.sleep(auth.WRONG_DELAY)  # each wrong try costs a second
         return auth.login_page("كلمة السر غلط.")
     resp = RedirectResponse("/", status_code=303)
     secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
@@ -128,7 +130,7 @@ def version():
 
 @app.post("/chat")
 def chat(req: ChatRequest, request: Request):
-    agent.session(req.session_id).tools.base_url = str(request.base_url)
+    agent.session(req.session_id).tools.base_url = _base_url(request)
     return agent.chat(req.session_id, req.message, req.source)
 
 
@@ -491,9 +493,18 @@ class SeenRequest(BaseModel):
     ids: list[int]
 
 
+def _base_url(request: Request) -> str:
+    """Where this program is reached. Behind our proxy (TRUST_PROXY) the outside is https even
+    though the proxy talks to us in http. BASE_URL, when set, wins over this anyway."""
+    url = str(request.base_url)
+    if os.getenv("TRUST_PROXY") and request.headers.get("x-forwarded-proto") == "https":
+        url = "https://" + url.split("://", 1)[1]
+    return url
+
+
 def _owner_tools(request: Request):
     tools = agent.session("_owner_screens").tools
-    tools.base_url = str(request.base_url)
+    tools.base_url = _base_url(request)
     return tools
 
 
@@ -569,12 +580,15 @@ def _pay_html(link: dict, customer: dict, shop: str, lines: list[dict], message:
     from html import escape
     simulated = link["provider"] == "simulated"
     balance = db.get_balance(agent.conn, customer["id"])["IQD"]
-    banner = ("<div class=test>🧪 وضع تجربة: هاي محاكاة لزين كاش. ما تتحرك فلوس حقيقية، بس التسديد ينسجل "
-              "بالدفتر بالضبط مثل الحقيقي.</div>" if simulated else "")
+    banner = ("<div class=test>🧪 وضع تجربة: هاي محاكاة لزين كاش وما تتحرك فلوس حقيقية. "
+              "لما تدوس ادفع، صاحب المحل يأكد إن الفلوس وصلته، وبعدها ينسجل التسديد.</div>" if simulated else "")
     if link["status"] == "paid":
         body = f"<div class=ok>✓ انسجل التسديد: {link['amount']:,} دينار<br><small>{escape(link['paid_at'] or '')}</small></div>"
     elif link["status"] == "cancelled":
         body = "<div class=bad>هذا الرابط قديم وانلغى. اطلب رابط جديد من المحل.</div>"
+    elif link.get("claimed_at"):
+        body = (f"<div class=ok>✓ وصل للمحل إنك دفعت {link['amount']:,} دينار.<br>"
+                f"<small>ينسجل التسديد بحسابك لما صاحب المحل يتأكد.</small></div>")
     elif balance <= 0:
         body = "<div class=ok>حسابك صافي، ما عليك شي هسه 🌷</div>"
     elif simulated:
@@ -624,7 +638,8 @@ def pay_page(token: str):
 
 @app.post("/pay/{token}/confirm")
 def pay_confirm(token: str):
-    """The simulated checkout: pressing pay records the payment by itself."""
+    """The simulated checkout. No money moves on a test page, so the customer's press is only a
+    claim: nothing is recorded until the owner confirms it (POST /payment-links/{id}/confirm)."""
     with agent.lock:
         link = db.get_payment_link(agent.conn, token=token)
         if not link:
@@ -632,9 +647,33 @@ def pay_confirm(token: str):
         if link["provider"] != "simulated":
             return _pay_page(token, "الدفع يصير من صفحة زين كاش.", 400)
         if link["status"] == "pending" and db.get_balance(agent.conn, link["customer_id"])["IQD"] > 0:
-            db.pay_link(agent.conn, link, source="zaincash_test")
-            _notify_paid(db.get_customer(agent.conn, link["customer_id"])["name"], link["amount"])
+            if db.claim_link(agent.conn, link):
+                name = db.get_customer(agent.conn, link["customer_id"])["name"]
+                threading.Thread(target=daily.send_telegram, daemon=True, args=(
+                    f"💳 {name} يگول دفع {link['amount']:,} دينار بزين كاش (تجربة). أكدها من البرنامج إذا وصلت.",)).start()
         return _pay_page(token)
+
+
+@app.post("/payment-links/{link_id}/confirm")
+def confirm_claim(link_id: int):
+    """The owner checked and the money came: now the payment is recorded."""
+    with agent.lock:
+        link = db.get_payment_link(agent.conn, link_id)
+        if not link or link["status"] != "pending" or not link.get("claimed_at"):
+            return _error(409, "ما كو دفعة تنتظر تأكيد بهالرابط.")
+        tx = db.pay_link(agent.conn, link, source="zaincash_test")
+        db.mark_announced(agent.conn, [link_id])
+        name = db.get_customer(agent.conn, link["customer_id"])["name"]
+        balance = db.get_balance(agent.conn, link["customer_id"])
+    return {"ok": True, "tx_id": tx, "customer_name": name, "amount": link["amount"], "balance": balance}
+
+
+@app.post("/payment-links/{link_id}/reject")
+def reject_claim(link_id: int):
+    """The owner checked and nothing came: the claim goes, the link stays open."""
+    with agent.lock:
+        db.reject_claim(agent.conn, link_id)
+    return {"ok": True}
 
 
 @app.get("/pay/{token}/go")
@@ -644,7 +683,7 @@ def pay_go(token: str, request: Request):
         link = db.get_payment_link(agent.conn, token=token)
         if not link or link["status"] != "pending" or link["provider"] != "zaincash":
             return _pay_page(token)
-    back = f"{payments.base_url(str(request.base_url))}/pay/{token}/callback"
+    back = f"{payments.base_url(_base_url(request))}/pay/{token}/callback"
     try:
         return RedirectResponse(payments.zaincash_checkout(link, back), status_code=303)
     except Exception as e:
@@ -658,7 +697,8 @@ def pay_callback(token: str, request: Request):
     result = payments.zaincash_result(request.query_params.get("token", ""))
     with agent.lock:
         link = db.get_payment_link(agent.conn, token=token)
-        if not link or not result or result.get("orderid") != token:
+        # only a real Zain Cash link, answered with a result signed by our secret
+        if not link or link["provider"] != "zaincash" or not result or result.get("orderid") != token:
             return _pay_page(token, "ما گدرت أتأكد من الدفع. إذا انسحبت الفلوس راجع المحل.", 400)
         if result.get("status") == "success" and link["status"] == "pending":
             db.pay_link(agent.conn, link, source="zaincash")
