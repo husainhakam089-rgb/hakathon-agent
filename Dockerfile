@@ -7,16 +7,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     DB_PATH=/data/debt.db BACKUP_DIR=/data/backups UPLOAD_DIR=/data/uploads \
     REQUIRE_PASSWORD=1 TRUST_PROXY=1 NO_BROWSER=1 PORT=8000
 
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --home-dir /app app
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY static ./static
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 
 RUN mkdir -p /data
 VOLUME ["/data"]
 EXPOSE 8000
+# runs the program as the "app" user, not root (see docker-entrypoint.sh)
+ENTRYPOINT ["docker-entrypoint.sh"]
 # No --forwarded-allow-ips='*': it would let anyone set the client address with a header.
 # The app reads the host's proxy headers itself (TRUST_PROXY=1): the last X-Forwarded-For entry
 # for who is trying a password, and X-Forwarded-Proto for https links and the login cookie.

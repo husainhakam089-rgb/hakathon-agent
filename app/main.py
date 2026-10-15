@@ -38,6 +38,25 @@ FILE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 BACKUP_CHECK_SECONDS = 3600
 
 
+UPLOAD_KEEP_DAYS = int(os.getenv("UPLOAD_KEEP_DAYS") or 30)
+
+
+def prune_uploads(days: int | None = None, now: float | None = None) -> int:
+    """Photos of notebook pages hold customers' names and debts: once read and saved they are
+    not needed. Files older than UPLOAD_KEEP_DAYS (30) are deleted. Returns how many."""
+    import time as _time
+    days = UPLOAD_KEEP_DAYS if days is None else days
+    if not UPLOAD_DIR.is_dir():
+        return 0
+    limit = (_time.time() if now is None else now) - days * 86400
+    gone = 0
+    for f in UPLOAD_DIR.iterdir():
+        if f.is_file() and f.stat().st_mtime < limit:
+            f.unlink()
+            gone += 1
+    return gone
+
+
 def _daily_backups(stop: threading.Event) -> None:
     """Today's copy of the notebook when the program starts, then checked every hour
     (so a program left running for days still makes one each day)."""
@@ -49,6 +68,12 @@ def _daily_backups(stop: threading.Event) -> None:
                 print(f"نسخة احتياطية: {made}")
         except Exception as e:  # a full disk or a missing USB stick must not stop the shop
             print(f"ما گدرت أسوي نسخة احتياطية: {e}")
+        try:
+            gone = prune_uploads()
+            if gone:
+                print(f"انمسحت {gone} صورة قديمة من السكان")
+        except OSError as e:
+            print(f"ما گدرت أمسح الصور القديمة: {e}")
         if stop.wait(BACKUP_CHECK_SECONDS):
             return
 
@@ -86,6 +111,7 @@ app = FastAPI(title="مساعد التاجر", lifespan=lifespan)
 app.middleware("http")(auth.middleware)
 app.middleware("http")(security.make_middleware(auth.enabled))  # added last = runs first
 agent = Agent(db.connect())
+auth.EPOCH = db.get_setting(agent.conn, "login_epoch")  # "خروج من كل الأجهزة" survives a restart
 
 
 @app.get("/login")
@@ -127,6 +153,26 @@ def index():
 @app.get("/version")
 def version():
     return {"app": "debt-agent", "version": APP_VERSION}
+
+
+@app.get("/login-status")
+def login_status():
+    """Does this program have a password? (the page shows the logout buttons only then)"""
+    return {"login": auth.enabled()}
+
+
+@app.post("/logout")
+def logout(everywhere: bool = False):
+    """Out of this browser; with everywhere=true every phone and computer that was logged in
+    (a lost phone, a worker who left) is out too."""
+    if everywhere:
+        with agent.lock:
+            epoch = str(int(db.get_setting(agent.conn, "login_epoch")) + 1)
+            db.set_setting(agent.conn, "login_epoch", epoch)
+        auth.EPOCH = epoch
+    resp = JSONResponse({"ok": True, "everywhere": everywhere})
+    resp.delete_cookie(auth.COOKIE)
+    return resp
 
 
 @app.post("/chat")

@@ -834,7 +834,7 @@ def sales_summary(conn, period: str = "month", item_id: int | None = None) -> di
 
 DEFAULT_SETTINGS = {"drawer_hour": "21", "overdue_days": "30"}
 # stage 22 settings: kept apart so the alert settings above stay what the old screens expect
-EXTRA_SETTINGS = {"report_hour": "23", "shop_name": "المحل"}
+EXTRA_SETTINGS = {"report_hour": "23", "shop_name": "المحل", "login_epoch": "0"}
 
 
 def get_setting(conn, key: str) -> str:

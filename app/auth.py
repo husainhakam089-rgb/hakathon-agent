@@ -27,6 +27,9 @@ ALL = "*all*"
 WRONG_DELAY = 1.0  # seconds a wrong password waits
 
 _tries: dict[str, list[float]] = {}
+# Bumped by "خروج من كل الأجهزة": every cookie signed before it stops working. Kept in the
+# notebook (settings.login_epoch); main loads it at start.
+EPOCH = "0"
 
 
 def password() -> str:
@@ -38,7 +41,7 @@ def enabled() -> bool:
 
 
 def _key() -> bytes:
-    return hashlib.sha256(f"debt-agent:{password()}:{os.getenv('SECRET_KEY', '')}".encode()).digest()
+    return hashlib.sha256(f"debt-agent:{password()}:{os.getenv('SECRET_KEY', '')}:{EPOCH}".encode()).digest()
 
 
 def make_cookie(now: float | None = None) -> str:

@@ -95,7 +95,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1
 /* completion as you type: the rest of the command or name shows faded, Tab (or a tap) takes it */
 .chip-hint { font-size: 11px; color: var(--muted); align-self: center; white-space: nowrap; }
 .chips.suggest { padding-top: 0; }
-.chips[hidden] { display: none; }
+.chips[hidden], .menu button[hidden] { display: none; }
 .suggest-chip { border-color: var(--accent-border); color: var(--accent-text); }
 .input-wrap { position: relative; flex: 1; min-width: 0; display: flex; background: var(--card-strong); border-radius: 14px; }
 .input-wrap #input { flex: 1; min-width: 0; position: relative; background: transparent; z-index: 1; }
@@ -399,6 +399,8 @@ main.ledger-off .debtors { display: none; }
         <button role="menuitem" id="sessionsBtn"><span class="ic">🗂</span>المحادثات القديمة</button>
         <button role="menuitem" id="memoryBtn"><span class="ic">🧠</span>ذاكرة الوكيل</button>
         <button role="menuitem" id="backupBtn"><span class="ic">💾</span>نسخة احتياطية و Excel</button>
+        <button role="menuitem" id="logoutBtn" hidden><span class="ic">🚪</span>خروج</button>
+        <button role="menuitem" id="logoutAllBtn" hidden><span class="ic">📵</span>خروج من كل الأجهزة</button>
         <button role="menuitem" id="newChat"><span class="ic">＋</span>محادثة جديدة</button>
         <button role="menuitem" id="theme"><span class="ic" id="themeIcon">☀︎</span><span id="themeLbl">الوضع الفاتح</span></button>
       </div>
@@ -1412,6 +1414,18 @@ $('input').addEventListener('keydown', e => {
   else if (e.key === 'Escape' && currentRest) { currentRest = null; $('ghost').innerHTML = ''; $('suggestRow').hidden = true; $('chips').hidden = false; }
 });
 $('suggestChip').onclick = () => takeSuggestion();
+
+/* ---------- logout, only when the program has a password ---------- */
+fetch('/login-status').then(r => r.json()).then(v => {
+  if (v.login) { $('logoutBtn').hidden = false; $('logoutAllBtn').hidden = false; }
+}).catch(() => {});
+async function logout(everywhere) {
+  if (everywhere && !confirm('أطلّع كل الموبايلات والحاسبات اللي داخلة؟ (إذا ضاع موبايل أو عامل ترك الشغل)')) return;
+  await fetch('/logout' + (everywhere ? '?everywhere=true' : ''), {method: 'POST'}).catch(() => {});
+  location.href = '/login';
+}
+$('logoutBtn').onclick = () => logout(false);
+$('logoutAllBtn').onclick = () => logout(true);
 $('form').addEventListener('submit', () => setTimeout(updateSuggestion, 0));
 window.addEventListener('resize', syncGhost);
 syncGhost();
