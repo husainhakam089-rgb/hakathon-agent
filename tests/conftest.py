@@ -2,6 +2,8 @@ import os
 
 # Importing app.main opens the database: keep tests off the real debt.db
 os.environ["DB_PATH"] = ":memory:"
+# FastAPI's test client calls itself "testserver": let it in like 127.0.0.1
+os.environ.setdefault("ALLOWED_HOSTS", "testserver")
 
 import pytest
 

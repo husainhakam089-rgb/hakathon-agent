@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 load_dotenv()
 
 from app import db  # noqa: E402  (after load_dotenv: DB_PATH comes from .env)
-from app import auth, backup, daily, export, extraction, payments, reports, spreadsheet  # noqa: E402
+from app import auth, backup, daily, export, security, extraction, payments, reports, spreadsheet  # noqa: E402
 from app.agent import Agent  # noqa: E402
 from app.llm import LLMError  # noqa: E402
 
@@ -84,6 +84,7 @@ async def lifespan(_app):
 
 app = FastAPI(title="مساعد التاجر", lifespan=lifespan)
 app.middleware("http")(auth.middleware)
+app.middleware("http")(security.make_middleware(auth.enabled))  # added last = runs first
 agent = Agent(db.connect())
 
 
