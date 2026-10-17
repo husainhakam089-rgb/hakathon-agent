@@ -1024,6 +1024,8 @@ def alerts(conn, now=None) -> dict:
     hour = int(get_setting(conn, "drawer_hour"))
     return {
         "drawer_not_counted": now.hour >= hour and not drawer_counted_today(conn, now),
+        "drawer_counted_today": drawer_counted_today(conn, now),
+        "checked_at": now.strftime("%H:%M"),
         "drawer_hour": hour,
         "recurring_due": recurring_due(conn, now),
         "overdue": _with_reminders(conn, overdue_debts(conn, None, now)),

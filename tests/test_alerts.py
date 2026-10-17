@@ -187,3 +187,10 @@ def test_a_loss_said_as_a_positive_figure_is_fine():
     allowed = set()
     _walk_numbers({"net_profit": {"IQD": -259000}}, allowed)
     assert unsupported_numbers("الربح الصافي سالب 259,000 دينار", allowed) == []
+
+
+def test_alerts_say_when_they_were_checked_and_if_the_drawer_was_counted(conn):
+    """The page shows "الوكيل شغال · فحص 10:42", and on a quiet day "كلشي تمام، والجرار انعد اليوم"."""
+    now = datetime(2026, 10, 17, 10, 42)
+    a = db.alerts(conn, now)
+    assert a["checked_at"] == "10:42" and a["drawer_counted_today"] is False

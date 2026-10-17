@@ -54,6 +54,10 @@ header { display: flex; align-items: center; gap: 12px; padding: 12px 18px; posi
   color: #0f172a; font-size: 20px; font-weight: 700; flex-shrink: 0; }
 header h1 { margin: 0; font-size: 18px; }
 header p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+/* the agent is awake: when it last went through the notebook by itself, and what it found */
+.agent-status { display: block; margin-top: 2px; padding: 0; border: 0; background: none; font: inherit; font-size: 11px;
+  color: var(--muted); cursor: pointer; white-space: nowrap; }
+.agent-status.ok { color: #22c55e; } .agent-status.warn { color: var(--accent-text); } .agent-status.down { color: #f87171; }
 .spacer { flex: 1; }
 .icon-btn { background: var(--card-strong); border: 1px solid var(--border); border-radius: 12px;
   padding: 8px 12px; cursor: pointer; font-size: 13px; white-space: nowrap; }
@@ -386,6 +390,7 @@ main.ledger-off .debtors { display: none; }
     <div>
       <h1>مساعد التاجر</h1>
       <p>اكتب مثل ما تحچي: "سجل على ابو علي 25 الف"</p>
+      <button type="button" class="agent-status" id="agentStatus" title="آخر مرة فحص الوكيل الدفتر وحده">⏳ الوكيل دا يفحص…</button>
     </div>
     <div class="spacer"></div>
     <div class="menu-wrap">
@@ -1746,6 +1751,22 @@ function alertCount(a) {
   return (a.drawer_not_counted ? 1 : 0) + a.recurring_due.length + (a.overdue.length ? 1 : 0) + (a.paid_links || []).length + (a.claimed_links || []).length;
 }
 
+// 21 -> "9 بالليل": how the owner says the hour
+function hourWords(h) {
+  h = Number(h);
+  const twelve = h % 12 === 0 ? 12 : h % 12;
+  const part = h < 5 ? 'بالليل' : h < 12 ? 'الصبح' : h < 15 ? 'الظهر' : h < 18 ? 'العصر' : 'بالليل';
+  return `${twelve} ${part}`;
+}
+
+function showStatus(a, n) {
+  const el = $('agentStatus');
+  if (!a) { el.textContent = '🔴 ما گدرت أوصل للبرنامج'; el.className = 'agent-status down'; return; }
+  el.textContent = n ? `🔔 الوكيل شغال · ${n} ${n === 1 ? 'تنبيه' : 'تنبيهات'} · فحص ${a.checked_at}`
+                     : `🟢 الوكيل شغال · كلشي تمام · فحص ${a.checked_at}`;
+  el.className = 'agent-status ' + (n ? 'warn' : 'ok');
+}
+
 async function checkAlerts(speak) {
   try {
     const a = await (await fetch('/alerts')).json();
@@ -1755,8 +1776,9 @@ async function checkAlerts(speak) {
     $('alertsCount').classList.toggle('on', n > 0);
     $('menuBtn').classList.toggle('alert', n > 0);
     if (drawerKind === 'alerts') renderAlerts();
+    showStatus(a, n);
     if (speak) speakAlerts(a);
-  } catch (e) { /* alerts are a help, never in the way */ }
+  } catch (e) { showStatus(null); /* alerts are a help, never in the way */ }
 }
 
 // Once a day per kind of alert, the agent says it in the chat (no model call: the code knows).
@@ -1765,7 +1787,7 @@ function speakAlerts(a) {
   const said = JSON.parse(store.get('debt_alerts_said') || '{}');
   const lines = [];
   const key = (k) => { if (said[k] === today) return false; said[k] = today; return true; };
-  if (a.drawer_not_counted && key('drawer')) lines.push('صارت الساعة ' + a.drawer_hour + ' وما عديت الجرار اليوم. لما تعده گلي: سديت، بالجرار كذا.');
+  if (a.drawer_not_counted && key('drawer')) lines.push(`صارت الساعة ${hourWords(a.drawer_hour)} وما عديت الجرار اليوم. لما تعده گلي: سديت، بالجرار كذا.`);
   for (const r of a.recurring_due) if (key('rec' + r.id)) lines.push(`موعد ${r.reason} (${fmt(r.amount)} ${r.currency === 'USD' ? 'دولار' : 'دينار'}) إجه وما انسجل. أسجله؟ من ☰ ← 🔔 التنبيهات.`);
   if (a.overdue.length && key('overdue')) {
     const top = a.overdue.slice(0, 3).map(o => `${o.name} (${fmt(o.balance.IQD)}، ${o.days} يوم)`).join('، ');
@@ -1780,10 +1802,11 @@ function speakAlerts(a) {
     fetch('/alerts/seen-payments', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: paid.map(p => p.id)})})
       .then(() => { loadDebtors(true, 'customer'); checkAlerts(false); });
   }
+  if (!lines.length && !alertCount(a) && key('ok')) lines.push(allGood(a));
   if (!lines.length) return;
   store.set('debt_alerts_said', JSON.stringify(said));
   $('welcome')?.remove();
-  addAgent('🔔 ' + lines.join('\n'), []);
+  addAgent((lines[0].startsWith('✓') ? '' : '🔔 ') + lines.join('\n'), []);
   const bubbles = document.querySelectorAll('.msg.agent');
   bubbles[bubbles.length - 1]?.classList.add('proactive');
 }
@@ -1839,6 +1862,17 @@ async function loadRecurring() {
       <div id="recNote"></div>`;
   } catch (e) { /* ignore */ }
 }
+
+// Once a day, even when nothing is wrong, the agent says it went through the notebook:
+// the owner sees it is awake and everything is in order.
+function allGood(a) {
+  const drawer = a.drawer_counted_today ? 'والجرار انعد اليوم.' : `وأذكّرك تعد الجرار الساعة ${hourWords(a.drawer_hour)}.`;
+  return `✓ فحصت الدفتر وحدي: كلشي تمام. ما كو ديون متأخرة ولا صرفيات موعدها إجه، ${drawer}`;
+}
+// The agent keeps watching while the page is open: every 5 minutes, and when the owner comes back to it.
+setInterval(() => checkAlerts(true), 5 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkAlerts(true); });
+$('agentStatus').onclick = async () => { openDrawer('alerts', '🔔 التنبيهات'); await checkAlerts(false); renderAlerts(); };
 
 $('alertsBtn').onclick = async () => { openDrawer('alerts', '🔔 التنبيهات'); await checkAlerts(false); renderAlerts(); };
 $('drawerBody').addEventListener('click', async e => {
