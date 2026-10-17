@@ -21,7 +21,7 @@ WRITE_TOOLS = {"record_debt", "record_payment", "add_customer", "undo_last", "un
                "record_supplier_payment", "add_supplier", "record_withdrawal", "remember", "forget",
                "record_cash_in", "count_drawer", "set_drawer_opening", "add_item", "update_item", "record_sale",
                "add_recurring_expense", "remove_recurring_expense", "record_recurring_expense", "set_reminders",
-               "set_customer_phone"}
+               "set_customer_phone", "remind_me", "cancel_reminder"}
 MAX_HISTORY_MESSAGES = 20  # user + assistant text messages kept per session
 
 CONFUSED_REPLY = "صار عندي لبس، عيد الطلب بطريقة أبسط"

@@ -99,7 +99,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1
 /* completion as you type: the rest of the command or name shows faded, Tab (or a tap) takes it */
 .chip-hint { font-size: 11px; color: var(--muted); align-self: center; white-space: nowrap; }
 .chips.suggest { padding-top: 0; }
-.chips[hidden], .menu button[hidden] { display: none; }
+.chips[hidden], .menu button[hidden], .field[hidden] { display: none; }
 .suggest-chip { border-color: var(--accent-border); color: var(--accent-text); }
 .input-wrap { position: relative; flex: 1; min-width: 0; display: flex; background: var(--card-strong); border-radius: 14px; }
 .input-wrap #input { flex: 1; min-width: 0; position: relative; background: transparent; z-index: 1; }
@@ -1748,7 +1748,7 @@ async function loadSalesToday() {
 let lastAlerts = null;
 
 function alertCount(a) {
-  return (a.drawer_not_counted ? 1 : 0) + a.recurring_due.length + (a.overdue.length ? 1 : 0) + (a.paid_links || []).length + (a.claimed_links || []).length;
+  return (a.drawer_not_counted ? 1 : 0) + a.recurring_due.length + (a.overdue.length ? 1 : 0) + (a.paid_links || []).length + (a.claimed_links || []).length + (a.my_reminders || []).length;
 }
 
 // 21 -> "9 بالليل": how the owner says the hour
@@ -1788,6 +1788,7 @@ function speakAlerts(a) {
   const lines = [];
   const key = (k) => { if (said[k] === today) return false; said[k] = today; return true; };
   if (a.drawer_not_counted && key('drawer')) lines.push(`صارت الساعة ${hourWords(a.drawer_hour)} وما عديت الجرار اليوم. لما تعده گلي: سديت، بالجرار كذا.`);
+  for (const r of (a.my_reminders || [])) if (key('mine' + r.id + r.due_at)) lines.push(`⏰ ذكّرتني: ${r.text}`);
   for (const r of a.recurring_due) if (key('rec' + r.id)) lines.push(`موعد ${r.reason} (${fmt(r.amount)} ${r.currency === 'USD' ? 'دولار' : 'دينار'}) إجه وما انسجل. أسجله؟ من ☰ ← 🔔 التنبيهات.`);
   if (a.overdue.length && key('overdue')) {
     const top = a.overdue.slice(0, 3).map(o => `${o.name} (${fmt(o.balance.IQD)}، ${o.days} يوم)`).join('، ');
@@ -1819,8 +1820,12 @@ function renderAlerts() {
   if (a.drawer_not_counted) html += `<div class="alert-card"><b>🧾 ما عديت الجرار اليوم</b>
     <small>عده وگلي: سديت، بالجرار كذا.</small><div class="row"><button class="yes" data-fill-chat="سديت، بالجرار ">اكتبها بالمحادثة</button></div></div>`;
   for (const r of a.recurring_due) html += `<div class="alert-card"><b>📅 ${esc(r.reason)}: ${fmt(r.amount)} ${word(r.currency)}</b>
-    <small>صرفية ثابتة يوم ${r.day_of_month} بالشهر، وما انسجلت هالشهر.</small>
-    <div class="row"><button class="yes" data-rec="${r.id}">✓ سجّلها</button><button data-rec-skip="${r.id}">مو هالشهر</button></div></div>`;
+    <small>صرفية ثابتة ${esc(r.label)}، وما انسجلت ${r.period_words}.</small>
+    <div class="row"><button class="yes" data-rec="${r.id}">✓ سجّلها</button><button data-rec-skip="${r.id}">مو ${r.period_words}</button></div></div>`;
+  for (const r of (a.my_reminders || [])) html += `<div class="alert-card"><b>⏰ ${esc(r.text)}</b>
+    <small>طلبت أذكّرك بيها (${esc(shortDate(r.due_at))})${r.repeat !== 'none' ? ' · تتكرر' : ''}.</small>
+    <div class="row"><button class="yes" data-mine-done="${r.id}">✓ خلصت</button><button data-mine-snooze="${r.id}">بعد ساعة</button>
+      <button data-mine-tomorrow="${r.id}">باچر الصبح</button></div></div>`;
   for (const c of (a.claimed_links || [])) html += `<div class="alert-card"><b>💳 ${esc(c.name)} يگول دفع ${fmt(c.amount)} دينار بزين كاش</b>
     <small>وضع تجربة: ما تتحرك فلوس، فما ينسجل شي إلا تأكد إنت إنها وصلتك (${esc(shortDate(c.claimed_at))}).</small>
     <div class="row"><button class="yes" data-claim-ok="${c.id}">✓ وصلت، سجّل التسديد</button><button data-claim-no="${c.id}">✕ ما وصلت</button></div></div>`;
@@ -1833,9 +1838,26 @@ function renderAlerts() {
       <span>${fmt(o.balance.IQD)}${o.balance.USD ? ' + ' + fmt(o.balance.USD) + '$' : ''} · ${o.days} يوم
       ${o.balance.IQD > 0 ? `<button data-remind="${o.id}" style="flex:0;min-width:0">✉️ ذكّره</button>` : ''}</span></div>`).join('')}</div>`;
   if (!html) html = '<p class="hint">ما كو تنبيهات هسه ✓</p>';
+  html += `<details><summary>⏰ تذكيراتك الجاية</summary><div id="mineBox"><p class="hint">…</p></div></details>`;
   html += `<details><summary>⚙️ الصرفيات الثابتة والإعدادات</summary><div id="recurringBox"><p class="hint">…</p></div></details>`;
   $('drawerBody').innerHTML = html;
+  loadMine();
   loadRecurring();
+}
+
+const WEEKDAYS_AR = ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];  // Monday = 0, as on the server
+
+async function loadMine() {
+  try {
+    const data = await (await fetch('/owner-reminders')).json();
+    const box = $('mineBox');
+    if (!box) return;
+    const rep = {daily: 'كل يوم', weekly: 'كل أسبوع', monthly: 'كل شهر', none: ''};
+    box.innerHTML = `<p class="hint">گول بالمحادثة "ذكرني باچر الصبح أتصل بالمندوب" وأذكّرك بوقته.</p>` +
+      (data.reminders.length ? data.reminders.map(r => `<div class="item"><div class="txt">${esc(r.text)}
+        <small>${esc(shortDate(r.due_at))}${rep[r.repeat] ? ' · ' + rep[r.repeat] : ''}</small></div>
+        <button data-mine-del="${r.id}" title="الغيه">✕</button></div>`).join('') : '<p class="hint">ما كو تذكيرات.</p>');
+  } catch (e) { /* ignore */ }
 }
 
 async function loadRecurring() {
@@ -1843,13 +1865,16 @@ async function loadRecurring() {
     const data = await (await fetch('/recurring')).json();
     const box = $('recurringBox');
     if (!box) return;
-    box.innerHTML = `<p class="hint">صرفيات تتكرر كل شهر: بيومها أذكّرك وأسألك أسجلها. تگدر تضيفها من المحادثة هم: "الإيجار 250 ألف كل شهر يوم 1".</p>
-      ${data.recurring.map(r => `<div class="item"><div class="txt">${esc(r.reason)}<small>${fmt(r.amount)} · يوم ${r.day_of_month} بالشهر</small></div>
+    box.innerHTML = `<p class="hint">صرفيات تتكرر كل شهر أو كل أسبوع: بيومها أذكّرك وأسألك أسجلها. تگدر تضيفها من المحادثة هم: "الإيجار 250 ألف كل شهر يوم 1"، "أجرة العامل 100 ألف كل أسبوع يوم الخميس".</p>
+      ${data.recurring.map(r => `<div class="item"><div class="txt">${esc(r.reason)}<small>${fmt(r.amount)} · ${esc(r.label)}</small></div>
         <button data-rec-del="${r.id}" title="شيلها">✕</button></div>`).join('')}
       <div class="fields">
         <div class="field" style="grid-column: 1 / -1"><label>على شنو</label><input id="recReason" placeholder="إيجار، مولدة، راتب عامل"></div>
         <div class="field"><label>المبلغ</label><input id="recAmount" inputmode="numeric" placeholder="250000"></div>
-        <div class="field"><label>يوم بالشهر</label><input id="recDay" inputmode="numeric" placeholder="1"></div>
+        <div class="field"><label>كل</label><select id="recEvery"><option value="month">شهر</option><option value="week">أسبوع</option></select></div>
+        <div class="field" id="recDayBox"><label>يوم بالشهر</label><input id="recDay" inputmode="numeric" placeholder="1"></div>
+        <div class="field" id="recDowBox" hidden><label>يوم الأسبوع</label><select id="recDow">
+          ${[5, 6, 0, 1, 2, 3, 4].map(d => `<option value="${d}">${WEEKDAYS_AR[d]}</option>`).join('')}</select></div>
       </div>
       <div class="actions" style="margin-top:8px"><button class="big secondary" id="recAdd">＋ ضيف صرفية ثابتة</button></div>
       <div class="fields" style="margin-top:12px">
@@ -1860,6 +1885,7 @@ async function loadRecurring() {
       </div>
       <div class="actions" style="margin-top:8px"><button class="big secondary" id="setSave">احفظ الإعدادات</button></div>
       <div id="recNote"></div>`;
+    $('recEvery').onchange = e => { const w = e.target.value === 'week'; $('recDayBox').hidden = w; $('recDowBox').hidden = !w; };
   } catch (e) { /* ignore */ }
 }
 
@@ -1883,6 +1909,10 @@ $('drawerBody').addEventListener('click', async e => {
     closeDrawer(); $('input').value = t.dataset.fillChat; $('input').focus(); return;
   }
   if (t.dataset.remind) { t.disabled = true; return remindFromAlerts(+t.dataset.remind); }
+  if (t.dataset.mineDone) { await post(`/owner-reminders/${t.dataset.mineDone}/done`, {}); return checkAlerts(false).then(renderAlerts); }
+  if (t.dataset.mineSnooze) { await post(`/owner-reminders/${t.dataset.mineSnooze}/snooze`, {minutes: 60}); return checkAlerts(false).then(renderAlerts); }
+  if (t.dataset.mineTomorrow) { await post(`/owner-reminders/${t.dataset.mineTomorrow}/snooze`, {tomorrow: true}); return checkAlerts(false).then(renderAlerts); }
+  if (t.dataset.mineDel) { await post('/owner-reminders/' + t.dataset.mineDel, null, 'DELETE'); return loadMine(); }
   if (t.dataset.claimOk || t.dataset.claimNo) {
     t.disabled = true;
     const id = t.dataset.claimOk || t.dataset.claimNo;
@@ -1904,8 +1934,12 @@ $('drawerBody').addEventListener('click', async e => {
   if (t.dataset.recDel) { await post('/recurring/' + t.dataset.recDel, null, 'DELETE'); return loadRecurring(); }
   if (t.id === 'recAdd') {
     const reason = $('recReason').value.trim(), amount = toInt($('recAmount').value), day = toInt($('recDay').value);
-    if (!reason || !amount || !day || day > 31) { $('recNote').innerHTML = '<p class="msg-bad">اكتب السبب والمبلغ ويوم من 1 لـ 31.</p>'; return; }
-    await post('/recurring', {reason, amount, day_of_month: day});
+    const weekly = $('recEvery').value === 'week';
+    if (!reason || !amount || (!weekly && (!day || day > 31))) {
+      $('recNote').innerHTML = `<p class="msg-bad">اكتب السبب والمبلغ${weekly ? '' : ' ويوم من 1 لـ 31'}.</p>`; return;
+    }
+    await post('/recurring', weekly ? {reason, amount, period: 'week', day_of_week: Number($('recDow').value)}
+                                    : {reason, amount, day_of_month: day});
     await loadRecurring(); return checkAlerts(false);
   }
   if (t.id === 'setSave') {

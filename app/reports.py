@@ -206,6 +206,15 @@ def cash_forecast(conn, days: int = 30, weeks: int = 4, today: date | None = Non
     horizon_end = today + timedelta(days=days)
     fixed, fixed_total = [], _zero()
     for r in db.list_recurring(conn):
+        if r["period"] == "week":  # every week's day in the window, but not one already recorded
+            d = today + timedelta(days=(r["day_of_week"] - today.weekday()) % 7)
+            while d < horizon_end:
+                if r.get("done_key") != d.isoformat():
+                    fixed.append({"reason": r["reason"], "amount": r["amount"], "currency": r["currency"],
+                                  "due": d.isoformat()})
+                    fixed_total[r["currency"]] += r["amount"]
+                d += timedelta(days=7)
+            continue
         d = today
         while d < horizon_end:  # every due date in the window, at most one per month
             last = calendar.monthrange(d.year, d.month)[1]

@@ -194,6 +194,17 @@ CREATE TABLE IF NOT EXISTS daily_reports (
   sent_via          TEXT,
   created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
+-- "ذكرني باچر أتصل بالمندوب": anything the owner asks to be reminded of, at its time.
+CREATE TABLE IF NOT EXISTS owner_reminders (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  text              TEXT NOT NULL,
+  due_at            TEXT NOT NULL,                  -- 'YYYY-MM-DD HH:MM:SS', shop time
+  repeat            TEXT NOT NULL DEFAULT 'none' CHECK (repeat IN ('none','daily','weekly','monthly')),
+  done              INTEGER NOT NULL DEFAULT 0,
+  notified          INTEGER NOT NULL DEFAULT 0,     -- sent to Telegram for this due_at
+  source_message    TEXT,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
 -- Fixed monthly expenses (rent, generator, salaries): on their day the owner is asked
 -- "record it?"; nothing is recorded without a yes. done_month: 'YYYY-MM' recorded or skipped.
 CREATE TABLE IF NOT EXISTS recurring_expenses (
@@ -245,6 +256,13 @@ def _migrate(conn) -> None:
     for col in ("ci_upto", "sa_upto"):
         if col not in dc_columns:
             conn.execute(f"ALTER TABLE drawer_counts ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+    # Weekly fixed expenses (a worker's weekly wage): period 'week', the weekday, and the date
+    # of the last occurrence recorded or skipped
+    rec_cols = {r["name"] for r in conn.execute("PRAGMA table_info(recurring_expenses)")}
+    for col, definition in (("period", "TEXT NOT NULL DEFAULT 'month'"), ("day_of_week", "INTEGER"),
+                            ("done_key", "TEXT")):
+        if col not in rec_cols:
+            conn.execute(f"ALTER TABLE recurring_expenses ADD COLUMN {col} {definition}")
     # Security fix: a simulated payment is only the customer's word until the owner confirms it
     if "claimed_at" not in {r["name"] for r in conn.execute("PRAGMA table_info(payment_links)")}:
         conn.execute("ALTER TABLE payment_links ADD COLUMN claimed_at TEXT")
@@ -853,22 +871,56 @@ def _now(now=None):
     return now or datetime.now()
 
 
-def add_recurring(conn, reason: str, amount: int, currency: str, day: int, from_drawer: bool = True) -> int:
+# Python's weekday numbers (Monday = 0), in the owner's words
+WEEKDAYS_AR = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
+
+
+def add_recurring(conn, reason: str, amount: int, currency: str, day: int, from_drawer: bool = True,
+                  period: str = "month", day_of_week: int | None = None) -> int:
+    """A fixed expense: every month on `day`, or (period='week') every week on `day_of_week`."""
     cur = conn.execute(
-        "INSERT INTO recurring_expenses (reason, amount, currency, day_of_month, from_drawer) VALUES (?, ?, ?, ?, ?)",
-        (reason.strip(), amount, currency, day, int(bool(from_drawer))))
+        """INSERT INTO recurring_expenses (reason, amount, currency, day_of_month, from_drawer, period, day_of_week)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (reason.strip(), amount, currency, day if period == "month" else 1, int(bool(from_drawer)), period,
+         day_of_week if period == "week" else None))
     conn.commit()
     return cur.lastrowid
 
 
+def _with_label(r: dict) -> dict:
+    r = dict(r)
+    if r.get("period") == "week":
+        r["label"] = f"كل {WEEKDAYS_AR[r['day_of_week']]}"
+        r["period_words"] = "هالأسبوع"
+    else:
+        r["period"] = "month"
+        r["label"] = f"يوم {r['day_of_month']} بالشهر"
+        r["period_words"] = "هالشهر"
+    return r
+
+
 def get_recurring(conn, rec_id: int):
     row = conn.execute("SELECT * FROM recurring_expenses WHERE id = ?", (rec_id,)).fetchone()
-    return dict(row) if row else None
+    return _with_label(row) if row else None
 
 
 def list_recurring(conn) -> list[dict]:
-    return [dict(r) for r in conn.execute(
-        "SELECT * FROM recurring_expenses WHERE active = 1 ORDER BY day_of_month, id")]
+    return [_with_label(r) for r in conn.execute(
+        "SELECT * FROM recurring_expenses WHERE active = 1 ORDER BY period, day_of_month, day_of_week, id")]
+
+
+def _week_due(day, dow: int):
+    """This week's occurrence: the latest `dow` on or before `day`."""
+    from datetime import timedelta
+    return day - timedelta(days=(day.weekday() - dow) % 7)
+
+
+def recurring_done_now(r: dict, now=None) -> bool:
+    """Recorded or skipped for the current month (or this week's occurrence)."""
+    now = _now(now)
+    if r.get("period") == "week":
+        return r.get("done_key") == _week_due(now.date(), r["day_of_week"]).isoformat()
+    return r.get("done_month") == now.strftime("%Y-%m")
 
 
 def remove_recurring(conn, rec_id: int) -> None:
@@ -877,7 +929,13 @@ def remove_recurring(conn, rec_id: int) -> None:
 
 
 def mark_recurring_done(conn, rec_id: int, now=None) -> None:
-    conn.execute("UPDATE recurring_expenses SET done_month = ? WHERE id = ?", (_now(now).strftime("%Y-%m"), rec_id))
+    now = _now(now)
+    r = get_recurring(conn, rec_id)
+    if r and r["period"] == "week":
+        conn.execute("UPDATE recurring_expenses SET done_key = ? WHERE id = ?",
+                     (_week_due(now.date(), r["day_of_week"]).isoformat(), rec_id))
+    else:
+        conn.execute("UPDATE recurring_expenses SET done_month = ? WHERE id = ?", (now.strftime("%Y-%m"), rec_id))
     conn.commit()
 
 
@@ -887,9 +945,83 @@ def recurring_due(conn, now=None) -> list[dict]:
     import calendar
     now = _now(now)
     last_day = calendar.monthrange(now.year, now.month)[1]
-    month = now.strftime("%Y-%m")
-    return [r for r in list_recurring(conn)
-            if min(r["day_of_month"], last_day) <= now.day and r["done_month"] != month]
+    out = []
+    for r in list_recurring(conn):
+        if recurring_done_now(r, now):
+            continue
+        if r["period"] == "week":
+            # its day has come this week (a weekly one added after this week's day waits for next week)
+            if _week_due(now.date(), r["day_of_week"]).isoformat() >= r["created_at"][:10]:
+                out.append(r)
+        elif min(r["day_of_month"], last_day) <= now.day:
+            out.append(r)
+    return out
+
+
+# ---------- "ذكرني": the owner's own reminders ----------
+
+def add_owner_reminder(conn, text: str, due_at, repeat: str = "none", source_message: str | None = None) -> int:
+    cur = conn.execute("INSERT INTO owner_reminders (text, due_at, repeat, source_message) VALUES (?, ?, ?, ?)",
+                       (text.strip(), due_at.strftime("%Y-%m-%d %H:%M:%S"), repeat, source_message))
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_owner_reminder(conn, rid: int):
+    row = conn.execute("SELECT * FROM owner_reminders WHERE id = ?", (rid,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_owner_reminders(conn) -> list[dict]:
+    return [dict(r) for r in conn.execute("SELECT * FROM owner_reminders WHERE done = 0 ORDER BY due_at, id")]
+
+
+def due_owner_reminders(conn, now=None) -> list[dict]:
+    at = _now(now).strftime("%Y-%m-%d %H:%M:%S")
+    return [dict(r) for r in conn.execute(
+        "SELECT * FROM owner_reminders WHERE done = 0 AND due_at <= ? ORDER BY due_at, id", (at,))]
+
+
+def _next_due(due, repeat: str, now):
+    """The next time a repeating reminder comes, after now."""
+    import calendar
+    from datetime import timedelta
+    while due <= now:
+        if repeat == "daily":
+            due += timedelta(days=1)
+        elif repeat == "weekly":
+            due += timedelta(days=7)
+        else:  # monthly, same day (or the month's last day)
+            y, m = (due.year + 1, 1) if due.month == 12 else (due.year, due.month + 1)
+            due = due.replace(year=y, month=m, day=min(due.day, calendar.monthrange(y, m)[1]))
+    return due
+
+
+def finish_owner_reminder(conn, rid: int, now=None) -> dict | None:
+    """Done: a one-off one is closed, a repeating one moves to its next time."""
+    from datetime import datetime
+    r = get_owner_reminder(conn, rid)
+    if not r or r["done"]:
+        return None
+    if r["repeat"] == "none":
+        conn.execute("UPDATE owner_reminders SET done = 1 WHERE id = ?", (rid,))
+    else:
+        nxt = _next_due(datetime.fromisoformat(r["due_at"]), r["repeat"], _now(now))
+        conn.execute("UPDATE owner_reminders SET due_at = ?, notified = 0 WHERE id = ?",
+                     (nxt.strftime("%Y-%m-%d %H:%M:%S"), rid))
+    conn.commit()
+    return get_owner_reminder(conn, rid)
+
+
+def snooze_owner_reminder(conn, rid: int, until) -> None:
+    conn.execute("UPDATE owner_reminders SET due_at = ?, notified = 0 WHERE id = ? AND done = 0",
+                 (until.strftime("%Y-%m-%d %H:%M:%S"), rid))
+    conn.commit()
+
+
+def cancel_owner_reminder(conn, rid: int) -> None:
+    conn.execute("UPDATE owner_reminders SET done = 1 WHERE id = ?", (rid,))
+    conn.commit()
 
 
 def overdue_debts(conn, days: int | None = None, now=None) -> list[dict]:
@@ -1032,6 +1164,7 @@ def alerts(conn, now=None) -> dict:
         "overdue_days": int(get_setting(conn, "overdue_days")),
         "paid_links": unannounced_payments(conn),
         "claimed_links": claimed_links(conn),
+        "my_reminders": due_owner_reminders(conn, now),
     }
 
 

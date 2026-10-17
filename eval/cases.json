@@ -1079,6 +1079,36 @@
           "set_customer_phone"
         ]
       }
+    },
+    {
+      "id": 53,
+      "message": "اجرة العامل 100 الف كل اسبوع يوم الخميس، ذكرني بيها",
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "add_recurring_expense"
+        ]
+      }
+    },
+    {
+      "id": 54,
+      "message": "ذكرني باچر الصبح اتصل بمندوب البيبسي",
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "remind_me"
+        ]
+      }
+    },
+    {
+      "id": 55,
+      "message": "شنو عندي تذكيرات؟",
+      "expect": {
+        "transactions": [],
+        "tools_called": [
+          "list_reminders"
+        ]
+      }
     }
   ]
 }

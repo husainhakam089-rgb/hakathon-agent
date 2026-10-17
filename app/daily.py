@@ -55,7 +55,8 @@ def build(conn, today: date | None = None) -> str:
         top = "، ".join(f"{o['name']} ({o['balance']['IQD']:,})" for o in overdue[:3])
         lines.append(f"⏰ {len(overdue)} متأخرين بالدين: {top}. التذكير جاهز بضغطة من التنبيهات.")
     tomorrow = datetime.combine(today + timedelta(days=1), datetime.min.time())
-    due = [r for r in db.recurring_due(conn, tomorrow) if r["day_of_month"] == tomorrow.day]
+    due = [r for r in db.recurring_due(conn, tomorrow)
+           if (r["day_of_week"] == tomorrow.weekday() if r["period"] == "week" else r["day_of_month"] == tomorrow.day)]
     for r in due:
         lines.append(f"📅 باچر موعد {r['reason']}: {r['amount']:,} {'دولار' if r['currency'] == 'USD' else 'دينار'}")
     return "\n".join(lines)
@@ -96,6 +97,20 @@ def ensure_today(conn, now: datetime | None = None, send=send_telegram) -> str |
     text = build(conn, now.date())
     save(conn, day, text, "telegram" if send(text) else None)
     return text
+
+
+def notify_due_reminders(conn, now: datetime | None = None, send=send_telegram) -> int:
+    """"ذكرني" reminders whose time came: to the owner's Telegram (once each), so they reach
+    him even with the program's page closed. Returns how many went."""
+    if not telegram_ready():
+        return 0
+    sent = 0
+    for r in db.due_owner_reminders(conn, now):
+        if not r["notified"] and send(f"⏰ تذكير: {r['text']}"):
+            conn.execute("UPDATE owner_reminders SET notified = 1 WHERE id = ?", (r["id"],))
+            sent += 1
+    conn.commit()
+    return sent
 
 
 def recent(conn, limit: int = 14) -> list[dict]:

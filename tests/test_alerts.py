@@ -194,3 +194,72 @@ def test_alerts_say_when_they_were_checked_and_if_the_drawer_was_counted(conn):
     now = datetime(2026, 10, 17, 10, 42)
     a = db.alerts(conn, now)
     assert a["checked_at"] == "10:42" and a["drawer_counted_today"] is False
+
+
+# ---------- weekly fixed expenses (a worker's weekly wage) ----------
+
+def test_weekly_wage_is_due_every_week_on_its_day(conn, tools):
+    thursday = 3
+    rid = db.add_recurring(conn, "أجرة العامل", 100000, "IQD", 1, period="week", day_of_week=thursday)
+    conn.execute("UPDATE recurring_expenses SET created_at = '2026-10-13 09:00:00'")  # a Tuesday
+    conn.commit()
+    wed, thu, sat = datetime(2026, 10, 14, 10), datetime(2026, 10, 15, 10), datetime(2026, 10, 17, 10)
+    assert db.recurring_due(conn, wed) == []  # its day has not come yet
+    assert [r["label"] for r in db.recurring_due(conn, thu)] == ["كل الخميس"]
+    db.mark_recurring_done(conn, rid, thu)
+    assert db.recurring_due(conn, sat) == []  # done for this week
+    next_thu = datetime(2026, 10, 22, 10)
+    assert [r["id"] for r in db.recurring_due(conn, next_thu)] == [rid]  # and back next week
+
+
+def test_a_weekly_one_added_after_its_day_waits_for_next_week(conn):
+    rid = db.add_recurring(conn, "أجرة العامل", 100000, "IQD", 1, period="week", day_of_week=3)
+    conn.execute("UPDATE recurring_expenses SET created_at = '2026-10-17 09:00:00'")  # a Saturday
+    conn.commit()
+    assert db.recurring_due(conn, datetime(2026, 10, 17, 10)) == []
+    assert [r["id"] for r in db.recurring_due(conn, datetime(2026, 10, 22, 10))] == [rid]
+
+
+def test_agent_adds_and_records_a_weekly_wage(conn, tools):
+    tools.source_message = "أجرة العامل 100 الف كل اسبوع يوم الخميس"
+    r = tools.execute("add_recurring_expense", {"reason": "أجرة العامل", "amount": 100000, "currency": "IQD",
+                                                "every": "week", "weekday": "thursday"})
+    assert r["ok"] and r["when"] == "كل الخميس"
+    assert tools.execute("add_recurring_expense", {"reason": "x", "amount": 5, "currency": "IQD", "every": "week"})["error"] \
+        == "weekday_required"
+    listed = tools.execute("list_recurring_expenses", {})["recurring"]
+    assert listed[0]["when"] == "كل الخميس" and listed[0]["period"] == "week"
+    rec = tools.execute("record_recurring_expense", {"recurring_id": r["recurring_id"]})
+    assert rec["ok"] and rec["amount"] == 100000
+    again = tools.execute("record_recurring_expense", {"recurring_id": r["recurring_id"]})
+    assert again["error"] == "already_done" and "هالأسبوع" in again["message"]
+
+
+def test_monthly_ones_still_work_the_same(conn):
+    db.add_recurring(conn, "إيجار", 250000, "IQD", 1)
+    r = db.list_recurring(conn)[0]
+    assert r["period"] == "month" and r["label"] == "يوم 1 بالشهر"
+
+
+def test_weekly_wage_in_the_forecast_and_screen(conn, monkeypatch):
+    from datetime import date
+
+    from fastapi.testclient import TestClient
+
+    from app import main as main_mod, reports
+    from app.agent import Agent
+
+    db.add_recurring(conn, "أجرة العامل", 100000, "IQD", 1, period="week", day_of_week=3)
+    for i in range(10):  # enough days of data for a forecast
+        cid = db.add_customer(conn, f"ز{i}")
+        db.add_transaction(conn, cid, "payment", 1000)
+        conn.execute("UPDATE transactions SET created_at = datetime('now','localtime', ?) WHERE customer_id = ?",
+                     (f"-{i + 1} days", cid))
+    conn.commit()
+    f = reports.cash_forecast(conn, days=28, today=date(2026, 10, 17))
+    assert [x["due"] for x in f["fixed_expenses"]] == ["2026-10-22", "2026-10-29", "2026-11-05", "2026-11-12"]
+    monkeypatch.setattr(main_mod, "agent", Agent(conn, llm=object(), log_path=None))
+    c = TestClient(main_mod.app)
+    assert c.post("/recurring", json={"reason": "عامل", "amount": 5000, "period": "week"}).status_code == 422
+    r = c.post("/recurring", json={"reason": "عامل", "amount": 5000, "period": "week", "day_of_week": 5}).json()
+    assert r["recurring"]["label"] == "كل السبت"

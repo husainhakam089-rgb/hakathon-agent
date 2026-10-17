@@ -403,23 +403,27 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "add_recurring_expense",
-        "description": "صرفية ثابتة كل شهر (إيجار، مولدة، راتب عامل): بيومها يذكّر صاحب المحل ويسأله أسجلها؟ "
-                       "بس لما صاحب المحل يطلبها: \"الإيجار 250 ألف كل شهر يوم 1\".",
+        "description": "صرفية ثابتة كل شهر أو كل أسبوع (إيجار، مولدة، أجرة عامل): بيومها يذكّر صاحب المحل ويسأله أسجلها؟ "
+                       "بس لما صاحب المحل يطلبها: \"الإيجار 250 ألف كل شهر يوم 1\" = every=month day_of_month=1. "
+                       "\"أجرة العامل 100 ألف كل أسبوع يوم الخميس\" = every=week weekday=thursday.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "reason": {"type": "string"},
                 "amount": {"type": "integer"},
                 "currency": {"type": "string", "enum": ["IQD", "USD"]},
-                "day_of_month": {"type": "integer", "description": "يوم الشهر 1-31"},
+                "every": {"type": "string", "enum": ["month", "week"], "description": "الافتراضي month"},
+                "day_of_month": {"type": "integer", "description": "للشهري: يوم الشهر 1-31"},
+                "weekday": {"type": "string", "enum": ["saturday", "sunday", "monday", "tuesday", "wednesday",
+                                                       "thursday", "friday"], "description": "للأسبوعي: اليوم"},
                 "from_drawer": {"type": "boolean", "description": "false إذا گال يدفعها مو من الجرار"},
             },
-            "required": ["reason", "amount", "currency", "day_of_month"],
+            "required": ["reason", "amount", "currency"],
         },
     },
     {
         "name": "list_recurring_expenses",
-        "description": "الصرفيات الثابتة الشهرية ويا أرقامها، وأي وحدة انسجلت هالشهر.",
+        "description": "الصرفيات الثابتة (الشهرية والأسبوعية) ويا أرقامها وموعدها، وأي وحدة انسجلت بموعدها الحالي.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
@@ -429,7 +433,8 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "record_recurring_expense",
-        "description": "يسجل صرفية ثابتة لهالشهر كسحب، بس بعد ما صاحب المحل يگول اي (\"اي سجل الإيجار\"). skip=true = مو هالشهر.",
+        "description": "يسجل صرفية ثابتة لموعدها الحالي (هالشهر أو هالأسبوع) كسحب، بس بعد ما صاحب المحل يگول اي "
+                       "(\"اي سجل الإيجار\"). skip=true = مو هالمرة.",
         "input_schema": {
             "type": "object",
             "properties": {"recurring_id": {"type": "integer"}, "skip": {"type": "boolean"}},
@@ -477,6 +482,38 @@ TOOL_SCHEMAS = [
             "required": ["customer_id"],
         },
     },
+    # ----- "ذكرني": anything the owner asks to be reminded of -----
+    {
+        "name": "remind_me",
+        "description": "يحفظ تذكير لصاحب المحل ويذكّره بوقته (بالبرنامج، وبالتلگرام إذا مربوط): \"ذكرني باچر الصبح أتصل بالمندوب\"، "
+                       "\"ذكرني بعد ساعتين أطلب غاز\"، \"كل جمعة ذكرني أرتب الرفوف\". الكود يحسب التاريخ: إنت بس تحدد day "
+                       "(today/tomorrow/after_tomorrow/يوم بالأسبوع/date) و time بصيغة 24 ساعة (9 الصبح = 09:00، 4 العصر = 16:00، "
+                       "9 بالليل = 21:00)، أو in_minutes / in_hours. بس لما صاحب المحل يطلب تذكير.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "شنو يذكّره، بكلامه: اتصل بالمندوب"},
+                "day": {"type": "string", "enum": ["today", "tomorrow", "after_tomorrow", "saturday", "sunday", "monday",
+                                                   "tuesday", "wednesday", "thursday", "friday", "date"]},
+                "date": {"type": "string", "description": "YYYY-MM-DD، بس إذا day=date"},
+                "time": {"type": "string", "description": "HH:MM. إذا ما گال ساعة خليه فارغ"},
+                "in_minutes": {"type": "integer"},
+                "in_hours": {"type": "integer"},
+                "repeat": {"type": "string", "enum": ["none", "daily", "weekly", "monthly"]},
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "list_reminders",
+        "description": "تذكيرات صاحب المحل الجاية (اللي طلبها بـ ذكرني) ويا أرقامها ووقتها.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "cancel_reminder",
+        "description": "يلغي تذكير برقمه (من list_reminders). \"لا تذكرني بالمندوب\".",
+        "input_schema": {"type": "object", "properties": {"reminder_id": {"type": "integer"}}, "required": ["reminder_id"]},
+    },
     # ----- memory (stage 12): things the owner teaches -----
     {
         "name": "remember",
@@ -523,7 +560,12 @@ _TEACHING = re.compile(r"تذكر|تذكّر|احفظ|احفض|خلي\s*(?:ب|ف
 
 
 # add_recurring_expense only when the owner's message says it repeats (stage 19).
-_MONTHLY = re.compile(r"كل\s*شهر|شهري|شهرية|بالشهر|ثابت|ثابتة|ذكرني|ذكّرني|تذكرني")
+_MONTHLY = re.compile(r"كل\s*شهر|شهري|شهرية|بالشهر|ثابت|ثابتة|ذكرني|ذكّرني|تذكرني|"
+                      r"كل\s*(?:اسبوع|أسبوع|إسبوع|سبت|احد|أحد|اثنين|ثلاثاء|اربعاء|أربعاء|خميس|جمعة|جمعه)|"
+                      r"اسبوعي|أسبوعي|اسبوعية|أسبوعية|بالاسبوع|بالأسبوع")
+# remind_me only when the owner asked to be reminded
+_REMIND = re.compile(r"ذكرني|ذكّرني|ذكرنى|نبهني|نبّهني|لا\s*تنساني|خلي\s*ب?بالك|ذكرهم|فكرني|فكّرني|تذكير|remind", re.I)
+_WEEKDAYS = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
 
 # add_item right away only when the owner's own message asks to add an item (stage 17).
 _ADD_ITEM = re.compile(r"ضيف|اضف|أضف|إضافة|اضافة|سجل\s+مادة|مادة\s+جديدة|صنف\s+جديد|نزل\s+مادة")
@@ -571,6 +613,21 @@ def _as_int(value):
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return None
+
+
+def _when_words(due, now) -> str:
+    """"باچر الخميس 9:00 الصبح": the time the way the owner says it (worked out by code)."""
+    from datetime import timedelta
+
+    from app.db import WEEKDAYS_AR
+    days = (due.date() - now.date()).days
+    day = {0: "اليوم", 1: "باچر", 2: "عقب باچر"}.get(days)
+    name = WEEKDAYS_AR[due.weekday()]
+    day = f"{day} {name}" if day else (f"{name} الجاي" if days < 7 else due.strftime("%Y-%m-%d"))
+    h = due.hour
+    part = "بالليل" if h < 5 or h >= 18 else "الصبح" if h < 12 else "الظهر" if h < 15 else "العصر"
+    twelve = h % 12 or 12
+    return f"{day} الساعة {twelve}:{due.minute:02d} {part}"
 
 
 class DebtTools:
@@ -1133,35 +1190,104 @@ class DebtTools:
             out["no_phone"] = "ما عندي رقمه: الواتساب راح يسألك لمن تبعثها، أو گلي رقمه وأحفظه"
         return out
 
+    # ----- "ذكرني" -----
+
+    def tool_remind_me(self, text, day=None, date=None, time=None, in_minutes=None, in_hours=None, repeat="none"):
+        from datetime import datetime, timedelta
+        text = " ".join(str(text or "").split())
+        if not text:
+            return _error("text_required", "بشنو أذكّرك؟")
+        if not _REMIND.search(self.source_message or ""):
+            return _error("ask_first", "صاحب المحل ما طلب تذكير. اسأله: 'أذكّرك بيها؟ إيمتى؟'")
+        repeat = repeat if repeat in ("none", "daily", "weekly", "monthly") else "none"
+        now = datetime.now().replace(second=0, microsecond=0)
+        mins, hrs = _as_int(in_minutes), _as_int(in_hours)
+        if mins or hrs:
+            due = now + timedelta(minutes=mins or 0, hours=hrs or 0)
+        else:
+            hh, mm = 9, 0  # no hour said: 9 in the morning
+            if time:
+                m = re.fullmatch(r"\s*(\d{1,2})(?::(\d{2}))?\s*", str(time))
+                if not m or int(m.group(1)) > 23 or int(m.group(2) or 0) > 59:
+                    return _error("invalid_time", "الساعة لازم تكون مثل 09:00 أو 21:30")
+                hh, mm = int(m.group(1)), int(m.group(2) or 0)
+            elif day in (None, "today"):
+                return _error("time_required", "اليوم بأي ساعة أذكّرك؟")
+            if day in (None, "today"):
+                d = now.date()
+            elif day == "tomorrow":
+                d = now.date() + timedelta(days=1)
+            elif day == "after_tomorrow":
+                d = now.date() + timedelta(days=2)
+            elif day in _WEEKDAYS:
+                d = now.date() + timedelta(days=(_WEEKDAYS[day] - now.weekday()) % 7)
+                if datetime.combine(d, datetime.min.time()).replace(hour=hh, minute=mm) <= now:
+                    d += timedelta(days=7)  # "الخميس" said on Thursday evening: next Thursday
+            elif day == "date":
+                try:
+                    d = datetime.strptime(str(date), "%Y-%m-%d").date()
+                except ValueError:
+                    return _error("invalid_date", "التاريخ لازم يكون مثل 2026-10-22")
+            else:
+                return _error("invalid_day", "إيمتى أذكّرك؟ (اليوم، باچر، الخميس، بعد ساعة…)")
+            due = datetime.combine(d, datetime.min.time()).replace(hour=hh, minute=mm)
+        if due <= now:
+            return _error("time_passed", f"هالوقت فات ({due:%Y-%m-%d %H:%M}). إيمتى أذكّرك؟")
+        rid = db.add_owner_reminder(self.conn, text, due, repeat, self.source_message)
+        return {"ok": True, "reminder_id": rid, "text": text, "due_at": due.strftime("%Y-%m-%d %H:%M"),
+                "when_words": _when_words(due, now), "repeat": repeat,
+                "meaning": "انحفظ. بوقته يطلعله تنبيه بالبرنامج (وبالتلگرام إذا مربوط). گوله الوقت بـ when_words"}
+
+    def tool_list_reminders(self):
+        from datetime import datetime
+        now = datetime.now()
+        rows = [{"id": r["id"], "text": r["text"], "due_at": r["due_at"][:16], "repeat": r["repeat"],
+                 "when_words": _when_words(datetime.fromisoformat(r["due_at"]), now)}
+                for r in db.list_owner_reminders(self.conn)]
+        return {"ok": True, "count": len(rows), "reminders": rows}
+
+    def tool_cancel_reminder(self, reminder_id):
+        r = db.get_owner_reminder(self.conn, _as_int(reminder_id)) if _as_int(reminder_id) is not None else None
+        if not r or r["done"]:
+            return _error("reminder_not_found", "ما لگيت هالتذكير. شوف list_reminders.")
+        db.cancel_owner_reminder(self.conn, r["id"])
+        return {"ok": True, "cancelled": {"id": r["id"], "text": r["text"]}}
+
     # ----- reminders and alerts -----
 
     def tool_get_alerts(self):
         a = db.alerts(self.conn)
         return {"ok": True, **a, "overdue": a["overdue"][:10], "overdue_count": len(a["overdue"])}
 
-    def tool_add_recurring_expense(self, reason, amount, currency="IQD", day_of_month=1, from_drawer=True):
+    def tool_add_recurring_expense(self, reason, amount, currency="IQD", day_of_month=1, from_drawer=True,
+                                   every="month", weekday=None):
         reason = " ".join(str(reason or "").split())
-        value, day = _as_int(amount), _as_int(day_of_month)
+        value, day = _as_int(amount), _as_int(day_of_month if day_of_month is not None else 1)
+        every = "week" if str(every or "").lower() == "week" else "month"
+        dow = _WEEKDAYS.get(str(weekday or "").lower())
         if not reason:
             return _error("reason_required", "على شنو هالصرفية؟")
         if value is None or value <= 0:
             return _error("invalid_amount", "المبلغ لازم يكون رقم صحيح أكبر من صفر")
-        if day is None or not 1 <= day <= 31:
+        if every == "week" and dow is None:
+            return _error("weekday_required", "أي يوم بالأسبوع؟ (مثلًا الخميس)")
+        if every == "month" and (day is None or not 1 <= day <= 31):
             return _error("invalid_day", "يوم الشهر لازم يكون من 1 لـ 31")
         currency = (currency or "IQD").upper()
         if currency not in db.CURRENCIES:
             return _error("invalid_currency", "العملة لازم تكون IQD أو USD")
         if not _MONTHLY.search(self.source_message or ""):
             return _error("ask_first", "صاحب المحل ما طلب صرفية ثابتة. اسأله: 'أخليها صرفية ثابتة كل شهر وأذكّرك بيها؟'")
-        rec_id = db.add_recurring(self.conn, reason, value, currency, day, from_drawer is not False)
+        rec_id = db.add_recurring(self.conn, reason, value, currency, day, from_drawer is not False,
+                                  period=every, day_of_week=dow)
+        rec = db.get_recurring(self.conn, rec_id)
         return {"ok": True, "recurring_id": rec_id, "reason": reason, "amount": value, "currency": currency,
-                "day_of_month": day, "due_now": any(r["id"] == rec_id for r in db.recurring_due(self.conn))}
+                "every": every, "when": rec["label"],
+                "due_now": any(r["id"] == rec_id for r in db.recurring_due(self.conn))}
 
     def tool_list_recurring_expenses(self):
-        from datetime import datetime
-        month = datetime.now().strftime("%Y-%m")
-        rows = [{**{k: r[k] for k in ("id", "reason", "amount", "currency", "day_of_month")},
-                 "done_this_month": r["done_month"] == month} for r in db.list_recurring(self.conn)]
+        rows = [{**{k: r[k] for k in ("id", "reason", "amount", "currency", "period")}, "when": r["label"],
+                 "done_now": db.recurring_done_now(r)} for r in db.list_recurring(self.conn)]
         return {"ok": True, "count": len(rows), "recurring": rows}
 
     def tool_remove_recurring_expense(self, recurring_id):
@@ -1176,8 +1302,8 @@ class DebtTools:
         rec = db.get_recurring(self.conn, _as_int(recurring_id)) if _as_int(recurring_id) is not None else None
         if not rec or not rec["active"]:
             return _error("recurring_not_found", "ما لگيت هالصرفية. شوف list_recurring_expenses.")
-        if rec["done_month"] == datetime.now().strftime("%Y-%m"):
-            return _error("already_done", f"{rec['reason']} انسجلت (أو انتركت) هالشهر من قبل.")
+        if db.recurring_done_now(rec, datetime.now()):
+            return _error("already_done", f"{rec['reason']} انسجلت (أو انتركت) {rec['period_words']} من قبل.")
         if skip:
             db.mark_recurring_done(self.conn, rec["id"])
             return {"ok": True, "skipped": True, "reason": rec["reason"]}

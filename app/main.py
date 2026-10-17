@@ -27,7 +27,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "20"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "21"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -87,6 +87,7 @@ def _daily_report(stop: threading.Event) -> None:
         try:
             with agent.lock:
                 made = daily.ensure_today(agent.conn)
+                daily.notify_due_reminders(agent.conn)
             if made:
                 print("انكتب تقرير اليوم" + (" وانبعث بالتلگرام" if daily.telegram_ready() else ""))
         except Exception as e:
@@ -433,7 +434,9 @@ class RecurringRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=60)
     amount: int = Field(gt=0, le=1_000_000_000)
     currency: Literal["IQD", "USD"] = "IQD"
-    day_of_month: int = Field(ge=1, le=31)
+    day_of_month: int = Field(default=1, ge=1, le=31)
+    period: Literal["month", "week"] = "month"
+    day_of_week: int | None = Field(default=None, ge=0, le=6)  # Monday = 0
     from_drawer: bool = True
 
 
@@ -473,8 +476,10 @@ def recurring():
 @app.post("/recurring")
 def add_recurring(req: RecurringRequest):
     with agent.lock:
+        if req.period == "week" and req.day_of_week is None:
+            return _error(422, "اختار يوم الأسبوع.")
         rid = db.add_recurring(agent.conn, " ".join(req.reason.split()), req.amount, req.currency, req.day_of_month,
-                               req.from_drawer)
+                               req.from_drawer, period=req.period, day_of_week=req.day_of_week)
         return {"ok": True, "recurring": db.get_recurring(agent.conn, rid)}
 
 
@@ -752,6 +757,47 @@ def pay_callback(token: str, request: Request):
             _notify_paid(db.get_customer(agent.conn, link["customer_id"])["name"], link["amount"])
             return _pay_page(token)
         return _pay_page(token, "الدفع ما تم. تگدر تعيد.")
+
+
+# ---------- "ذكرني": the owner's own reminders ----------
+
+class SnoozeRequest(BaseModel):
+    minutes: int | None = Field(default=None, ge=1, le=7 * 24 * 60)
+    tomorrow: bool = False
+
+
+@app.get("/owner-reminders")
+def owner_reminders():
+    with agent.lock:
+        return {"reminders": db.list_owner_reminders(agent.conn)}
+
+
+@app.post("/owner-reminders/{rid}/done")
+def owner_reminder_done(rid: int):
+    with agent.lock:
+        r = db.finish_owner_reminder(agent.conn, rid)
+    if not r:
+        return _error(404, "ما لگيت هالتذكير.")
+    return {"ok": True, "reminder": r}
+
+
+@app.post("/owner-reminders/{rid}/snooze")
+def owner_reminder_snooze(rid: int, req: SnoozeRequest):
+    from datetime import timedelta
+    now = datetime.now().replace(second=0, microsecond=0)
+    until = (now + timedelta(days=1)).replace(hour=9, minute=0) if req.tomorrow else now + timedelta(minutes=req.minutes or 60)
+    with agent.lock:
+        if not db.get_owner_reminder(agent.conn, rid):
+            return _error(404, "ما لگيت هالتذكير.")
+        db.snooze_owner_reminder(agent.conn, rid, until)
+    return {"ok": True, "due_at": until.strftime("%Y-%m-%d %H:%M")}
+
+
+@app.delete("/owner-reminders/{rid}")
+def owner_reminder_cancel(rid: int):
+    with agent.lock:
+        db.cancel_owner_reminder(agent.conn, rid)
+    return {"ok": True}
 
 
 # ---------- backups and Excel export ----------
