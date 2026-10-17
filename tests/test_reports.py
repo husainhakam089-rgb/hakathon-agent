@@ -180,3 +180,13 @@ def test_money_taken_home_is_not_an_expense(conn, shop):
     assert p["net_profit"]["IQD"] == 10000
     assert [e["reason"] for e in p["expenses_by_reason"]] == ["أكل"]
     assert not reports.is_owner_draw(db.reason_key("مولدة")) and not reports.is_owner_draw(db.reason_key("بيتزا"))
+
+
+def test_week_has_each_days_sales_for_the_chart(conn):
+    from datetime import date
+
+    from app import reports
+
+    w = reports.week_summary(conn, today=date(2026, 10, 17))
+    assert [d["date"] for d in w["daily_sales"]] == [f"2026-10-{d}" for d in range(11, 18)]
+    assert all(d["sales"] == 0 for d in w["daily_sales"])

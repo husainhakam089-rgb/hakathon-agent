@@ -571,9 +571,58 @@ html.light .alert-card .row button { background: #fff; }
   #send { padding: 0 18px; min-height: 44px; }
   .drawer { border-radius: 0; }
 }
+
+/* drawn icons (stage 25b) */
+svg.i { width: 18px; height: 18px; flex-shrink: 0; vertical-align: -3px; }
+.menu .ic svg.i { width: 17px; height: 17px; color: var(--accent-text); }
+#menuBtn svg.i { width: 20px; height: 20px; vertical-align: -4px; }
+form .attach-btn svg.i, form .mic-btn svg.i { width: 21px; height: 21px; }
+form .mic-btn.on { color: var(--bad); }
+.icon-btn svg.i { width: 18px; height: 18px; }
+#drawerTitle { display: inline-flex; align-items: center; gap: 8px; }
+#drawerTitle svg.i { color: var(--accent-text); width: 20px; height: 20px; }
+.alert-card > b { display: flex; align-items: center; gap: 8px; }
+.alert-card > b svg.i { color: var(--accent-text); }
+h3.cash-h { display: flex; align-items: center; gap: 8px; }
+h3.cash-h svg.i { color: var(--accent-text); }
+/* the agent's note in the chat: one card, a line and a button for each thing */
+.alert-bubble { align-self: flex-end; width: min(560px, 92%); background: var(--surface-2); border: 1px solid var(--accent-border);
+  border-radius: 20px; border-bottom-left-radius: 6px; padding: 6px; box-shadow: var(--shadow); }
+html.light .alert-bubble { background: #fffaf2; }
+.alert-bubble.good { border-color: rgba(52,211,153,0.35); }
+.ab-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 6px; color: var(--accent-text); }
+.alert-bubble.good .ab-head { color: var(--good); }
+.ab-head b { font-size: 14px; } .ab-head small { margin-inline-start: auto; color: var(--faint); font-size: 11px; }
+.ab-row { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: var(--card); margin-top: 4px; flex-wrap: wrap;
+  transition: opacity .2s; }
+.ab-ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); flex-shrink: 0; }
+.alert-bubble.good .ab-ic { background: rgba(52,211,153,0.12); color: var(--good); }
+.ab-txt { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 2px; }
+.ab-txt b { font-size: 14px; font-weight: 600; } .ab-txt small { color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.ab-act { display: flex; gap: 6px; flex-wrap: wrap; }
+.ab-btn { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 10px; padding: 7px 12px;
+  font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.ab-btn:hover { background: var(--card-strong); }
+.ab-btn.yes { background: var(--grad); color: #fff; border: none; font-weight: 700; }
+.ab-btn:disabled { opacity: .55; cursor: default; }
+.ab-row.done { opacity: .55; }
+.ab-row.done .ab-act { display: none; }
+.ab-row.done .ab-txt b::after { content: "  ✓"; color: var(--good); }
+/* the week's sales chart */
+.week-chart { width: 100%; height: auto; aspect-ratio: 320 / 130; flex-shrink: 0; display: block; margin: 4px 0 10px; }
+.week-chart .bar { fill: var(--card-strong); } .week-chart .bar.on { fill: url(#barGrad); }
+.week-chart .axis { stroke: var(--border); }
+.week-chart text { font-family: inherit; text-anchor: middle; }
+.week-chart .day { font-size: 10px; fill: var(--muted); } .week-chart .val { font-size: 10px; font-weight: 700; fill: var(--accent-text); }
+@media (max-width: 860px) { .alert-bubble { width: 100%; } .ab-act { width: 100%; } .ab-btn { flex: 1; } }
+
+/* the dropdown lists: the browser draws them white, the text was white too, so the names were hidden */
+:root { color-scheme: dark; } html.light { color-scheme: light; }
+select option, select optgroup { background: var(--surface-2); color: var(--text); }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol><symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol><symbol id="i-cart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></symbol><symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></symbol><symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></symbol><symbol id="i-history" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol><symbol id="i-bulb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></symbol><symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol><symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol><symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol><symbol id="i-phoneoff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="12" height="20" x="6" y="2" rx="2"/><path d="M12 18h.01"/><path d="m3 3 18 18"/></symbol><symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></symbol><symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol><symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol><symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></symbol><symbol id="i-clip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol><symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></symbol><symbol id="i-stop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="12" height="12" x="6" y="6" rx="2" fill="currentColor"/></symbol><symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></symbol><symbol id="i-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol><symbol id="i-alarm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6M22 6l-3-3"/></symbol><symbol id="i-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></symbol><symbol id="i-receipt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8H8M16 12H8M13 16H8"/></symbol><symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol><symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol><symbol id="i-coins" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/></symbol><symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></symbol><symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 5L2 7"/></symbol></svg>
 <div class="app">
   <header class="glass">
     <div class="logo">م</div>
@@ -584,21 +633,21 @@ html.light .alert-card .row button { background: #fff; }
     </div>
     <div class="spacer"></div>
     <div class="menu-wrap">
-      <button class="icon-btn" id="menuBtn" title="القائمة" aria-haspopup="true" aria-expanded="false">☰<span class="lbl"> القائمة</span><i class="dot"></i></button>
+      <button class="icon-btn" id="menuBtn" title="القائمة" aria-haspopup="true" aria-expanded="false"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg><span class="lbl"> القائمة</span><i class="dot"></i></button>
       <div class="menu" id="menu" role="menu">
-        <button role="menuitem" id="alertsBtn"><span class="ic">🔔</span><span>التنبيهات</span><b class="badge" id="alertsCount"></b></button>
-        <button role="menuitem" id="reportsBtn"><span class="ic">📊</span>التقارير والربح</button>
-        <button role="menuitem" id="saleBtn"><span class="ic">🛒</span>شاشة البيع</button>
-        <button role="menuitem" id="scanBtn"><span class="ic">📷</span>سكان الدفتر</button>
-        <button role="menuitem" id="ledgerBtn" aria-expanded="false"><span class="ic">📒</span><span id="ledgerLbl">افتح الحسابات</span><i class="dot"></i></button>
-        <button role="menuitem" id="sessionsBtn"><span class="ic">🗂</span>المحادثات القديمة</button>
-        <button role="menuitem" id="memoryBtn"><span class="ic">🧠</span>ذاكرة الوكيل</button>
-        <button role="menuitem" id="backupBtn"><span class="ic">💾</span>نسخة احتياطية و Excel</button>
-        <button role="menuitem" id="passwordBtn"><span class="ic">🔒</span>كلمة السر</button>
-        <button role="menuitem" id="logoutBtn" hidden><span class="ic">🚪</span>خروج</button>
-        <button role="menuitem" id="logoutAllBtn" hidden><span class="ic">📵</span>خروج من كل الأجهزة</button>
-        <button role="menuitem" id="newChat"><span class="ic">＋</span>محادثة جديدة</button>
-        <button role="menuitem" id="theme"><span class="ic" id="themeIcon">☀︎</span><span id="themeLbl">الوضع الفاتح</span></button>
+        <button role="menuitem" id="alertsBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-bell"/></svg></span><span>التنبيهات</span><b class="badge" id="alertsCount"></b></button>
+        <button role="menuitem" id="reportsBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-chart"/></svg></span>التقارير والربح</button>
+        <button role="menuitem" id="saleBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-cart"/></svg></span>شاشة البيع</button>
+        <button role="menuitem" id="scanBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-camera"/></svg></span>سكان الدفتر</button>
+        <button role="menuitem" id="ledgerBtn" aria-expanded="false"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-book"/></svg></span><span id="ledgerLbl">افتح الحسابات</span><i class="dot"></i></button>
+        <button role="menuitem" id="sessionsBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-history"/></svg></span>المحادثات القديمة</button>
+        <button role="menuitem" id="memoryBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-bulb"/></svg></span>ذاكرة الوكيل</button>
+        <button role="menuitem" id="backupBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-download"/></svg></span>نسخة احتياطية و Excel</button>
+        <button role="menuitem" id="passwordBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg></span>كلمة السر</button>
+        <button role="menuitem" id="logoutBtn" hidden><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-logout"/></svg></span>خروج</button>
+        <button role="menuitem" id="logoutAllBtn" hidden><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-phoneoff"/></svg></span>خروج من كل الأجهزة</button>
+        <button role="menuitem" id="newChat"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></span>محادثة جديدة</button>
+        <button role="menuitem" id="theme"><span class="ic" id="themeIcon"><svg class="i" aria-hidden="true"><use href="#i-sun"/></svg></span><span id="themeLbl">الوضع الفاتح</span></button>
       </div>
     </div>
   </header>
@@ -634,8 +683,8 @@ html.light .alert-card .row button { background: #fff; }
         <!-- No capture attribute: on phones it would open the camera only; without it
              the phone offers camera or gallery. -->
         <input type="file" id="file" accept="image/*,application/pdf,.csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
-        <button type="button" class="attach-btn" id="attach" title="صوّر صفحة من الدفتر، أو اختار صورة / PDF / Excel / CSV">📎</button>
-        <button type="button" class="mic-btn" id="mic" title="احچي (دوس مرة تبدي، ومرة توگف)">🎤</button>
+        <button type="button" class="attach-btn" id="attach" title="صوّر صفحة من الدفتر، أو اختار صورة / PDF / Excel / CSV"><svg class="i" aria-hidden="true"><use href="#i-clip"/></svg></button>
+        <button type="button" class="mic-btn" id="mic" title="احچي (دوس مرة تبدي، ومرة توگف)"><svg class="i" aria-hidden="true"><use href="#i-mic"/></svg></button>
         <div class="input-wrap"><div class="ghost" id="ghost" aria-hidden="true"></div>
           <input id="input" placeholder="اكتب رسالتك هنا..." maxlength="2000"></div>
         <button id="send" type="submit">إرسال</button>
@@ -644,7 +693,7 @@ html.light .alert-card .row button { background: #fff; }
 
     <section class="debtors glass">
       <div class="ledger-top"><b>📒 الحسابات</b><div class="spacer"></div>
-        <button class="icon-btn" id="ledgerClose" title="سد الحسابات">✕</button></div>
+        <button class="icon-btn" id="ledgerClose" title="سد الحسابات"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></div>
       <div class="section-title ledger-head">
         <div class="tabs" id="tabs">
           <button class="tab on" data-tab="customer" title="ديون إلك على الزبائن">الزبائن (إلي)</button>
@@ -674,7 +723,7 @@ html.light .alert-card .row button { background: #fff; }
 <div class="drawer-bg" id="drawerBg"></div>
 <aside class="drawer" id="drawer" aria-hidden="true">
   <header><h1 id="drawerTitle" style="font-size:16px"></h1><div class="spacer"></div>
-    <button class="icon-btn" id="drawerClose" title="سد">✕</button></header>
+    <button class="icon-btn" id="drawerClose" title="سد"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></header>
   <div class="body" id="drawerBody"></div>
 </aside>
 
@@ -699,7 +748,7 @@ const newId = () => (crypto.randomUUID ? crypto.randomUUID() : 'id_' + Date.now(
 /* ---------- theme (same idea as the engineering office app) ---------- */
 function applyTheme(mode) {
   document.documentElement.classList.toggle('light', mode === 'light');
-  $('themeIcon').textContent = mode === 'light' ? '☾' : '☀︎';
+  $('themeIcon').innerHTML = icon(mode === 'light' ? 'moon' : 'sun');
   $('themeLbl').textContent = mode === 'light' ? 'الوضع الغامق' : 'الوضع الفاتح';
   store.set('debt_theme', mode);
 }
@@ -960,7 +1009,7 @@ function startVoice() {
     recording = false;
     clearTimeout(voiceTimer);
     $('mic').classList.remove('on');
-    $('mic').textContent = '🎤';
+    $('mic').innerHTML = icon('mic');
     $('input').placeholder = 'اكتب رسالتك هنا...';
     if (heard) $('input').focus();
     else if (!failed && r === rec) {
@@ -977,7 +1026,7 @@ function startVoice() {
   }
   recording = true;
   $('mic').classList.add('on');
-  $('mic').textContent = '⏹';
+  $('mic').innerHTML = icon('stop');
   $('input').placeholder = 'دا أسمعك... (30 ثانية بالأكثر)';
   voiceTimer = setTimeout(stopVoice, VOICE_MAX_MS);
 }
@@ -1694,9 +1743,12 @@ $('newChat').onclick = () => {
 
 /* ---------- side panel ---------- */
 let drawerKind = null;  // which list is open: 'memory' | 'sessions'
+const DRAWER_ICONS = {alerts: 'bell', reports: 'chart', sale: 'cart', scan: 'camera', sessions: 'history', memory: 'bulb',
+  backups: 'download', password: 'lock', cashday: 'receipt'};
 function openDrawer(kind, title) {
   drawerKind = kind;
-  $('drawerTitle').textContent = title;
+  const words = String(title).replace(/^[^\p{L}\p{N}]+/u, '');  // the old emoji in front, if any
+  $('drawerTitle').innerHTML = (DRAWER_ICONS[kind] ? icon(DRAWER_ICONS[kind]) : '') + esc(words);
   $('drawer').classList.add('show');
   $('drawerBg').classList.add('show');
   $('drawer').setAttribute('aria-hidden', 'false');
@@ -1992,6 +2044,8 @@ function alertCount(a) {
 }
 
 // 21 -> "9 بالليل": how the owner says the hour
+function icon(name) { return `<svg class="i" aria-hidden="true"><use href="#i-${name}"/></svg>`; }
+
 function hourWords(h) {
   h = Number(h);
   const twelve = h % 12 === 0 ? 12 : h % 12;
@@ -2027,51 +2081,121 @@ function speakAlerts(a) {
   const said = JSON.parse(store.get('debt_alerts_said') || '{}');
   const lines = [];
   const key = (k) => { if (said[k] === today) return false; said[k] = today; return true; };
-  if (a.drawer_not_counted && key('drawer')) lines.push(`صارت الساعة ${hourWords(a.drawer_hour)} وما عديت الجرار اليوم. لما تعده گلي: سديت، بالجرار كذا.`);
-  for (const r of (a.my_reminders || [])) if (key('mine' + r.id + r.due_at)) lines.push(`⏰ ذكّرتني: ${r.text}`);
-  for (const r of a.recurring_due) if (key('rec' + r.id)) lines.push(`موعد ${r.reason} (${fmt(r.amount)} ${r.currency === 'USD' ? 'دولار' : 'دينار'}) إجه وما انسجل. أسجله؟ من ☰ ← 🔔 التنبيهات.`);
+  const money = (n, c) => `${fmt(n)} ${c === 'USD' ? 'دولار' : 'دينار'}`;
+  if (a.drawer_not_counted && key('drawer')) lines.push({icon: 'receipt', title: 'ما عديت الجرار اليوم',
+    sub: `صارت الساعة ${hourWords(a.drawer_hour)}. عده وگلي: سديت، بالجرار كذا.`,
+    actions: [{label: 'اكتبها', yes: true, attr: 'data-fill-chat="سديت، بالجرار "'}]});
+  for (const r of (a.my_reminders || [])) if (key('mine' + r.id + r.due_at)) lines.push({icon: 'alarm', title: esc(r.text),
+    sub: 'طلبت أذكّرك بيها', actions: [{label: 'خلصت', yes: true, attr: `data-mine-done="${r.id}"`},
+                                        {label: 'بعد ساعة', attr: `data-mine-snooze="${r.id}"`}]});
+  for (const r of a.recurring_due) if (key('rec' + r.id)) lines.push({icon: 'calendar',
+    title: `موعد ${esc(r.reason)}: ${money(r.amount, r.currency)}`, sub: `صرفية ثابتة ${esc(r.label || '')}، ما انسجلت ${r.period_words || ''}.`,
+    actions: [{label: 'سجّلها', yes: true, attr: `data-rec="${r.id}"`}, {label: `مو ${r.period_words || 'هالشهر'}`, attr: `data-rec-skip="${r.id}"`}]});
   if (a.overdue.length && key('overdue')) {
-    const top = a.overdue.slice(0, 3).map(o => `${o.name} (${fmt(o.balance.IQD)}، ${o.days} يوم)`).join('، ');
-    lines.push(`${a.overdue.length === 1 ? 'زبون' : a.overdue.length + ' زباين'} ما سددوا من أكثر من ${a.overdue_days} يوم: ${top}. أكتبلهم تذكير بزين كاش؟ من ☰ ← 🔔 دوس ✉️ ذكّره.`);
+    const top = a.overdue.slice(0, 3).map(o => `${esc(o.name)} (${fmt(o.balance.IQD)}، ${o.days} يوم)`).join('، ');
+    lines.push({icon: 'users', title: `${a.overdue.length === 1 ? 'زبون' : a.overdue.length + ' زباين'} ما سددوا من أكثر من ${a.overdue_days} يوم`,
+      sub: top + '. أكتبلهم تذكير بزين كاش؟',
+      actions: a.overdue.filter(o => o.balance.IQD > 0).slice(0, 2).map(o => ({label: `ذكّر ${esc(o.name)}`, attr: `data-remind="${o.id}"`}))
+        .concat(a.overdue.length > 2 ? [{label: 'الكل', attr: 'data-open-alerts'}] : [])});
   }
   // paid from a Zain Cash link: said every time (once per payment), then marked as told
-  for (const c of (a.claimed_links || [])) if (key('claim' + c.id))
-    lines.push(`💳 ${c.name} يگول دفع ${fmt(c.amount)} دينار بزين كاش (تجربة). إذا وصلتك، أكدها من ☰ ← 🔔 وينسجل التسديد.`);
+  for (const c of (a.claimed_links || [])) if (key('claim' + c.id)) lines.push({icon: 'card',
+    title: `${esc(c.name)} يگول دفع ${money(c.amount)} بزين كاش`, sub: 'وضع تجربة: إذا وصلتك، أكدها وينسجل التسديد.',
+    actions: [{label: 'وصلت، سجّل', yes: true, attr: `data-claim-ok="${c.id}"`}, {label: 'ما وصلت', attr: `data-claim-no="${c.id}"`}]});
   const paid = a.paid_links || [];
-  for (const p of paid) lines.push(`💳 ${p.name} دفع ${fmt(p.amount)} دينار بزين كاش، وانسجل تسديد بحسابه وحده (ما دخل الجرار).`);
+  for (const p of paid) lines.push({icon: 'card', title: `${esc(p.name)} دفع ${money(p.amount)} بزين كاش`,
+    sub: 'انسجل تسديد بحسابه وحده (ما دخل الجرار).'});
   if (paid.length) {
     fetch('/alerts/seen-payments', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: paid.map(p => p.id)})})
       .then(() => { loadDebtors(true, 'customer'); checkAlerts(false); });
   }
-  if (!lines.length && !alertCount(a) && key('ok')) lines.push(allGood(a));
+  let good = false;
+  if (!lines.length && !alertCount(a) && key('ok')) {
+    good = true;
+    lines.push({icon: 'check', title: 'كلشي تمام', sub: allGood(a).replace(/^✓ فحصت الدفتر وحدي: كلشي تمام\. /, '')});
+  }
   if (!lines.length) return;
   store.set('debt_alerts_said', JSON.stringify(said));
   $('welcome')?.remove();
-  addAgent((lines[0].startsWith('✓') ? '' : '🔔 ') + lines.join('\n'), []);
-  const bubbles = document.querySelectorAll('.msg.agent');
-  bubbles[bubbles.length - 1]?.classList.add('proactive');
+  alertCard(lines, good);
 }
+
+// What an alert's button does: the same in the alerts panel and in the card the agent puts in the chat.
+// Returns true when it was one of these buttons.
+async function alertAction(t) {
+  const d = t.dataset || {};
+  const post = (url, body) => fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}).then(r => r.json());
+  if (d.fillChat !== undefined) { closeDrawer(); $('input').value = d.fillChat; $('input').focus(); return true; }
+  if (d.remind) { t.disabled = true; await remindFromAlerts(+d.remind); return true; }
+  if (d.mineDone) { await post(`/owner-reminders/${d.mineDone}/done`, {}); await checkAlerts(false); return true; }
+  if (d.mineSnooze) { await post(`/owner-reminders/${d.mineSnooze}/snooze`, {minutes: 60}); await checkAlerts(false); return true; }
+  if (d.mineTomorrow) { await post(`/owner-reminders/${d.mineTomorrow}/snooze`, {tomorrow: true}); await checkAlerts(false); return true; }
+  if (d.claimOk || d.claimNo) {
+    t.disabled = true;
+    const data = await post(`/payment-links/${d.claimOk || d.claimNo}/${d.claimOk ? 'confirm' : 'reject'}`, {});
+    if (data.ok && d.claimOk) {
+      $('welcome')?.remove();
+      addAgent(`سجلت تسديد من ${data.customer_name} ${fmt(data.amount)} دينار بزين كاش (ما دخل الجرار). صار رصيده ${fmt(data.balance.IQD)}.`, []);
+      loadDebtors(true, 'customer');
+    }
+    await checkAlerts(false); return true;
+  }
+  if (d.rec || d.recSkip) {
+    t.disabled = true;
+    const data = await post(`/recurring/${d.rec || d.recSkip}/record`, {session_id: sessionId, skip: !!d.recSkip});
+    if (data.reply) { $('welcome')?.remove(); addAgent(data.reply, []); }
+    if (data.ok && !data.skipped) loadDebtors(true, 'withdrawal');
+    await checkAlerts(false); return true;
+  }
+  if (d.openAlerts !== undefined) { openDrawer('alerts', 'التنبيهات'); await checkAlerts(false); renderAlerts(); return true; }
+  return false;
+}
+
+// The agent's own note in the chat: one tidy card, each thing on its line with its button.
+function alertCard(rows, allGoodNote) {
+  const wrap = document.createElement('div');
+  wrap.className = 'agent-wrap';
+  const time = new Date().toTimeString().slice(0, 5);
+  wrap.innerHTML = `<div class="alert-bubble${allGoodNote ? ' good' : ''}">
+    <div class="ab-head">${icon(allGoodNote ? 'check' : 'bell')}<b>${allGoodNote ? 'فحصت الدفتر وحدي' : 'الوكيل يذكّرك'}</b><small>${time}</small></div>
+    ${rows.map(r => `<div class="ab-row"><span class="ab-ic">${icon(r.icon)}</span>
+      <div class="ab-txt"><b>${r.title}</b>${r.sub ? `<small>${r.sub}</small>` : ''}</div>
+      ${r.actions && r.actions.length ? `<div class="ab-act">${r.actions.map(x =>
+        `<button type="button" class="ab-btn${x.yes ? ' yes' : ''}" ${x.attr}>${x.label}</button>`).join('')}</div>` : ''}</div>`).join('')}
+  </div>`;
+  $('messages').appendChild(wrap);
+  scrollDown();
+}
+$('messages').addEventListener('click', async e => {
+  const t = e.target.closest('.alert-bubble button');
+  if (!t) return;
+  const row = t.closest('.ab-row');
+  row.querySelectorAll('button').forEach(b => { b.disabled = true; });
+  const handled = await alertAction(t);
+  if (handled && !('openAlerts' in t.dataset) && !('fillChat' in t.dataset)) row.classList.add('done');
+  else row.querySelectorAll('button').forEach(b => { b.disabled = false; });
+});
 
 function renderAlerts() {
   const a = lastAlerts;
   if (!a) return;
   const word = c => c === 'USD' ? 'دولار' : 'دينار';
   let html = '';
-  if (a.drawer_not_counted) html += `<div class="alert-card"><b>🧾 ما عديت الجرار اليوم</b>
+  if (a.drawer_not_counted) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-receipt"/></svg>ما عديت الجرار اليوم</b>
     <small>عده وگلي: سديت، بالجرار كذا.</small><div class="row"><button class="yes" data-fill-chat="سديت، بالجرار ">اكتبها بالمحادثة</button></div></div>`;
-  for (const r of a.recurring_due) html += `<div class="alert-card"><b>📅 ${esc(r.reason)}: ${fmt(r.amount)} ${word(r.currency)}</b>
+  for (const r of a.recurring_due) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-calendar"/></svg>${esc(r.reason)}: ${fmt(r.amount)} ${word(r.currency)}</b>
     <small>صرفية ثابتة ${esc(r.label)}، وما انسجلت ${r.period_words}.</small>
     <div class="row"><button class="yes" data-rec="${r.id}">✓ سجّلها</button><button data-rec-skip="${r.id}">مو ${r.period_words}</button></div></div>`;
-  for (const r of (a.my_reminders || [])) html += `<div class="alert-card"><b>⏰ ${esc(r.text)}</b>
+  for (const r of (a.my_reminders || [])) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-alarm"/></svg>${esc(r.text)}</b>
     <small>طلبت أذكّرك بيها (${esc(shortDate(r.due_at))})${r.repeat !== 'none' ? ' · تتكرر' : ''}.</small>
     <div class="row"><button class="yes" data-mine-done="${r.id}">✓ خلصت</button><button data-mine-snooze="${r.id}">بعد ساعة</button>
       <button data-mine-tomorrow="${r.id}">باچر الصبح</button></div></div>`;
-  for (const c of (a.claimed_links || [])) html += `<div class="alert-card"><b>💳 ${esc(c.name)} يگول دفع ${fmt(c.amount)} دينار بزين كاش</b>
+  for (const c of (a.claimed_links || [])) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-card"/></svg>${esc(c.name)} يگول دفع ${fmt(c.amount)} دينار بزين كاش</b>
     <small>وضع تجربة: ما تتحرك فلوس، فما ينسجل شي إلا تأكد إنت إنها وصلتك (${esc(shortDate(c.claimed_at))}).</small>
     <div class="row"><button class="yes" data-claim-ok="${c.id}">✓ وصلت، سجّل التسديد</button><button data-claim-no="${c.id}">✕ ما وصلت</button></div></div>`;
-  for (const p of (a.paid_links || [])) html += `<div class="alert-card"><b>💳 ${esc(p.name)} دفع ${fmt(p.amount)} دينار بزين كاش</b>
+  for (const p of (a.paid_links || [])) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-card"/></svg>${esc(p.name)} دفع ${fmt(p.amount)} دينار بزين كاش</b>
     <small>انسجل تسديد بحسابه وحده (${esc(shortDate(p.paid_at))}).</small></div>`;
-  if (a.overdue.length) html += `<div class="alert-card"><b>⏰ ديون متأخرة (أكثر من ${a.overdue_days} يوم بدون تسديد)</b>
+  if (a.overdue.length) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-users"/></svg>ديون متأخرة (أكثر من ${a.overdue_days} يوم بدون تسديد)</b>
     <small>دوس ✉️ وأكتبلك تذكير بيه رصيده ورابط دفع زين كاش، وإنت ترسله بضغطة.</small>
     ${a.overdue.slice(0, 15).map(o => `<div class="row" style="justify-content:space-between;align-items:center"><span>${esc(o.name)}
       ${o.reminded_at ? `<small>· ذكّرته ${esc(shortDate(o.reminded_at))}</small>` : ''}</span>
@@ -2143,34 +2267,10 @@ $('agentStatus').onclick = async () => { openDrawer('alerts', '🔔 التنبي
 $('alertsBtn').onclick = async () => { openDrawer('alerts', '🔔 التنبيهات'); await checkAlerts(false); renderAlerts(); };
 $('drawerBody').addEventListener('click', async e => {
   if (drawerKind !== 'alerts') return;
-  const t = e.target;
+  const t = e.target.closest('button') || e.target;
   const post = (url, body, method = 'POST') => fetch(url, {method, headers: {'Content-Type': 'application/json'}, body: body && JSON.stringify(body)}).then(r => r.json());
-  if (t.dataset.fillChat !== undefined) {
-    closeDrawer(); $('input').value = t.dataset.fillChat; $('input').focus(); return;
-  }
-  if (t.dataset.remind) { t.disabled = true; return remindFromAlerts(+t.dataset.remind); }
-  if (t.dataset.mineDone) { await post(`/owner-reminders/${t.dataset.mineDone}/done`, {}); return checkAlerts(false).then(renderAlerts); }
-  if (t.dataset.mineSnooze) { await post(`/owner-reminders/${t.dataset.mineSnooze}/snooze`, {minutes: 60}); return checkAlerts(false).then(renderAlerts); }
-  if (t.dataset.mineTomorrow) { await post(`/owner-reminders/${t.dataset.mineTomorrow}/snooze`, {tomorrow: true}); return checkAlerts(false).then(renderAlerts); }
+  if (await alertAction(t)) return;
   if (t.dataset.mineDel) { await post('/owner-reminders/' + t.dataset.mineDel, null, 'DELETE'); return loadMine(); }
-  if (t.dataset.claimOk || t.dataset.claimNo) {
-    t.disabled = true;
-    const id = t.dataset.claimOk || t.dataset.claimNo;
-    const data = await post(`/payment-links/${id}/${t.dataset.claimOk ? 'confirm' : 'reject'}`, {});
-    if (data.ok && t.dataset.claimOk) {
-      $('welcome')?.remove();
-      addAgent(`سجلت تسديد من ${data.customer_name} ${fmt(data.amount)} دينار بزين كاش (ما دخل الجرار). صار رصيده ${fmt(data.balance.IQD)}.`, []);
-      loadDebtors(true, 'customer');
-    }
-    return checkAlerts(false).then(renderAlerts);
-  }
-  if (t.dataset.rec || t.dataset.recSkip) {
-    t.disabled = true;
-    const data = await post(`/recurring/${t.dataset.rec || t.dataset.recSkip}/record`, {session_id: sessionId, skip: !!t.dataset.recSkip});
-    if (data.reply) { $('welcome')?.remove(); addAgent(data.reply, []); }
-    if (data.ok && !data.skipped) loadDebtors(true, 'withdrawal');
-    return checkAlerts(false);
-  }
   if (t.dataset.recDel) { await post('/recurring/' + t.dataset.recDel, null, 'DELETE'); return loadRecurring(); }
   if (t.id === 'recAdd') {
     const reason = $('recReason').value.trim(), amount = toInt($('recAmount').value), day = toInt($('recDay').value);
@@ -2196,6 +2296,29 @@ $('drawerBody').addEventListener('click', async e => {
 let repPeriod = 'month';
 const REP_PERIODS = {today: 'اليوم', week: 'آخر 7 أيام', month: 'هالشهر', last_month: 'الشهر الماضي', all: 'الكل'};
 
+// Seven small bars: each day's sales, today in the brand colour. Drawn from the figures the code sent.
+function weekChart(days) {
+  if (!days.length || !days.some(d => d.sales > 0)) return '<p class="hint">ما كو بيع مسجل بهالأيام حتى ينرسم.</p>';
+  const names = ['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
+  const max = Math.max(...days.map(d => d.sales)), W = 320, H = 130, top = 18, base = 104, gap = 10;
+  const bw = (W - gap * (days.length + 1)) / days.length;
+  const today = new Date().toISOString().slice(0, 10);
+  const short = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + ' مليون' : n >= 1000 ? Math.round(n / 1000) + ' ألف' : String(n);
+  const bars = days.map((d, i) => {
+    const h = d.sales ? Math.max(4, (d.sales / max) * (base - top)) : 2;
+    const x = W - gap - (i + 1) * (bw + gap) + gap;  // right to left: the oldest day on the right
+    const on = d.date === today || i === days.length - 1;
+    const day = names[new Date(d.date + 'T12:00').getDay()];
+    return `<g><title>${day} ${d.date}: ${fmt(d.sales)} دينار</title>
+      <rect x="${x}" y="${base - h}" width="${bw}" height="${h}" rx="6" class="${on ? 'bar on' : 'bar'}"/>
+      ${d.sales && (on || d.sales === max) ? `<text x="${x + bw / 2}" y="${base - h - 5}" class="val">${short(d.sales)}</text>` : ''}
+      <text x="${x + bw / 2}" y="${H - 8}" class="day">${day}</text></g>`;
+  }).join('');
+  return `<svg class="week-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="البيع كل يوم بآخر 7 أيام">
+    <defs><linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f59e0b"/><stop offset="1" stop-color="#ea580c"/></linearGradient></defs>
+    <line x1="0" x2="${W}" y1="${base + 0.5}" y2="${base + 0.5}" class="axis"/>${bars}</svg>`;
+}
+
 async function renderReports() {
   const body = $('drawerBody');
   try {
@@ -2205,7 +2328,7 @@ async function renderReports() {
     const tile = (label, v, cls = '') => `<div class="${cls}${v < 0 ? ' neg' : ''}"><span>${label}</span><b>${v < 0 ? '− ' + fmt(-v) : fmt(v)}</b></div>`;
     let html = `<div class="periods">${Object.entries(REP_PERIODS).map(([k, t]) =>
       `<button data-period="${k}" class="${k === repPeriod ? 'on' : ''}">${t}</button>`).join('')}</div>
-      <h3 class="cash-h">💰 الربح: ${esc(p.period_words)}</h3>
+      <h3 class="cash-h"><svg class="i" aria-hidden="true"><use href="#i-coins"/></svg>الربح: ${esc(p.period_words)}</h3>
       <div class="rep-tiles">${tile('البيع', p.sales.IQD)}${tile('كلفة البضاعة', p.cost_of_goods.IQD)}
         ${tile('الربح من البيع', p.gross_profit.IQD)}${tile('الصرفيات', p.expenses.IQD)}
         ${tile('الربح الصافي', p.net_profit.IQD, 'big')}</div>
@@ -2213,21 +2336,21 @@ async function renderReports() {
       <p class="hint">من ${p.based_on.sales} بيعة و${p.based_on.withdrawals} سحب.${p.notes.length ? ' ' + p.notes.map(esc).join('. ') + '.' : ''}</p>`;
     if (p.expenses_by_reason.length) html += `<table class="cash"><tbody>${p.expenses_by_reason.map(e =>
       `<tr><td>${esc(e.reason)}</td><td class="num">${fmt(e.amounts.IQD)}</td></tr>`).join('')}</tbody></table>`;
-    html += `<h3 class="cash-h">📅 آخر 7 أيام</h3><div class="rep-tiles">
+    html += `<h3 class="cash-h"><svg class="i" aria-hidden="true"><use href="#i-spark"/></svg>آخر 7 أيام</h3>${weekChart(w.daily_sales || [])}<div class="rep-tiles">
         ${tile('بيع كاش', w.sales_by_payment.cash.IQD)}${tile('بيع دين', w.sales_by_payment.debt.IQD)}
         ${tile('زين كاش / ماستر', w.sales_by_payment.electronic.IQD)}${tile('تسديدات الزبائن', w.customer_payments.IQD)}
         ${tile('ديون جديدة', w.new_customer_debts.IQD)}${tile('دفعت للموردين', w.supplier_payments.IQD)}</div>
       ${w.top_items.length ? `<p class="hint">أكثر شي انباع: ${w.top_items.slice(0, 3).map(i => `${esc(i.name)} (${fmt(i.revenue)})`).join('، ')}</p>` : ''}
       ${w.drawer_short.length ? `<p class="msg-bad">الجرار طلع ناقص ${w.drawer_short.length} مرة بهالأسبوع.</p>` : ''}`;
-    html += `<h3 class="cash-h">🔮 توقع الكاش لـ 30 يوم</h3>` + (f.ok ? `<div class="rep-tiles">
+    html += `<h3 class="cash-h"><svg class="i" aria-hidden="true"><use href="#i-chart"/></svg>توقع الكاش لـ 30 يوم</h3>` + (f.ok ? `<div class="rep-tiles">
         ${tile('متوقع يدخل', f.expected_in.IQD)}${tile('متوقع يطلع', f.expected_out.IQD)}${tile('الصافي المتوقع', f.expected_net.IQD, 'big')}</div>
       <p class="hint">مبني على آخر ${f.based_on_days} يوم: باليوم يدخل ${fmt(f.per_day_in.IQD)} ويطلع ${fmt(f.per_day_out.IQD)}.
         ${f.fixed_expenses.length ? 'وداخلة الصرفيات الثابتة: ' + f.fixed_expenses.map(x => `${esc(x.reason)} ${fmt(x.amount)} (${x.due})`).join('، ') + '.' : ''}
         ${esc(f.caveat)}</p>` : `<p class="hint">${esc(f.reason)}</p>`);
-    html += `<h3 class="cash-h">🧾 كشف حساب زبون</h3><p class="hint">صفحة بيها حساب زبون واحد بس، تطبعها أو تدزها إله.</p>
+    html += `<h3 class="cash-h"><svg class="i" aria-hidden="true"><use href="#i-receipt"/></svg>كشف حساب زبون</h3><p class="hint">صفحة بيها حساب زبون واحد بس، تطبعها أو تدزها إله.</p>
       <select id="stCustomer"><option value="">اختار الزبون…</option>${customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
       <div class="actions" style="margin-top:8px"><button class="big secondary" id="stOpen">افتح الكشف (${REP_PERIODS[repPeriod]})</button></div>`;
-    html += `<h3 class="cash-h">📨 التقرير اليومي (ينكتب وحده)</h3><div id="dailyBox"><p class="hint">…</p></div>`;
+    html += `<h3 class="cash-h"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>التقرير اليومي (ينكتب وحده)</h3><div id="dailyBox"><p class="hint">…</p></div>`;
     body.innerHTML = html;
     loadDaily();
   } catch (e) {

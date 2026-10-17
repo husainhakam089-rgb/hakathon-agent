@@ -263,3 +263,19 @@ def test_weekly_wage_in_the_forecast_and_screen(conn, monkeypatch):
     assert c.post("/recurring", json={"reason": "عامل", "amount": 5000, "period": "week"}).status_code == 422
     r = c.post("/recurring", json={"reason": "عامل", "amount": 5000, "period": "week", "day_of_week": 5}).json()
     assert r["recurring"]["label"] == "كل السبت"
+
+
+def test_skipping_a_weekly_wage_says_this_week(conn, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import main as main_mod
+    from app.agent import Agent
+
+    monkeypatch.setattr(main_mod, "agent", Agent(conn, llm=object(), log_path=None))
+    c = TestClient(main_mod.app)
+    week = c.post("/recurring", json={"reason": "أجرة العامل", "amount": 100000, "period": "week", "day_of_week": 5}).json()
+    month = c.post("/recurring", json={"reason": "إيجار", "amount": 250000, "day_of_month": 1}).json()
+    w = c.post(f"/recurring/{week['recurring']['id']}/record", json={"session_id": "s1", "skip": True}).json()
+    m = c.post(f"/recurring/{month['recurring']['id']}/record", json={"session_id": "s1", "skip": True}).json()
+    assert w["reply"] == "تمام، أجرة العامل ما تنسجل هالأسبوع."
+    assert m["reply"] == "تمام، إيجار ما تنسجل هالشهر."

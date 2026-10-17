@@ -27,7 +27,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "23"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "24"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -556,7 +556,7 @@ def record_recurring(rec_id: int, req: RecurringAction):
     if not result.get("ok"):
         return JSONResponse(result, status_code=422)
     if result.get("skipped"):
-        return {**result, "reply": f"تمام، {result['reason']} ما تنسجل هالشهر."}
+        return {**result, "reply": f"تمام، {result['reason']} ما تنسجل {result.get('period_words', 'هالشهر')}."}
     reply = f"سجلت سحب {_money(result['amount'], result['currency'])} ({result['reason']})، صرفية ثابتة."
     agent.record_event(req.session_id, f"(وافقت على الصرفية الثابتة: {result['reason']})", reply)
     return {**result, "reply": reply}

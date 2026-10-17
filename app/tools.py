@@ -1306,7 +1306,7 @@ class DebtTools:
             return _error("already_done", f"{rec['reason']} انسجلت (أو انتركت) {rec['period_words']} من قبل.")
         if skip:
             db.mark_recurring_done(self.conn, rec["id"])
-            return {"ok": True, "skipped": True, "reason": rec["reason"]}
+            return {"ok": True, "skipped": True, "reason": rec["reason"], "period_words": rec["period_words"]}
         result = self.tool_record_withdrawal(rec["amount"], rec["currency"], rec["reason"],
                                              note="صرفية ثابتة", confirmed=True, from_drawer=bool(rec["from_drawer"]))
         if result.get("ok"):

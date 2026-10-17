@@ -147,7 +147,17 @@ def period_summary(conn, period: str = "week", today: date | None = None) -> dic
     return {"from": start, "to": end, "sales_by_payment": pay, "sales_total": p["sales"], "profit": p,
             **flows, "counts": counts, "top_items": top,
             "best_day": {"date": best[0], "sales": best[1]} if best else None,
+            # each day's sales (dinars), for the small chart; read only, the same figures as above
+            "daily_sales": _each_day(start, end, days),
             "drawer_counts": len(closes), "drawer_short": short}
+
+
+def _each_day(start: str, end: str, by_day: dict) -> list[dict]:
+    first, last = date.fromisoformat(start), date.fromisoformat(end)
+    if (last - first).days > 31:
+        return []
+    return [{"date": (first + timedelta(days=i)).isoformat(), "sales": by_day.get((first + timedelta(days=i)).isoformat(), 0)}
+            for i in range((last - first).days)]
 
 
 def cash_forecast(conn, days: int = 30, weeks: int = 4, today: date | None = None) -> dict:
