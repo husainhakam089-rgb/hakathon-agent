@@ -10,7 +10,7 @@ import re
 import sys
 
 from app import db, payments, reports
-from app.arabic import normalize
+from app.arabic import find_matches, normalize
 
 USD_LARGE_AMOUNT = 1000  # treated as equivalent to LARGE_AMOUNT_IQD (no FX conversion in v0)
 MAX_MEMORIES = 50
@@ -108,8 +108,12 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "undo_last",
-        "description": "يلغي آخر قيد انسجل بهذه الجلسة ويرجع شنو انلغى.",
-        "input_schema": {"type": "object", "properties": {}},
+        "description": "يلغي آخر قيد انسجل بهذه الجلسة ويرجع شنو انلغى. إذا صاحب المحل ذكر اسم (\"حيدر غلط، شطبها\") "
+                       "مرر name: يلغي آخر قيد لهذا الشخص بالذات، مو آخر قيد بالمحادثة.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "اسم الزبون أو المورد اللي يريد يلغي قيده، اختياري"}},
+        },
     },
     {
         "name": "undo_batch",
@@ -655,6 +659,9 @@ class DebtTools:
         # Entries made in this message: two equal lines in ONE message ("دفع 10 ودفع 10") are
         # not a resent message. The agent clears it each turn.
         self._turn_entries: set[int] = set()
+        # How many entries the conversation had when this message began (the agent sets it):
+        # what this same message recorded is never undone by it. None = no message (direct calls).
+        self.turn_start: int | None = None
         # Where customers open payment links (stage 22); main sets it from the request.
         self.base_url = ""
 
@@ -1360,67 +1367,113 @@ class DebtTools:
         memories = db.list_memories(self.conn)
         return {"ok": True, "count": len(memories), "memories": memories}
 
-    def tool_undo_last(self):
+    def tool_undo_last(self, name=None):
+        if name is not None and str(name).strip():
+            return self._undo_named(str(name).strip())
         while self.session_tx_ids:
-            entry = self.session_tx_ids.pop()
-            if isinstance(entry, tuple) and entry[0] == "sale":
-                sale = db.get_sale(self.conn, entry[1])
-                if sale and not sale["undone"]:
-                    db.mark_sale_undone(self.conn, sale["id"])
-                    undone = {"ledger": "customer" if sale["payment"] == "debt" else "drawer", "type": "sale",
-                              "sale_id": sale["id"], "what": sale["what"], "payment": sale["payment"],
-                              "amount": sale["total"], "currency": sale["currency"]}
-                    out = {"ok": True, "undone": undone}
-                    if sale["customer_id"]:
-                        undone["customer_name"] = db.get_customer(self.conn, sale["customer_id"])["name"]
-                        out["balance"] = db.get_balance(self.conn, sale["customer_id"])
-                    return out
-                continue
-            if isinstance(entry, tuple) and entry[0] == "cash_in":
-                ci = db.get_cash_in(self.conn, entry[1])
-                if ci and not ci["undone"]:
-                    db.mark_cash_in_undone(self.conn, ci["id"])
-                    return {"ok": True, "undone": {"ledger": "drawer", "type": "cash_in", "cash_in_id": ci["id"],
-                                                   "label": ci["label"], "amount": ci["amount"],
-                                                   "currency": ci["currency"]}}
-                continue
-            if isinstance(entry, tuple) and entry[0] == "drawer":
-                count = db.get_drawer_count(self.conn, entry[1])
-                if count and not count["undone"]:
-                    db.mark_drawer_count_undone(self.conn, count["id"])
-                    return {"ok": True, "undone": {"ledger": "drawer", "type": "drawer_" + count["kind"],
-                                                   "count_id": count["id"], "iqd": count["iqd"],
-                                                   "usd": count["usd"]}}
-                continue
-            if isinstance(entry, tuple):  # ("withdrawal", id)
-                wd = db.get_withdrawal(self.conn, entry[1])
-                if wd and not wd["undone"]:
-                    db.mark_withdrawal_undone(self.conn, wd["id"])
-                    return {"ok": True, "undone": {"ledger": "withdrawal", "type": "withdrawal",
-                                                   "withdrawal_id": wd["id"], "reason": wd["reason"],
-                                                   "amount": wd["amount"], "currency": wd["currency"]},
-                            "month_total": db.withdrawals_summary(self.conn, "month")["totals"]}
-                continue
-            tx_id = entry
-            tx = db.get_transaction(self.conn, tx_id)
-            if tx and not tx["undone"]:
-                db.mark_undone(self.conn, tx_id)
-                customer = db.get_customer(self.conn, tx["customer_id"])
-                supplier = customer.get("kind") == "supplier"
-                return {
-                    "ok": True,
-                    "undone": {
-                        "transaction_id": tx_id,
-                        "ledger": "supplier" if supplier else "customer",
-                        "type": ({"debt": "purchase", "payment": "supplier_payment"}[tx["type"]]
-                                 if supplier else tx["type"]),
-                        "customer_name": customer["name"],
-                        "amount": tx["amount"],
-                        "currency": tx["currency"],
-                    },
-                    "balance": db.get_balance(self.conn, tx["customer_id"]),
-                }
+            if self.turn_start is not None and len(self.session_tx_ids) > self.turn_start:
+                return self._same_message_error()
+            out = self._undo_entry(self.session_tx_ids.pop())
+            if out:
+                return out
         return _error("nothing_to_undo", "ما كو قيد بهذه الجلسة حتى ألغيه")
+
+    def _same_message_error(self):
+        return _error("undo_same_message",
+                      "آخر قيد انسجل بنفس هالرسالة، فما ينلغى بيها. لا تسجل وتلغي بنفس الرسالة: گول لصاحب المحل "
+                      "شنو سجلت بالضبط، واسأله شنو يريد يلغي.")
+
+    def _entry_party(self, entry):
+        """The customer or supplier an entry belongs to (None for the drawer, expenses and cash sales)."""
+        if isinstance(entry, tuple):
+            if entry[0] != "sale":
+                return None
+            sale = db.get_sale(self.conn, entry[1])
+            return db.get_customer(self.conn, sale["customer_id"]) if sale and sale["customer_id"] else None
+        tx = db.get_transaction(self.conn, entry)
+        return db.get_customer(self.conn, tx["customer_id"]) if tx else None
+
+    def _undo_named(self, name):
+        """"حيدر غلط، شطبها": the last entry of THAT person in this conversation, not just the last entry."""
+        last = len(self.session_tx_ids) if self.turn_start is None else min(self.turn_start, len(self.session_tx_ids))
+        parties = {}
+        for i in range(last - 1, -1, -1):
+            party = self._entry_party(self.session_tx_ids[i])
+            if party and party["id"] not in parties:
+                parties[party["id"]] = (party, i)
+        matches = find_matches(name, [p for p, _ in parties.values()])
+        if not matches:
+            return _error("nothing_to_undo", f"ما كو قيد لـ {name} بهالمحادثة حتى ألغيه. لا تلغي غيره: گول هذا لصاحب المحل.",
+                          name=name)
+        exact = [m for m in matches if m["normalized_name"] == normalize(name)]
+        if len(exact) != 1 and len(matches) > 1:
+            return _error("ambiguous_name", "أكثر من شخص بهالاسم سجلتلهم بهالمحادثة. اسأل صاحب المحل يا واحد.",
+                          candidates=[m["name"] for m in matches])
+        party = (exact or matches)[0]
+        _, i = parties[party["id"]]
+        entry = self.session_tx_ids.pop(i)
+        return self._undo_entry(entry) or _error("nothing_to_undo", f"قيد {party['name']} ملغي من قبل.")
+
+    def _undo_entry(self, entry) -> dict | None:
+        """Undo one recorded entry; None when it was already undone."""
+        if isinstance(entry, tuple) and entry[0] == "sale":
+            sale = db.get_sale(self.conn, entry[1])
+            if sale and not sale["undone"]:
+                db.mark_sale_undone(self.conn, sale["id"])
+                undone = {"ledger": "customer" if sale["payment"] == "debt" else "drawer", "type": "sale",
+                          "sale_id": sale["id"], "what": sale["what"], "payment": sale["payment"],
+                          "amount": sale["total"], "currency": sale["currency"]}
+                out = {"ok": True, "undone": undone}
+                if sale["customer_id"]:
+                    undone["customer_name"] = db.get_customer(self.conn, sale["customer_id"])["name"]
+                    out["balance"] = db.get_balance(self.conn, sale["customer_id"])
+                return out
+            return None
+        if isinstance(entry, tuple) and entry[0] == "cash_in":
+            ci = db.get_cash_in(self.conn, entry[1])
+            if ci and not ci["undone"]:
+                db.mark_cash_in_undone(self.conn, ci["id"])
+                return {"ok": True, "undone": {"ledger": "drawer", "type": "cash_in", "cash_in_id": ci["id"],
+                                               "label": ci["label"], "amount": ci["amount"],
+                                               "currency": ci["currency"]}}
+            return None
+        if isinstance(entry, tuple) and entry[0] == "drawer":
+            count = db.get_drawer_count(self.conn, entry[1])
+            if count and not count["undone"]:
+                db.mark_drawer_count_undone(self.conn, count["id"])
+                return {"ok": True, "undone": {"ledger": "drawer", "type": "drawer_" + count["kind"],
+                                               "count_id": count["id"], "iqd": count["iqd"],
+                                               "usd": count["usd"]}}
+            return None
+        if isinstance(entry, tuple):  # ("withdrawal", id)
+            wd = db.get_withdrawal(self.conn, entry[1])
+            if wd and not wd["undone"]:
+                db.mark_withdrawal_undone(self.conn, wd["id"])
+                return {"ok": True, "undone": {"ledger": "withdrawal", "type": "withdrawal",
+                                               "withdrawal_id": wd["id"], "reason": wd["reason"],
+                                               "amount": wd["amount"], "currency": wd["currency"]},
+                        "month_total": db.withdrawals_summary(self.conn, "month")["totals"]}
+            return None
+        tx_id = entry
+        tx = db.get_transaction(self.conn, tx_id)
+        if tx and not tx["undone"]:
+            db.mark_undone(self.conn, tx_id)
+            customer = db.get_customer(self.conn, tx["customer_id"])
+            supplier = customer.get("kind") == "supplier"
+            return {
+                "ok": True,
+                "undone": {
+                    "transaction_id": tx_id,
+                    "ledger": "supplier" if supplier else "customer",
+                    "type": ({"debt": "purchase", "payment": "supplier_payment"}[tx["type"]]
+                             if supplier else tx["type"]),
+                    "customer_name": customer["name"],
+                    "amount": tx["amount"],
+                    "currency": tx["currency"],
+                },
+                "balance": db.get_balance(self.conn, tx["customer_id"]),
+            }
+        return None
 
     def tool_undo_batch(self, batch_id=None):
         batch_id = str(batch_id).strip() if batch_id else db.last_batch_id(self.conn)

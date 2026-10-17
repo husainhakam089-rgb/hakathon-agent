@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app import db
+from app.arabic import normalize
 from app.llm import LLMError, make_llm
 from app.prompts import SYSTEM_PROMPT, memory_block
 from app.tools import TOOL_SCHEMAS, DebtTools
@@ -164,6 +165,8 @@ def _guard_reason(name: str, args: dict, allowed: set[int], balance: dict | None
     return None
 
 
+EMPTY_NOTE = ("تنبيه من النظام (مو من صاحب المحل): ردك طلع فارغ. اكتب لصاحب المحل جملة قصيرة بلهجته: "
+              "شنو سويت بالضبط، أو ليش ما سويت شي، أو شنو تحتاج منه.")
 NUMBER_NOTE = ("تنبيه من النظام (مو من صاحب المحل): ردك بيه أرقام ما طلعت من الأدوات ولا من كلام صاحب المحل: {nums}. "
                "لا تحسب بنفسك. اكتب الرد من جديد بالأرقام اللي رجعتها الأدوات بس، وإذا تحتاج رقم جديد استدعي الأداة.")
 
@@ -172,9 +175,31 @@ def _money(amount: int, currency: str) -> str:
     return f"{amount:,} " + ("دولار" if currency == "USD" else "دينار")
 
 
+def _named_party(conn, message: str) -> str | None:
+    """"حيدر غلط، شطبها": the customer or supplier the owner named, so undo_last cancels THAT
+    person's entry. Whole words only, and the longest name wins ("أبو علي" over "علي")."""
+    text = " " + " ".join(re.sub(r"[^\w\s]", " ", normalize(message or "")).split()) + " "
+    named = [c for kind in ("customer", "supplier") for c in db.all_customers(conn, kind)
+             if c["normalized_name"] and f" {c['normalized_name']} " in text]
+    return max(named, key=lambda c: len(c["normalized_name"]))["name"] if named else None
+
+
 def _with_done_note(reply: str, tool_log: list[dict]) -> str:
     """When a turn fails after a tool already wrote something, say what was
     saved, so the shop owner does not resend the message and record it twice."""
+    done = _done_items(tool_log)
+    if not done:
+        return reply
+    return f"{reply}\nبس انتبه، هذا انحفظ قبل المشكلة: " + "، و".join(done) + ". لا تعيده."
+
+
+def _done_summary(tool_log: list[dict]) -> str:
+    """The reply the code writes when the model gave none: what was really saved, from the tools."""
+    done = _done_items(tool_log)
+    return ("تمام، " + "، و".join(done) + ".") if done else ""
+
+
+def _done_items(tool_log: list[dict]) -> list[str]:
     done = []
     for entry in tool_log:
         r = entry["result"]
@@ -224,9 +249,11 @@ def _with_done_note(reply: str, tool_log: list[dict]) -> str:
             u = r["undone"]
             who = u.get("customer_name") or u.get("reason", "")
             done.append(f"لغيت آخر قيد ({who} {_money(u['amount'], u['currency'])})")
-    if not done:
-        return reply
-    return f"{reply}\nبس انتبه، هذا انحفظ قبل المشكلة: " + "، و".join(done) + ". لا تعيده."
+        elif entry["tool"] == "set_customer_phone":
+            done.append(f"حفظت رقم {r.get('customer_name') or r.get('name') or 'الزبون'}")
+        elif entry["tool"] == "remind_me":
+            done.append(f"حفظت التذكير: {r.get('text', '')}".rstrip(": "))
+    return done
 
 
 class Session:
@@ -310,11 +337,13 @@ class Agent:
         session.tools.source = source
         session.tools.turn += 1
         session.tools._turn_entries = set()
+        session.tools.turn_start = len(session.tools.session_tx_ids)  # this message never undoes its own entries
         turn: list[dict] = [{"role": "user", "text": message}]
         tool_log: list[dict] = []
 
         reply = None
         number_retry = None  # index in `turn` of the note asking to fix invented figures
+        empty_retry = None  # index in `turn` of the note asking for a reply after an empty one
         restarted = False
         wrote = False  # a write tool succeeded this message: never start it again
         try:
@@ -342,8 +371,15 @@ class Agent:
                 if response.refused:
                     reply = REFUSED_REPLY
                     break
+                if not response.tool_calls and not (response.text or "").strip() and empty_retry is None:
+                    # an empty reply: ask once for one, so the owner is never left with "ما فهمت"
+                    log.warning("Empty reply from the model, asking it once more")
+                    empty_retry = len(turn)
+                    turn.append({"role": "assistant", "text": "…", "tool_calls": []})
+                    turn.append({"role": "user", "text": EMPTY_NOTE})
+                    continue
                 if not response.tool_calls:
-                    reply = response.text or EMPTY_REPLY
+                    reply = response.text or _done_summary(tool_log) or EMPTY_REPLY
                     bad = unsupported_numbers(reply, self._allowed_numbers(session, message, turn, tool_log))
                     if bad and number_retry is None:
                         log.warning("Unsupported figures %s in reply, asking the model to fix it", bad)
@@ -381,8 +417,8 @@ class Agent:
             log.exception("Agent turn failed")
             reply = _with_done_note("صار خطأ غير متوقع، عيد المحاولة.", tool_log)
 
-        if number_retry is not None:  # keep the history clean: drop the rejected draft and the note
-            del turn[number_retry:number_retry + 2]
+        for at in sorted((i for i in (number_retry, empty_retry) if i is not None), reverse=True):
+            del turn[at:at + 2]  # keep the history clean: drop the rejected draft and the note
         turn.append({"role": "assistant", "text": reply, "tool_calls": []})
         session.commit(turn)
         self._save(session_id, message, reply, tool_log, source)
@@ -431,6 +467,10 @@ class Agent:
                 and not _AFFIRM.match(message or ""):
             return {"ok": False, "error": "undo_not_asked",
                     "message": "صاحب المحل ما طلب إلغاء. لا تلغي شي إلا يطلبه هو بكلامه."}
+        if call.name == "undo_last" and not (call.input or {}).get("name"):
+            named = _named_party(self.conn, message)
+            if named:  # the owner named someone: undo that person's entry, not just the last one
+                call.input = {**(call.input or {}), "name": named}
         if call.name not in GUARDED_AMOUNTS:
             return None
         args = call.input or {}
