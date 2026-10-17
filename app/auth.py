@@ -130,16 +130,16 @@ def login_page(message: str = "") -> HTMLResponse:
     return HTMLResponse(f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>دخول: مساعد التاجر</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
-<style>*{{box-sizing:border-box}} body{{font-family:"IBM Plex Sans Arabic",system-ui,'Segoe UI',Tahoma,sans-serif;color:#e8edf5;margin:0;
+<style>*{{box-sizing:border-box}} body{{font-family:"IBM Plex Sans Arabic",system-ui,'Segoe UI',Tahoma,sans-serif;color:#f5f5f4;margin:0;
 display:flex;min-height:100vh;align-items:center;justify-content:center;
-background:radial-gradient(900px 500px at 100% -10%,rgba(245,158,11,.14),transparent 60%),#0a0e17}}
-form{{background:#111827;border:1px solid rgba(148,163,184,.12);border-radius:24px;padding:28px 24px;width:min(360px,90vw);
+background:radial-gradient(900px 500px at 100% -10%,rgba(245,158,11,.14),transparent 60%),#0a0a0a}}
+form{{background:#141414;border:1px solid rgba(255,255,255,.08);border-radius:24px;padding:28px 24px;width:min(360px,90vw);
 display:flex;flex-direction:column;gap:14px;box-shadow:0 30px 60px -25px rgba(0,0,0,.8)}}
 .logo{{width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#f59e0b,#ea580c);display:grid;place-items:center;
 color:#fff;font-size:24px;font-weight:700;box-shadow:0 12px 26px -10px rgba(234,88,12,.6)}}
-h1{{font-size:21px;margin:4px 0 0}} .sub{{color:#8d99ad;font-size:13px;margin:-6px 0 4px}}
-input,button{{font:inherit;padding:13px 14px;border-radius:14px;border:1px solid rgba(148,163,184,.18)}}
-input{{background:rgba(148,163,184,.06);color:inherit;outline:none}} input:focus{{border-color:rgba(245,158,11,.55);box-shadow:0 0 0 4px rgba(245,158,11,.18)}}
+h1{{font-size:21px;margin:4px 0 0}} .sub{{color:#a1a1aa;font-size:13px;margin:-6px 0 4px}}
+input,button{{font:inherit;padding:13px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.12)}}
+input{{background:rgba(255,255,255,.05);color:inherit;outline:none}} input:focus{{border-color:rgba(245,158,11,.55);box-shadow:0 0 0 4px rgba(245,158,11,.18)}}
 button{{background:linear-gradient(135deg,#f59e0b,#ea580c);color:#fff;font-weight:700;border:0;cursor:pointer;
 box-shadow:0 12px 24px -12px rgba(234,88,12,.6)}}
 .bad{{color:#fb7185;margin:0;background:rgba(244,63,94,.1);padding:8px 12px;border-radius:10px}}</style></head><body>
