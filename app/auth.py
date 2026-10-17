@@ -129,12 +129,20 @@ def login_page(message: str = "") -> HTMLResponse:
     note = f"<p class=bad>{escape(message)}</p>" if message else ""
     return HTMLResponse(f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>دخول: مساعد التاجر</title>
-<style>body{{font-family:system-ui,'Segoe UI',Tahoma,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;
-display:flex;min-height:100vh;align-items:center;justify-content:center}}
-form{{background:#1e293b;border-radius:16px;padding:24px;width:min(340px,90vw);display:flex;flex-direction:column;gap:12px}}
-h1{{font-size:20px;margin:0}} input,button{{font:inherit;padding:12px;border-radius:10px;border:1px solid #334155}}
-input{{background:#0f172a;color:inherit}} button{{background:#38bdf8;color:#0f172a;font-weight:700;border:0;cursor:pointer}}
-.bad{{color:#f87171;margin:0}}</style></head><body>
-<form method="post" action="/login"><h1>🧾 مساعد التاجر</h1>{note}
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+<style>*{{box-sizing:border-box}} body{{font-family:"IBM Plex Sans Arabic",system-ui,'Segoe UI',Tahoma,sans-serif;color:#e8edf5;margin:0;
+display:flex;min-height:100vh;align-items:center;justify-content:center;
+background:radial-gradient(900px 500px at 100% -10%,rgba(16,185,129,.16),transparent 60%),#0a0e17}}
+form{{background:#111827;border:1px solid rgba(148,163,184,.12);border-radius:24px;padding:28px 24px;width:min(360px,90vw);
+display:flex;flex-direction:column;gap:14px;box-shadow:0 30px 60px -25px rgba(0,0,0,.8)}}
+.logo{{width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#059669,#0d9488);display:grid;place-items:center;
+color:#fff;font-size:24px;font-weight:700;box-shadow:0 12px 26px -10px rgba(16,185,129,.8)}}
+h1{{font-size:21px;margin:4px 0 0}} .sub{{color:#8d99ad;font-size:13px;margin:-6px 0 4px}}
+input,button{{font:inherit;padding:13px 14px;border-radius:14px;border:1px solid rgba(148,163,184,.18)}}
+input{{background:rgba(148,163,184,.06);color:inherit;outline:none}} input:focus{{border-color:rgba(16,185,129,.5);box-shadow:0 0 0 4px rgba(16,185,129,.15)}}
+button{{background:linear-gradient(135deg,#059669,#0d9488);color:#fff;font-weight:700;border:0;cursor:pointer;
+box-shadow:0 12px 24px -12px rgba(16,185,129,.9)}}
+.bad{{color:#fb7185;margin:0;background:rgba(244,63,94,.1);padding:8px 12px;border-radius:10px}}</style></head><body>
+<form method="post" action="/login"><div class=logo>م</div><h1>مساعد التاجر</h1><p class=sub>اكتب كلمة السر حتى تدخل</p>{note}
 <input type="password" name="password" placeholder="كلمة السر" autofocus autocomplete="current-password">
 <button>ادخل</button></form></body></html>""", headers={"Cache-Control": "no-store"})
