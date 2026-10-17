@@ -17,7 +17,8 @@ COPY static ./static
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 
-RUN mkdir -p /data
+# the agent writes its tool and model-error logs under /app/logs: the "app" user must be able to
+RUN mkdir -p /data /app/logs && chown app:app /app/logs
 VOLUME ["/data"]
 EXPOSE 8000
 # runs the program as the "app" user, not root (see docker-entrypoint.sh)

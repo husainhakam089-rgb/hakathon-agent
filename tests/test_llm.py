@@ -451,3 +451,35 @@ def test_make_llm_with_a_groq_key_falls_back(monkeypatch):
     assert isinstance(make_llm(), FallbackLLM)
     monkeypatch.delenv("GROQ_API_KEY")
     assert type(make_llm()).__name__ == "GeminiLLM"  # gemini is the default now
+
+
+def test_groq_free_tier_too_large_asks_again_with_room_that_fits():
+    # 17-10-2026 online: "Limit 8000, Requested 10062" on every message, so Groq never answered
+    sent = []
+
+    def handler(req):
+        body = _json.loads(req.content)
+        sent.append((body["model"], body["max_tokens"]))
+        if body["max_tokens"] == 4096:
+            return httpx.Response(413, text='{"error":{"message":"Request too large for model on tokens per minute '
+                                             '(TPM): Limit 8000, Requested 10062, please reduce your message size"}}')
+        return _reply({"content": "هلا"})
+
+    llm = _groq(handler)
+    assert llm.complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
+    assert sent[0][1] == 4096 and sent[1] == (sent[0][0], 4096 - 2062 - 200)  # same model, smaller room
+
+
+def test_groq_too_large_even_so_moves_to_the_next_model():
+    tried = []
+
+    def handler(req):
+        model = _json.loads(req.content)["model"]
+        tried.append(model)
+        if len(tried) == 1:
+            return httpx.Response(413, text="Limit 8000, Requested 30000")  # nothing useful fits
+        return _reply({"content": "هلا"})
+
+    llm = _groq(handler)
+    assert llm.complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
+    assert tried[0] != tried[1] and llm.model == tried[1]

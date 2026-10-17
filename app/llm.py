@@ -16,6 +16,7 @@ history, so providers must work without it too.
 """
 
 import json
+import re
 import os
 import time
 from dataclasses import dataclass, field
@@ -418,6 +419,18 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_GROQ_MODELS = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "moonshotai/kimi-k2-instruct"]
 
 
+def _fits_per_minute(error_text: str, max_tokens) -> int | None:
+    """Groq's free tier refuses a request whose message plus reply room is over its tokens a
+    minute ("Limit 8000, Requested 10062"). The reply room that would fit, if there is a useful
+    amount of it (our replies are short); None otherwise."""
+    m = re.search(r"Limit (\d+), Requested (\d+)", error_text or "")
+    if not m or not max_tokens:
+        return None
+    limit, requested = int(m.group(1)), int(m.group(2))
+    fit = max_tokens - (requested - limit) - 200  # a little margin: the count is approximate
+    return fit if 600 <= fit < max_tokens else None
+
+
 class GroqLLM:
     """Groq's OpenAI-compatible chat API (free tier: far more requests a day than Gemini's).
     Same complete() as the others. Images are read by Gemini only: extract() here handles
@@ -467,6 +480,10 @@ class GroqLLM:
             try:
                 r = self.client.post(GROQ_URL, json={**body, "model": model},
                                      headers={"Authorization": f"Bearer {self.key}"})
+                if r.status_code == 413 and (fit := _fits_per_minute(r.text, body.get("max_tokens"))):
+                    # the free tier counts the reply room too: ask again with only the room that fits
+                    r = self.client.post(GROQ_URL, json={**body, "model": model, "max_tokens": fit},
+                                         headers={"Authorization": f"Bearer {self.key}"})
             except self._httpx.TimeoutException as e:
                 raise LLMError("Groq تأخر بالرد. عيد بعد شوية.", f"timeout: {e!r}", retryable=True)
             except self._httpx.TransportError as e:
@@ -475,6 +492,8 @@ class GroqLLM:
                 self.model = model
                 return r.json()
             last = f"{r.status_code}: {r.text[:300]}"
+            if r.status_code == 413:
+                continue  # too big for this model's free per-minute limit: the next model has more room
             if r.status_code in (401, 403):
                 raise LLMError("مفتاح Groq غلط. تأكد من GROQ_API_KEY بملف .env", last)
             if r.status_code in (404, 429, 500, 502, 503) or "model" in r.text[:200].lower() and r.status_code == 400:
