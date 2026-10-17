@@ -416,7 +416,9 @@ class GeminiLLM:
 # ---------- Groq: the backup when Gemini's free quota runs out ----------
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_GROQ_MODELS = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "moonshotai/kimi-k2-instruct"]
+# kimi-k2-instruct was removed from Groq (404 online, 17-10-2026); llama-4-scout has the roomiest free limit
+DEFAULT_GROQ_MODELS = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct",
+                       "openai/gpt-oss-20b", "qwen/qwen3-32b"]
 
 
 def _fits_per_minute(error_text: str, max_tokens) -> int | None:
@@ -476,6 +478,7 @@ class GroqLLM:
 
     def _post(self, body: dict) -> dict:
         last = None
+        tried = []  # every model's answer, so a failure says why each one refused (not only the last)
         for model in [self.model] + [m for m in self.models if m != self.model]:
             try:
                 r = self.client.post(GROQ_URL, json={**body, "model": model},
@@ -492,6 +495,7 @@ class GroqLLM:
                 self.model = model
                 return r.json()
             last = f"{r.status_code}: {r.text[:300]}"
+            tried.append(f"{model} → {r.status_code}: {r.text[:160]}")
             if r.status_code == 413:
                 continue  # too big for this model's free per-minute limit: the next model has more room
             if r.status_code in (401, 403):
@@ -499,7 +503,8 @@ class GroqLLM:
             if r.status_code in (404, 429, 500, 502, 503) or "model" in r.text[:200].lower() and r.status_code == 400:
                 continue  # this model is gone, busy or out of quota: the next one
             raise LLMError("صار خطأ بالطلب لـ Groq، عيد المحاولة.", last)
-        raise LLMError("Groq هم مشغول أو خلصت حصته هسه. جرب بعد شوية.", last or "", retryable=True)
+        raise LLMError("Groq هم مشغول أو خلصت حصته هسه. جرب بعد شوية.", " | ".join(tried) or last or "",
+                       retryable=True)
 
     def complete(self, system: str, messages: list[dict], tools: list[dict]) -> LLMResponse:
         body = {"messages": self._messages(system, messages), "max_tokens": self.max_tokens}
