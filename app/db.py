@@ -578,7 +578,8 @@ def drawer_movements(conn, rng: dict) -> dict:
     notebook pages) and undone ones are not today's money."""
     zero = lambda: {c: 0 for c in CURRENCIES}  # noqa: E731
     out = {"customer_payments": zero(), "cash_ins": zero(), "sales_cash": zero(), "sales_electronic": zero(),
-           "supplier_payments": zero(), "withdrawals": zero(), "credit_sales": zero(), "not_from_drawer": zero()}
+           "supplier_payments": zero(), "withdrawals": zero(), "credit_sales": zero(), "not_from_drawer": zero(),
+           "sales_debt": zero()}
     (tx_from, tx_to), (wd_from, wd_to), (ci_from, ci_to) = rng["tx_upto"], rng["wd_upto"], rng["ci_upto"]
     for r in conn.execute(
             """SELECT c.kind, t.type, t.currency, t.from_drawer, SUM(t.amount) s
@@ -604,8 +605,8 @@ def drawer_movements(conn, rng: dict) -> dict:
         out["cash_ins"][r["currency"]] += r["s"]
     sa_from, sa_to = rng["sa_upto"]
     for r in conn.execute("""SELECT payment, currency, SUM(total) s FROM sales WHERE id > ? AND id <= ? AND undone = 0
-                             AND payment IN ('cash','electronic') GROUP BY payment, currency""", (sa_from, sa_to)):
-        out["sales_cash" if r["payment"] == "cash" else "sales_electronic"][r["currency"]] += r["s"]
+                             GROUP BY payment, currency""", (sa_from, sa_to)):
+        out[{"cash": "sales_cash", "electronic": "sales_electronic", "debt": "sales_debt"}[r["payment"]]][r["currency"]] += r["s"]
     return out
 
 
@@ -639,7 +640,25 @@ def drawer_report(conn, count: dict | None = None) -> dict:
             total_sales[cur] = cash_sales[cur] + moves["credit_sales"][cur]
         report.update(expected=expected, difference=difference, cash_sales=cash_sales, total_sales=total_sales,
                       shortage=any(v < 0 for v in difference.values()))
+        report.update(_same_as_reports(moves, difference, cash_sales, total_sales))
     return report
+
+
+def _same_as_reports(moves: dict, difference: dict, cash_sales: dict, total_sales: dict) -> dict:
+    """The day's sales in the same words as the reports (17-10-2026: the drawer said "البيع النقدي
+    60,000، ومجموع البيع 195,000" while the reports said 62,000 and 97,000 for the same day).
+    When sales were recorded (the sale screen or the agent), "sold" means those sales, as in the
+    reports: a short drawer is a shortage, not less selling, and a plain debt ("سجل على أبو علي
+    35") is a new debt, not a sale. A shop that records no sales keeps the old reading, where the
+    drawer count is the only measure of the day's selling."""
+    recorded = {c: moves["sales_cash"][c] + moves["sales_electronic"][c] + moves["sales_debt"][c] for c in CURRENCIES}
+    if not any(recorded.values()):
+        return {"sales_recorded": recorded, "day_cash_sales": cash_sales, "day_total_sales": total_sales,
+                "new_debts": {c: moves["credit_sales"][c] for c in CURRENCIES}}
+    return {"sales_recorded": recorded,
+            "day_cash_sales": {c: moves["sales_cash"][c] for c in difference},
+            "day_total_sales": {c: recorded[c] for c in difference},
+            "new_debts": {c: moves["credit_sales"][c] - moves["sales_debt"][c] for c in CURRENCIES}}
 
 
 def drawer_details(conn, count: dict | None = None) -> dict:

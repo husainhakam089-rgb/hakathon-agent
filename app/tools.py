@@ -579,10 +579,36 @@ def _error(code: str, message: str, **extra) -> dict:
     return {"ok": False, "error": code, "message": message, **extra}
 
 
+def _drawer_meaning_recorded(report: dict, words: dict) -> str:
+    """When sales were recorded: the same sales figure as the reports, with the shortage or the
+    surplus and the new debts each on its own (not mixed into "sales")."""
+    parts = []
+    for cur in report.get("difference", {}):
+        sold = report["sales_recorded"][cur]
+        kinds = [f"{name} {report[key][cur]:,}" for key, name in
+                 (("sales_cash", "كاش"), ("sales_electronic", "زين كاش/ماستر"), ("sales_debt", "دين"))
+                 if report[key][cur]]
+        line = f"البيع المسجل {sold:,} {words[cur]}" + (f" ({'، '.join(kinds)})" if kinds else "")
+        if report["cash_ins"][cur]:
+            line += f"، ووارد بدون مواد {report['cash_ins'][cur]:,}"
+        diff = report["difference"][cur]
+        line += (f". المفروض بالجرار {report['expected'][cur]:,}"
+                 + (f"، وبي زيادة {diff:,} (يمكن بيع ما انكتب)" if diff > 0 else
+                    f"، والجرار ناقص {-diff:,} {words[cur]}" if diff < 0 else "، ومطابق بالضبط"))
+        if report["new_debts"][cur] > 0:
+            line += f". وانسجلت ديون جديدة على الزبائن {report['new_debts'][cur]:,} (مو بيع من الشاشة)"
+        parts.append(line)
+    if not parts:
+        return "ما گدرت أحسب: لازم عدّة بالبداية وبالنهاية لنفس العملة."
+    return "، و".join(parts)
+
+
 def _drawer_meaning(report: dict) -> str:
     """The day in one plain line, so the model does not do the arithmetic itself."""
     parts = []
     words = {"IQD": "دينار", "USD": "دولار"}
+    if any((report.get("sales_recorded") or {}).values()):
+        return _drawer_meaning_recorded(report, words)
     for cur, sales in report.get("cash_sales", {}).items():
         line = f"البيع النقدي {sales:,} {words[cur]}، ومجموع البيع ويا الدين {report['total_sales'][cur]:,}"
         diff = report["difference"][cur]

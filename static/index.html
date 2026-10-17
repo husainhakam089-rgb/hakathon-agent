@@ -2509,10 +2509,12 @@ function renderDrawer() {
   if (closes.length) {
     html += `<h3 class="cash-h">العدّات</h3><table class="counts"><thead><tr><th>العدّة</th><th>بالجرار</th><th>البيع النقدي</th><th>مجموع البيع</th></tr></thead><tbody>` +
       closes.map(c => {
-        const u = money(c.cash_sales, 'USD');
+        // the same sales as the reports when sales were recorded (day_*), the old reading otherwise
+        const cash = c.day_cash_sales || c.cash_sales, total = c.day_total_sales || c.total_sales;
+        const u = money(cash, 'USD');
         return `<tr class="click" data-count="${c.count_id}" title="اضغط للوارد والصادر"><td class="date">${esc(shortDate(c.counted.at))}</td>
-          <td class="num">${c.counted.iqd === null ? '—' : fmt(c.counted.iqd)}</td>${cashCell(money(c.cash_sales, 'IQD'))}
-          <td class="num">${money(c.total_sales, 'IQD') === null ? '—' : fmt(c.total_sales.IQD)}${u !== null ? `<small class="usd"> + ${fmt(u)}$</small>` : ''}</td></tr>`;
+          <td class="num">${c.counted.iqd === null ? '—' : fmt(c.counted.iqd)}</td>${cashCell(money(cash, 'IQD'))}
+          <td class="num">${money(total, 'IQD') === null ? '—' : fmt(total.IQD)}${u !== null ? `<small class="usd"> + ${fmt(u)}$</small>` : ''}</td></tr>`;
       }).join('') + `<tr><td colspan="4" class="tap-hint">اضغط على أي عدّة حتى تشوف الوارد والصادر والباقي بالجرار</td></tr></tbody></table>`;
   } else {
     html += `<p class="hint">آخر اليوم عدّ الجرار وگول: "سديت، بالجرار كذا"، وأگلك أكو زيادة لو نقص.</p>`;
