@@ -1749,6 +1749,8 @@ function openDrawer(kind, title) {
   drawerKind = kind;
   const words = String(title).replace(/^[^\p{L}\p{N}]+/u, '');  // the old emoji in front, if any
   $('drawerTitle').innerHTML = (DRAWER_ICONS[kind] ? icon(DRAWER_ICONS[kind]) : '') + esc(words);
+  // the last screen's content must not stay under the new title while this one loads (slow online)
+  $('drawerBody').innerHTML = '<p class="hint">لحظة…</p>';
   $('drawer').classList.add('show');
   $('drawerBg').classList.add('show');
   $('drawer').setAttribute('aria-hidden', 'false');
