@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 load_dotenv()
 
 from app import db  # noqa: E402  (after load_dotenv: DB_PATH comes from .env)
-from app import auth, backup, daily, export, security, extraction, payments, reports, spreadsheet  # noqa: E402
+from app import auth, backup, daily, demo, export, security, extraction, payments, reports, spreadsheet  # noqa: E402
 from app.agent import Agent  # noqa: E402
 from app.llm import LLMError  # noqa: E402
 
@@ -112,6 +112,8 @@ app = FastAPI(title="مساعد التاجر", lifespan=lifespan)
 app.middleware("http")(auth.middleware)
 app.middleware("http")(security.make_middleware(auth.enabled))  # added last = runs first
 agent = Agent(db.connect())
+if os.getenv("DEMO_DATA") and demo.seed_if_empty(agent.conn):
+    print("الدفتر فارغ: انملى ببيانات محل تجريبية (DEMO_DATA)")
 auth.STORED = db.get_setting(agent.conn, "password_hash")  # a password set from ☰ ← 🔒
 auth.EPOCH = db.get_setting(agent.conn, "login_epoch")  # "خروج من كل الأجهزة" survives a restart
 
