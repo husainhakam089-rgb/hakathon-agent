@@ -779,6 +779,14 @@ class DebtTools:
         return [{"id": c["id"], "name": c["name"], "balance": db.get_balance(self.conn, c["id"])}
                 for c in matches]
 
+    def _owner_said_add(self, name) -> bool:
+        """"الحجي كريم عليه 100 دولار، ضيفه": the owner named the new person AND said to add them in
+        this same message, so asking "أضيفه؟" again only annoys. A new name alone still asks first."""
+        text = " " + " ".join(re.sub(r"[^\w\s]", " ", normalize(self.source_message or "")).split()) + " "
+        said_add = re.search(r"(^|\s)(ضيف|اضيف|ضيفه|ضيفها|ضيفهم|اضيفه|اضيفها|ضيفلي|ضيفيه|سجله جديد|سجلها جديده)(\s|$)",
+                             text)
+        return bool(said_add) and f" {normalize(name)} " in text
+
     def _add_party(self, name, phone, kind):
         label = "مورد" if kind == "supplier" else "زبون"
         name = (name or "").strip()
@@ -790,7 +798,7 @@ class DebtTools:
             return _error(f"{kind}_exists", f"اكو {label} بنفس الاسم",
                           existing={"id": exact[0]["id"], "name": exact[0]["name"]})
         first_seen = self._new_name_turn.setdefault((kind, normalize(name)), self.turn)
-        if first_seen >= self.turn:
+        if first_seen >= self.turn and not self._owner_said_add(name):
             return _error("ask_first",
                           f"لا تضيف هسه. اسأل صاحب المحل: 'ما عندي {label} اسمه " + name +
                           "، أضيفه؟' ولا تسجل شي، وانتظر جوابه بالرسالة الجاية.")
