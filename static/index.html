@@ -404,6 +404,7 @@ main.ledger-off .debtors { display: none; }
         <button role="menuitem" id="sessionsBtn"><span class="ic">🗂</span>المحادثات القديمة</button>
         <button role="menuitem" id="memoryBtn"><span class="ic">🧠</span>ذاكرة الوكيل</button>
         <button role="menuitem" id="backupBtn"><span class="ic">💾</span>نسخة احتياطية و Excel</button>
+        <button role="menuitem" id="passwordBtn"><span class="ic">🔒</span>كلمة السر</button>
         <button role="menuitem" id="logoutBtn" hidden><span class="ic">🚪</span>خروج</button>
         <button role="menuitem" id="logoutAllBtn" hidden><span class="ic">📵</span>خروج من كل الأجهزة</button>
         <button role="menuitem" id="newChat"><span class="ic">＋</span>محادثة جديدة</button>
@@ -1430,6 +1431,55 @@ async function logout(everywhere) {
   location.href = '/login';
 }
 $('logoutBtn').onclick = () => logout(false);
+
+/* ---------- the password, set from here (no file to edit) ---------- */
+async function renderPassword(note) {
+  const s = await (await fetch('/login-status')).json();
+  const field = (id, label, auto) => `<div class="field" style="grid-column: 1 / -1"><label>${label}</label>
+    <input id="${id}" type="password" autocomplete="${auto}" dir="ltr"></div>`;
+  let html;
+  if (s.from_env) {
+    html = `<p class="hint">كلمة السر محطوطة بملف <b>.env</b> (APP_PASSWORD)، فتتغير من هناك.</p>`;
+  } else if (s.login) {
+    html = `<p class="hint">🔒 البرنامج محمي بكلمة سر. أي موبايل أو حاسبة تفتحه لازم تكتبها.
+        إذا غيرتها، كل الأجهزة الثانية تطلع وتحتاج الجديدة، وإنت تبقى داخل.</p>
+      <div class="fields">${field('pwCurrent', 'كلمة السر الحالية', 'current-password')}
+        ${field('pwNew', 'الجديدة (6 على الأقل)', 'new-password')}${field('pwAgain', 'الجديدة مرة ثانية', 'new-password')}</div>
+      <div class="actions" style="margin-top:8px"><button class="big primary" id="pwSave">غيّر كلمة السر</button>
+        <button class="big secondary" id="pwRemove">شيل كلمة السر</button></div>`;
+  } else {
+    html = `<p class="hint">⚠️ البرنامج <b>مو محمي</b> هسه: أي واحد يقعد على هالحاسبة يگدر يفتحه.
+        حط كلمة سر، وبعدها ما ينفتح إلا بيها (على هالحاسبة وعلى الموبايل).</p>
+      <div class="fields">${field('pwNew', 'كلمة السر (6 على الأقل)', 'new-password')}${field('pwAgain', 'مرة ثانية', 'new-password')}</div>
+      <div class="actions" style="margin-top:8px"><button class="big primary" id="pwSave">🔒 احمي البرنامج</button></div>
+      <p class="hint">احفظها بمكان أمين. إذا نسيتها، تنشال من الحاسبة نفسها (شوف README).</p>`;
+  }
+  $('drawerBody').innerHTML = html + (note || '');
+}
+$('passwordBtn').onclick = () => { openDrawer('password', '🔒 كلمة السر'); renderPassword(); };
+$('drawerBody').addEventListener('click', async e => {
+  if (drawerKind !== 'password') return;
+  const t = e.target, val = id => ($(id) ? $(id).value : '');
+  const say = (ok, msg) => renderPassword(`<p class="${ok ? 'msg-ok' : 'msg-bad'}">${esc(msg)}</p>`);
+  if (t.id === 'pwSave') {
+    if (val('pwNew') !== val('pwAgain')) return say(false, 'الكلمتين مو نفس الشي.');
+    const r = await fetch('/password', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({current: val('pwCurrent'), new: val('pwNew')})});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return say(false, d.message || 'ما گدرت أحفظها.');
+    $('logoutBtn').hidden = false; $('logoutAllBtn').hidden = false;
+    return say(true, '✓ انحفظت. من هسه البرنامج ما ينفتح إلا بكلمة السر.');
+  }
+  if (t.id === 'pwRemove') {
+    if (!confirm('أشيل كلمة السر؟ البرنامج يرجع ينفتح بدونها على هالحاسبة.')) return;
+    const r = await fetch('/password', {method: 'DELETE', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({current: val('pwCurrent')})});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return say(false, d.message || 'ما گدرت أشيلها.');
+    $('logoutBtn').hidden = true; $('logoutAllBtn').hidden = true;
+    return say(true, 'انشالت كلمة السر.');
+  }
+});
 $('logoutAllBtn').onclick = () => logout(true);
 $('form').addEventListener('submit', () => setTimeout(updateSuggestion, 0));
 window.addEventListener('resize', syncGhost);

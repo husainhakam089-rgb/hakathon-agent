@@ -27,7 +27,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "21"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "22"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -112,6 +112,7 @@ app = FastAPI(title="مساعد التاجر", lifespan=lifespan)
 app.middleware("http")(auth.middleware)
 app.middleware("http")(security.make_middleware(auth.enabled))  # added last = runs first
 agent = Agent(db.connect())
+auth.STORED = db.get_setting(agent.conn, "password_hash")  # a password set from ☰ ← 🔒
 auth.EPOCH = db.get_setting(agent.conn, "login_epoch")  # "خروج من كل الأجهزة" survives a restart
 
 
@@ -128,7 +129,7 @@ async def login(request: Request):
     from urllib.parse import parse_qs
     given = (parse_qs(form).get("password") or [""])[0]
     import hmac
-    if not auth.enabled() or not hmac.compare_digest(given.encode(), auth.password().encode()):
+    if not auth.enabled() or not auth.check_password(given):
         auth.failed(request)
         import asyncio
         await asyncio.sleep(auth.WRONG_DELAY)  # each wrong try costs a second
@@ -156,10 +157,63 @@ def version():
     return {"app": "debt-agent", "version": APP_VERSION}
 
 
+class PasswordRequest(BaseModel):
+    current: str = Field(default="", max_length=200)
+    new: str = Field(default="", max_length=200)
+
+
+def _login_cookie(resp, request: Request):
+    secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    resp.set_cookie(auth.COOKIE, auth.make_cookie(), max_age=auth.DAYS * 86400, httponly=True, samesite="lax", secure=secure)
+    return resp
+
+
+@app.post("/password")
+async def set_password(req: PasswordRequest, request: Request):
+    """Set or change the password from inside the program (☰ ← 🔒). Changing it needs the old
+    one, and logs every other phone and computer out; this one stays in."""
+    if auth.from_env():
+        return _error(409, "كلمة السر محطوطة بملف .env (APP_PASSWORD). غيّرها من هناك.")
+    if auth.STORED and not auth.check_password(req.current):
+        if auth.too_many(request):
+            return _error(429, "محاولات هواية. انتظر 10 دقايق.")
+        auth.failed(request)
+        import asyncio
+        await asyncio.sleep(auth.WRONG_DELAY)
+        return _error(403, "كلمة السر الحالية غلط.")
+    if len(req.new) < auth.MIN_LENGTH or len(set(req.new)) < 3:
+        return _error(422, f"كلمة السر لازم تكون {auth.MIN_LENGTH} حروف أو أرقام على الأقل، ومو نفس الحرف مكرر.")
+    stored = auth.hash_password(req.new)
+    with agent.lock:
+        db.set_setting(agent.conn, "password_hash", stored)
+    auth.STORED = stored
+    return _login_cookie(JSONResponse({"ok": True, "login": True}), request)
+
+
+@app.delete("/password")
+async def remove_password(req: PasswordRequest, request: Request):
+    """Take the password off (needs it). Then only this computer can open the program."""
+    if auth.from_env():
+        return _error(409, "كلمة السر محطوطة بملف .env (APP_PASSWORD). شيلها من هناك.")
+    if not auth.STORED:
+        return {"ok": True, "login": False}
+    if not auth.check_password(req.current):
+        auth.failed(request)
+        return _error(403, "كلمة السر الحالية غلط.")
+    if os.getenv("REQUIRE_PASSWORD") or (os.getenv("HOST") or "127.0.0.1") != "127.0.0.1":
+        return _error(409, "البرنامج مفتوح لغير هالحاسبة، فما ينشال منه كلمة السر.")
+    with agent.lock:
+        db.set_setting(agent.conn, "password_hash", "")
+    auth.STORED = ""
+    resp = JSONResponse({"ok": True, "login": False})
+    resp.delete_cookie(auth.COOKIE)
+    return resp
+
+
 @app.get("/login-status")
 def login_status():
     """Does this program have a password? (the page shows the logout buttons only then)"""
-    return {"login": auth.enabled()}
+    return {"login": auth.enabled(), "from_env": auth.from_env()}
 
 
 @app.post("/logout")

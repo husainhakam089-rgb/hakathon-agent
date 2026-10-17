@@ -30,18 +30,43 @@ _tries: dict[str, list[float]] = {}
 # Bumped by "خروج من كل الأجهزة": every cookie signed before it stops working. Kept in the
 # notebook (settings.login_epoch); main loads it at start.
 EPOCH = "0"
+# A password set from inside the program (☰ ← 🔒): "salt$hash" (PBKDF2), kept in the notebook's
+# settings; main loads it at start. APP_PASSWORD in .env, when there, wins over it.
+STORED = ""
+ITERATIONS = 200_000
+MIN_LENGTH = 6
 
 
 def password() -> str:
     return os.getenv("APP_PASSWORD") or ""
 
 
-def enabled() -> bool:
+def from_env() -> bool:
     return bool(password())
 
 
+def enabled() -> bool:
+    return from_env() or bool(STORED)
+
+
+def hash_password(pw: str, salt: str | None = None) -> str:
+    salt = salt or os.urandom(16).hex()
+    digest = hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(salt), ITERATIONS).hex()
+    return f"{salt}${digest}"
+
+
+def check_password(given: str) -> bool:
+    if from_env():
+        return hmac.compare_digest(given.encode(), password().encode())
+    if STORED and "$" in STORED:
+        salt = STORED.split("$", 1)[0]
+        return hmac.compare_digest(hash_password(given, salt), STORED)
+    return False
+
+
 def _key() -> bytes:
-    return hashlib.sha256(f"debt-agent:{password()}:{os.getenv('SECRET_KEY', '')}:{EPOCH}".encode()).digest()
+    secret = password() or STORED  # a new password = a new key: everyone else is logged out
+    return hashlib.sha256(f"debt-agent:{secret}:{os.getenv('SECRET_KEY', '')}:{EPOCH}".encode()).digest()
 
 
 def make_cookie(now: float | None = None) -> str:

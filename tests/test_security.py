@@ -141,7 +141,7 @@ def test_logout_and_logout_everywhere(client, monkeypatch):
     for c in (phone, pc):
         c.post("/login", data={"password": "pw"})
         assert c.get("/debtors").status_code == 200
-    assert phone.get("/login-status").json() == {"login": True}
+    assert phone.get("/login-status").json()["login"] is True
     # out of this browser only
     phone.post("/logout")
     assert phone.get("/debtors").status_code == 401 and pc.get("/debtors").status_code == 200
@@ -166,3 +166,64 @@ def test_old_scan_photos_are_deleted(tmp_path, monkeypatch):
     old.write_bytes(b"x"); new.write_bytes(b"y")
     os.utime(old, (time.time() - 31 * 86400,) * 2)
     assert main_mod.prune_uploads() == 1 and not old.exists() and new.exists()
+
+
+# ---------- the password set from inside the program (☰ ← 🔒) ----------
+
+@pytest.fixture
+def stored_reset():
+    from app import auth
+    auth.STORED = ""
+    auth._tries.clear()
+    yield auth
+    auth.STORED = ""
+    auth._tries.clear()
+
+
+def test_set_change_and_remove_the_password_from_the_program(client, stored_reset, monkeypatch):
+    auth = stored_reset
+    monkeypatch.setattr(auth, "WRONG_DELAY", 0)
+    owner = client
+    assert owner.get("/login-status").json() == {"login": False, "from_env": False}
+    assert owner.post("/password", json={"new": "123"}).status_code == 422  # too short
+    assert owner.post("/password", json={"new": "aaaaaaa"}).status_code == 422  # one letter repeated
+    r = owner.post("/password", json={"new": "sirr-2026"})
+    assert r.json()["ok"] and auth.COOKIE in r.cookies  # this browser stays in
+    stored = db.get_setting(main_mod.agent.conn, "password_hash")
+    assert "sirr-2026" not in stored and "$" in stored  # only a salted hash is kept
+    assert owner.get("/debtors").status_code == 200
+    other = TestClient(main_mod.app)
+    assert other.get("/debtors").status_code == 401
+    assert "كلمة السر غلط" in other.post("/login", data={"password": "no"}).text
+    other.post("/login", data={"password": "sirr-2026"})
+    assert other.get("/debtors").status_code == 200
+    # changing it needs the old one, and logs the other device out
+    assert owner.post("/password", json={"current": "wrong", "new": "jadeed-99"}).status_code == 403
+    assert owner.post("/password", json={"current": "sirr-2026", "new": "jadeed-99"}).json()["ok"]
+    assert other.get("/debtors").status_code == 401 and owner.get("/debtors").status_code == 200
+    # taking it off needs it too
+    assert owner.request("DELETE", "/password", json={"current": "sirr-2026"}).status_code == 403
+    assert owner.request("DELETE", "/password", json={"current": "jadeed-99"}).json() == {"ok": True, "login": False}
+    assert TestClient(main_mod.app).get("/debtors").status_code == 200
+
+
+def test_a_stranger_cannot_set_the_password_once_there_is_one(client, stored_reset):
+    client.post("/password", json={"new": "sirr-2026"})
+    stranger = TestClient(main_mod.app)
+    assert stranger.post("/password", json={"new": "hacked-1"}).status_code == 401  # needs the login first
+
+
+def test_password_in_env_wins(client, stored_reset, monkeypatch):
+    monkeypatch.setenv("APP_PASSWORD", "from-env")
+    client.post("/login", data={"password": "from-env"})
+    assert client.get("/login-status").json() == {"login": True, "from_env": True}
+    assert client.post("/password", json={"new": "other-pass"}).status_code == 409
+
+
+def test_forgot_password_tool(conn, stored_reset, monkeypatch):
+    from app import reset_password
+
+    db.set_setting(conn, "password_hash", "x$y")
+    monkeypatch.setattr(reset_password.db, "connect", lambda: conn)
+    reset_password.main()
+    assert db.get_setting(conn, "password_hash") == ""
