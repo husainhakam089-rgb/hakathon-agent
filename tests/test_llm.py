@@ -466,6 +466,7 @@ def test_groq_free_tier_too_large_asks_again_with_room_that_fits():
         return _reply({"content": "هلا"})
 
     llm = _groq(handler)
+    llm.max_tokens = 4096  # the room it asked for then (now smaller by default)
     assert llm.complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
     assert sent[0][1] == 4096 and sent[1] == (sent[0][0], 4096 - 2062 - 200)  # same model, smaller room
 
@@ -483,3 +484,58 @@ def test_groq_too_large_even_so_moves_to_the_next_model():
     llm = _groq(handler)
     assert llm.complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
     assert tried[0] != tried[1] and llm.model == tried[1]
+
+
+def test_groq_sends_a_light_request(monkeypatch):
+    # 18-10-2026: the full prompt and tools were ~10,000 tokens, over the free tier's 8,000 a minute
+    from app.prompts import COMPACT_SYSTEM_PROMPT, SYSTEM_PROMPT
+    from app.tools import TOOL_SCHEMAS
+    seen = {}
+
+    def handler(req):
+        seen.update(_json.loads(req.content))
+        return _reply({"content": "هلا"})
+
+    history = [{"role": "user", "text": f"رسالة {i}"} if i % 2 == 0 else {"role": "assistant", "text": f"رد {i}"}
+               for i in range(10)] + [{"role": "user", "text": "سجل على ابو علي 25"}]
+    _groq(handler).complete(SYSTEM_PROMPT + "\n\n## ذاكرة\n- الورقة = 10,000", history, TOOL_SCHEMAS)
+    system = seen["messages"][0]["content"]
+    assert system.startswith(COMPACT_SYSTEM_PROMPT) and system.endswith("الورقة = 10,000")  # memories stay
+    assert len(seen["messages"]) == 1 + 4 + 1  # system, the last two exchanges, this message
+    assert seen["messages"][1]["role"] == "user" and seen["messages"][-1]["content"] == "سجل على ابو علي 25"
+    assert len(seen["tools"]) == len(TOOL_SCHEMAS)  # every tool is still there
+    light = _json.dumps(seen, ensure_ascii=False)
+    assert len(light) < 0.45 * len(_json.dumps(GroqLLM._tools(TOOL_SCHEMAS), ensure_ascii=False) + SYSTEM_PROMPT)
+    assert seen["max_tokens"] == 1200
+
+
+def test_groq_light_request_keeps_this_messages_tool_work():
+    seen = {}
+
+    def handler(req):
+        seen.update(_json.loads(req.content))
+        return _reply({"content": "تمام"})
+
+    call = ToolCall("t1", "find_customer", {"query": "ابو علي"})
+    messages = [{"role": "user", "text": f"قديمة {i}"} for i in range(6)] + [
+        {"role": "user", "text": "سجل على ابو علي 25"},
+        {"role": "assistant", "text": "", "tool_calls": [call]},
+        {"role": "tool", "results": [{"id": "t1", "name": "find_customer", "content": "{}"}]}]
+    _groq(handler).complete("s", messages, [])
+    roles = [m["role"] for m in seen["messages"]]
+    assert roles[-3:] == ["user", "assistant", "tool"] and seen["messages"][-3]["content"] == "سجل على ابو علي 25"
+
+
+def test_groq_waits_for_the_minute_to_free_up(monkeypatch):
+    import time
+    waited, calls = [], []
+    monkeypatch.setattr(time, "sleep", lambda s: waited.append(s))
+
+    def handler(req):
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(429, text="Rate limit reached on tokens per minute (TPM). Please try again in 7.25s.")
+        return _reply({"content": "هلا"})
+
+    assert _groq(handler).complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
+    assert waited == [7.75] and len(calls) == 2

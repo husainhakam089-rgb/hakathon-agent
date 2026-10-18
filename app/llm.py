@@ -168,8 +168,14 @@ class AnthropicLLM:
 _GENERATED_ID = "gen_"
 
 # Tried in this order after GEMINI_MODEL (each has its own free daily quota).
-DEFAULT_GEMINI_FALLBACKS = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash",
-                            "gemini-3.8-flash", "gemini-3.5-flash-lite"]
+# Each has its own free daily quota, so more of them = more messages a day. All checked on 18-10-2026
+# with the full agent (instructions, 47 tools, a two-step debt in Iraqi Arabic): right tools, right
+# reply, 4-7 seconds. gemma-4-26b is last: it works but takes about two minutes. Left out:
+# gemini-2.5-flash(-lite) (closed to new users) and gemma-4-31b (16,000 input tokens a minute).
+DEFAULT_GEMINI_FALLBACKS = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash", "gemini-3.8-flash",
+                            "gemini-3-flash-preview", "gemini-flash-latest", "gemini-3.5-flash-lite",
+                            "gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.1-flash-lite-preview",
+                            "gemma-4-26b-a4b-it"]
 ALL_QUOTA_USED = ("خلصت حصة اليوم المجانية لكل نماذج Gemini. جرب باچر، "
                   "أو فعّل الدفع بحساب Google AI Studio حتى ما توگف.")
 
@@ -416,9 +422,25 @@ class GeminiLLM:
 # ---------- Groq: the backup when Gemini's free quota runs out ----------
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-# kimi-k2-instruct was removed from Groq (404 online, 17-10-2026); llama-4-scout has the roomiest free limit
-DEFAULT_GROQ_MODELS = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct",
-                       "openai/gpt-oss-20b", "qwen/qwen3-32b"]
+# Online on 18-10-2026 Groq answered 404 for llama-3.3-70b, llama-4-scout, qwen3-32b and kimi-k2: only
+# gpt-oss is left. GROQ_MODEL can still name another one.
+DEFAULT_GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+GROQ_REPLY_TOKENS = 1200  # our replies are a sentence or a tool call; the free tier counts this room too
+GROQ_HISTORY = 4          # earlier messages kept (two exchanges), plus all of this message's work
+GROQ_WAIT_MAX = 25        # seconds worth waiting for the minute's limit to free up
+
+
+def _wait_seconds(r) -> float | None:
+    """How long Groq says to wait before its per-minute limit frees up, when that is short
+    enough to wait for in a chat ("try again in 12.5s" or a Retry-After header); None otherwise."""
+    m = re.search(r"try again in (?:(\d+)m)?([\d.]+)s", r.text or "")
+    seconds = (int(m.group(1) or 0) * 60 + float(m.group(2))) if m else None
+    if seconds is None:
+        try:
+            seconds = float(r.headers.get("retry-after", ""))
+        except ValueError:
+            return None
+    return seconds + 0.5 if 0 <= seconds <= GROQ_WAIT_MAX else None
 
 
 def _fits_per_minute(error_text: str, max_tokens) -> int | None:
@@ -438,7 +460,7 @@ class GroqLLM:
     Same complete() as the others. Images are read by Gemini only: extract() here handles
     images with a vision model when one is set (GROQ_VISION_MODEL), never PDFs."""
 
-    def __init__(self, model: str | None = None, api_key: str | None = None, max_tokens: int = 4096,
+    def __init__(self, model: str | None = None, api_key: str | None = None, max_tokens: int = GROQ_REPLY_TOKENS,
                  client=None):
         import httpx
 
@@ -457,6 +479,41 @@ class GroqLLM:
         return [{"type": "function", "function": {
             "name": t["name"], "description": t.get("description", ""),
             "parameters": t.get("input_schema") or {"type": "object", "properties": {}}}} for t in tools]
+
+    @staticmethod
+    def _light_tools(tools: list[dict]) -> list[dict]:
+        """The same tools, lighter: each description cut to its first sentence and no field
+        descriptions (names, types, choices and required fields stay, so calls stay valid)."""
+        def strip(schema):
+            if isinstance(schema, dict):
+                return {k: strip(v) for k, v in schema.items() if k != "description"}
+            if isinstance(schema, list):
+                return [strip(v) for v in schema]
+            return schema
+        out = []
+        for t in GroqLLM._tools(tools):
+            fn = t["function"]
+            first = re.split(r"(?<=[.؟!:])\s", fn["description"] or "", maxsplit=1)[0][:140]
+            out.append({"type": "function", "function": {**fn, "description": first,
+                                                         "parameters": strip(fn["parameters"])}})
+        return out
+
+    @staticmethod
+    def _light_system(system: str) -> str:
+        """The short rules in place of the full prompt; the memory block after it stays."""
+        from app.prompts import COMPACT_SYSTEM_PROMPT, SYSTEM_PROMPT
+        return COMPACT_SYSTEM_PROMPT + system[len(SYSTEM_PROMPT):] if system.startswith(SYSTEM_PROMPT) else system
+
+    @staticmethod
+    def _light_messages(messages: list[dict]) -> list[dict]:
+        """This message with all its tool work, and only the last few earlier messages."""
+        work = [i for i, m in enumerate(messages) if m["role"] == "tool" or m.get("tool_calls")]
+        users = [i for i, m in enumerate(messages) if m["role"] == "user" and (not work or i < work[0])]
+        start = users[-1] if users else 0  # where this message begins
+        earlier = messages[:start][-GROQ_HISTORY:]
+        while earlier and earlier[0]["role"] != "user":
+            earlier = earlier[1:]
+        return earlier + messages[start:]
 
     @staticmethod
     def _messages(system: str, messages: list[dict]) -> list[dict]:
@@ -483,6 +540,11 @@ class GroqLLM:
             try:
                 r = self.client.post(GROQ_URL, json={**body, "model": model},
                                      headers={"Authorization": f"Bearer {self.key}"})
+                if r.status_code == 429 and (wait := _wait_seconds(r)) is not None:
+                    # this minute's tokens are used up (a message often needs two calls): wait, once
+                    time.sleep(wait)
+                    r = self.client.post(GROQ_URL, json={**body, "model": model},
+                                         headers={"Authorization": f"Bearer {self.key}"})
                 if r.status_code == 413 and (fit := _fits_per_minute(r.text, body.get("max_tokens"))):
                     # the free tier counts the reply room too: ask again with only the room that fits
                     r = self.client.post(GROQ_URL, json={**body, "model": model, "max_tokens": fit},
@@ -507,9 +569,11 @@ class GroqLLM:
                        retryable=True)
 
     def complete(self, system: str, messages: list[dict], tools: list[dict]) -> LLMResponse:
-        body = {"messages": self._messages(system, messages), "max_tokens": self.max_tokens}
+        # Light, so a message fits the free tier's tokens a minute (18-10-2026: refused at ~10,000)
+        body = {"messages": self._messages(self._light_system(system), self._light_messages(messages)),
+                "max_tokens": self.max_tokens}
         if tools:
-            body.update(tools=self._tools(tools), tool_choice="auto")
+            body.update(tools=self._light_tools(tools), tool_choice="auto")
         choice = self._post(body)["choices"][0]
         if choice.get("finish_reason") == "length":
             raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens")
