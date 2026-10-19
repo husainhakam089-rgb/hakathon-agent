@@ -539,3 +539,89 @@ def test_groq_waits_for_the_minute_to_free_up(monkeypatch):
 
     assert _groq(handler).complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
     assert waited == [7.75] and len(calls) == 2
+
+
+def _busy(seconds):
+    return httpx.Response(429, text=f"Rate limit reached on tokens per minute (TPM). Please try again in {seconds}s.")
+
+
+def test_groq_long_wait_tries_the_other_model_first(monkeypatch):
+    # 19-10-2026 online: messages one after another, the minute was used up on gpt-oss-120b
+    import time
+    monkeypatch.setattr(time, "sleep", lambda s: pytest.fail("the other model was free: no waiting"))
+    tried = []
+
+    def handler(req):
+        tried.append(_json.loads(req.content)["model"])
+        return _busy(38.5) if len(tried) == 1 else _reply({"content": "هلا"})
+
+    llm = _groq(handler)
+    assert llm.complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
+    assert len(tried) == 2 and tried[0] != tried[1] and llm.model == tried[1]
+
+
+def test_groq_waits_for_the_soonest_model_when_all_are_busy(monkeypatch):
+    import time
+    waited, tried = [], []
+    monkeypatch.setattr(time, "sleep", lambda s: waited.append(s))
+
+    def handler(req):
+        tried.append(_json.loads(req.content)["model"])
+        if len(tried) == 1:
+            return _busy(40)
+        if len(tried) == 2:
+            return _busy(22.5)
+        return _reply({"content": "هلا"})
+
+    llm = _groq(handler)
+    assert llm.complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
+    assert waited == [23.0] and tried[2] == tried[1] == llm.model
+
+
+def test_groq_does_not_wait_past_a_minute(monkeypatch):
+    import time
+    monkeypatch.setattr(time, "sleep", lambda s: pytest.fail("too long to keep the owner waiting"))
+    with pytest.raises(LLMError) as e:
+        _groq(lambda r: _busy("1m30")).complete("s", [{"role": "user", "text": "x"}], [])
+    assert e.value.retryable
+
+
+class _Flaky:
+    """Gemini that fails once (busy for a moment), then answers."""
+    model = "gemini-x"
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, *a):
+        self.calls += 1
+        if self.calls == 1:
+            raise LLMError("خدمة Gemini بيها زحمة", retryable=True)
+        return LLMResponse(text="من Gemini")
+
+
+class _BackupDown:
+    model = "groq-x"
+
+    def complete(self, *a):
+        raise LLMError("Groq هم مشغول", "429", retryable=True)
+
+
+def test_fallback_asks_gemini_again_when_the_backup_fails_while_gemini_rests():
+    gem = _Flaky()
+    f = FallbackLLM(gem, _BackupDown())
+    with pytest.raises(LLMError):
+        f.complete("s", [], [])  # Gemini busy, Groq busy: the owner hears it
+    assert f.complete("s", [], []).text == "من Gemini"  # Groq still busy: Gemini answers after all
+    assert f._current() is gem  # and is first again
+
+
+def test_fallback_does_not_ask_gemini_again_when_its_day_is_over():
+    from app.llm import ALL_QUOTA_USED
+
+    out = _Down(ALL_QUOTA_USED)
+    f = FallbackLLM(out, _BackupDown())
+    for _ in range(2):
+        with pytest.raises(LLMError):
+            f.complete("s", [], [])
+    assert out.calls == 1

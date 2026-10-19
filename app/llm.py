@@ -16,6 +16,7 @@ history, so providers must work without it too.
 """
 
 import json
+import logging
 import re
 import os
 import time
@@ -24,6 +25,8 @@ from datetime import date
 
 # Models that accept the server-side refusal fallback (`fallbacks: "default"`).
 _FALLBACK_MODELS = {"claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"}
+
+log = logging.getLogger("debt_agent")
 
 
 class LLMError(Exception):
@@ -427,7 +430,8 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
 GROQ_REPLY_TOKENS = 1200  # our replies are a sentence or a tool call; the free tier counts this room too
 GROQ_HISTORY = 4          # earlier messages kept (two exchanges), plus all of this message's work
-GROQ_WAIT_MAX = 25        # seconds worth waiting for the minute's limit to free up
+GROQ_WAIT_SHORT = 10      # a wait this short is spent on the same model
+GROQ_WAIT_MAX = 60        # seconds worth waiting for the minute's limit to free up, once every model is busy
 
 
 def _wait_seconds(r) -> float | None:
@@ -533,26 +537,32 @@ class GroqLLM:
                     out.append({"role": "tool", "tool_call_id": r["id"], "content": r["content"]})
         return out
 
+    def _send(self, body: dict, model: str, max_tokens=None):
+        extra = {"max_tokens": max_tokens} if max_tokens else {}
+        try:
+            return self.client.post(GROQ_URL, json={**body, "model": model, **extra},
+                                    headers={"Authorization": f"Bearer {self.key}"})
+        except self._httpx.TimeoutException as e:
+            raise LLMError("Groq تأخر بالرد. عيد بعد شوية.", f"timeout: {e!r}", retryable=True)
+        except self._httpx.TransportError as e:
+            raise LLMError("ما گدرت أوصل لـ Groq. تأكد من النت عندك وعيد.", f"{type(e).__name__}: {e}")
+
     def _post(self, body: dict) -> dict:
         last = None
         tried = []  # every model's answer, so a failure says why each one refused (not only the last)
+        later = []  # (seconds, model): models whose minute frees up too late to wait for at once
         for model in [self.model] + [m for m in self.models if m != self.model]:
-            try:
-                r = self.client.post(GROQ_URL, json={**body, "model": model},
-                                     headers={"Authorization": f"Bearer {self.key}"})
-                if r.status_code == 429 and (wait := _wait_seconds(r)) is not None:
+            r = self._send(body, model)
+            if r.status_code == 429 and (wait := _wait_seconds(r)) is not None:
+                if wait <= GROQ_WAIT_SHORT:
                     # this minute's tokens are used up (a message often needs two calls): wait, once
                     time.sleep(wait)
-                    r = self.client.post(GROQ_URL, json={**body, "model": model},
-                                         headers={"Authorization": f"Bearer {self.key}"})
-                if r.status_code == 413 and (fit := _fits_per_minute(r.text, body.get("max_tokens"))):
-                    # the free tier counts the reply room too: ask again with only the room that fits
-                    r = self.client.post(GROQ_URL, json={**body, "model": model, "max_tokens": fit},
-                                         headers={"Authorization": f"Bearer {self.key}"})
-            except self._httpx.TimeoutException as e:
-                raise LLMError("Groq تأخر بالرد. عيد بعد شوية.", f"timeout: {e!r}", retryable=True)
-            except self._httpx.TransportError as e:
-                raise LLMError("ما گدرت أوصل لـ Groq. تأكد من النت عندك وعيد.", f"{type(e).__name__}: {e}")
+                    r = self._send(body, model)
+                else:
+                    later.append((wait, model))  # each model has its own minute: try the next one first
+            if r.status_code == 413 and (fit := _fits_per_minute(r.text, body.get("max_tokens"))):
+                # the free tier counts the reply room too: ask again with only the room that fits
+                r = self._send(body, model, fit)
             if r.status_code == 200:
                 self.model = model
                 return r.json()
@@ -565,6 +575,16 @@ class GroqLLM:
             if r.status_code in (404, 429, 500, 502, 503) or "model" in r.text[:200].lower() and r.status_code == 400:
                 continue  # this model is gone, busy or out of quota: the next one
             raise LLMError("صار خطأ بالطلب لـ Groq، عيد المحاولة.", last)
+        if later:
+            # every model is busy this minute (messages sent one after another): wait for the
+            # soonest one rather than tell the owner to try again
+            wait, model = min(later)
+            time.sleep(wait)
+            r = self._send(body, model)
+            if r.status_code == 200:
+                self.model = model
+                return r.json()
+            tried.append(f"{model} (after waiting) → {r.status_code}: {r.text[:160]}")
         raise LLMError("Groq هم مشغول أو خلصت حصته هسه. جرب بعد شوية.", " | ".join(tried) or last or "",
                        retryable=True)
 
@@ -636,11 +656,26 @@ class FallbackLLM:
             try:
                 return getattr(self.primary, name)(*args)
             except LLMError as e:
+                log.warning("Gemini failed, using the backup: %s", e.detail)
                 if e.user_message == ALL_QUOTA_USED:
                     self._skip_day = date.today()
                 else:
                     self._skip_until = time.time() + self.COOL_DOWN
-        return getattr(self.backup, name)(*args)
+                return getattr(self.backup, name)(*args)
+        try:
+            return getattr(self.backup, name)(*args)
+        except LLMError as e:
+            if self._skip_day == date.today():
+                raise  # Gemini is out for the day: nothing else to ask
+            # Gemini was only resting after one failure (busy for a moment): ask it again
+            # rather than give the owner the backup's error
+            log.warning("Backup failed while Gemini rested, asking Gemini again: %s", e.detail)
+            try:
+                answer = getattr(self.primary, name)(*args)
+            except LLMError:
+                raise e from None
+            self._skip_until = 0.0
+            return answer
 
     def complete(self, system, messages, tools):
         return self._call("complete", system, messages, tools)
