@@ -625,3 +625,33 @@ def test_fallback_does_not_ask_gemini_again_when_its_day_is_over():
         with pytest.raises(LLMError):
             f.complete("s", [], [])
     assert out.calls == 1
+
+
+def test_make_llm_asks_a_second_gemini_key_before_groq(monkeypatch):
+    from app.llm import make_llm
+
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g1")
+    monkeypatch.setenv("GEMINI_API_KEY_2", "g2")
+    monkeypatch.setenv("GROQ_API_KEY", "q")
+    llm = make_llm()
+    assert type(llm.primary).__name__ == "GeminiLLM" and isinstance(llm.backup, FallbackLLM)
+    assert type(llm.backup.primary).__name__ == "GeminiLLM" and isinstance(llm.backup.backup, GroqLLM)
+    monkeypatch.delenv("GROQ_API_KEY")
+    llm = make_llm()
+    assert type(llm.backup).__name__ == "GeminiLLM"  # no Groq: the second key is the last one
+
+
+def test_fallback_chain_reaches_the_second_key_then_the_backup():
+    from app.llm import ALL_QUOTA_USED
+
+    first, second = _Down(ALL_QUOTA_USED), _Down(ALL_QUOTA_USED)
+    f = FallbackLLM(first, FallbackLLM(second, _Up()))
+    assert f.complete("s", [], []).text == "من Groq"
+    f.complete("s", [], [])
+    assert first.calls == 1 and second.calls == 1  # both out for the day: straight to Groq
+
+    good = _Up()
+    good.model = "gemini-2"
+    f = FallbackLLM(_Down(ALL_QUOTA_USED), FallbackLLM(good, _BackupDown()))
+    assert f.complete("s", [], []).text == "من Groq" and f.model == "gemini-2"

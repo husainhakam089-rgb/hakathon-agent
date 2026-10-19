@@ -690,12 +690,19 @@ class FallbackLLM:
 
 def make_llm():
     """Factory: the one place to change when switching provider (LLM_PROVIDER in .env).
-    Gemini by default; with GROQ_API_KEY set, Groq takes over when Gemini's quota runs out."""
+    Gemini by default; then any more Gemini keys; with GROQ_API_KEY set, Groq takes over when
+    every Gemini key's quota runs out."""
     provider = (os.getenv("LLM_PROVIDER") or "gemini").strip().lower()
     if provider == "anthropic":
         return AnthropicLLM()
     if provider == "groq":
         return GroqLLM()
+    # More Gemini keys (GEMINI_API_KEY_2, _3, ...) are asked in turn, each with its own free quota
+    chain = [GeminiLLM()] + [GeminiLLM(api_key=os.getenv(f"GEMINI_API_KEY_{i}")) for i in range(2, 10)
+                             if os.getenv(f"GEMINI_API_KEY_{i}")]
     if os.getenv("GROQ_API_KEY"):
-        return FallbackLLM(GeminiLLM(), GroqLLM())
-    return GeminiLLM()
+        chain.append(GroqLLM())
+    llm = chain.pop()
+    while chain:
+        llm = FallbackLLM(chain.pop(), llm)
+    return llm
