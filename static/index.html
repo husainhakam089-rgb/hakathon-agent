@@ -1504,7 +1504,7 @@ function liveTake() {
   setTimeout(() => tick.classList.remove('show'), 700);
   try { navigator.vibrate && navigator.vibrate(80); } catch (e) { /* not on every phone */ }
   liveMsg('انصورت ✓ اكلب الصفحة');
-  c.toBlob(blob => {
+  livePhoto(c).then(blob => {
     if (live) live.taking = false;
     scanUploading++;
     liveCount();
@@ -1518,7 +1518,22 @@ function liveTake() {
       }
       liveCount();
     });
-  }, 'image/jpeg', 0.85);
+  });
+}
+
+// The camera's own photo where the phone allows it (Chrome on Android): sharper than a frame of
+// the video, and processed like a photo from the camera app. Elsewhere (iPhone), or if it fails
+// or takes too long, the video frame already drawn on `frame` is used.
+async function livePhoto(frame) {
+  const track = live && live.stream.getVideoTracks()[0];
+  if (track && 'ImageCapture' in window) {
+    try {
+      const photo = await Promise.race([new ImageCapture(track).takePhoto(),
+        new Promise((_, fail) => setTimeout(() => fail(new Error('slow')), 5000))]);
+      if (photo && photo.size) return await shrinkImage(photo);
+    } catch (e) { /* not supported on this phone: the video frame below */ }
+  }
+  return new Promise(ok => frame.toBlob(ok, 'image/jpeg', 0.85));
 }
 
 async function openLiveScan() {
