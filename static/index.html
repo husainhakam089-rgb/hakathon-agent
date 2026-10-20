@@ -274,6 +274,28 @@ form .mic-btn.on { background: #e11d48; border-color: #e11d48; animation: pulse 
 .scan-page.done { border-color: var(--accent); }
 .scan-page.error { border-color: #f87171; }
 .scan-status { font-size: 14px; margin: 6px 0; }
+/* live scan: the camera stays open over the notebook, a page is taken when the picture holds still */
+.live-scan { position: fixed; inset: 0; z-index: 40; background: #000; }
+.live-scan video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.live-frame { position: absolute; inset: 12% 6% 22%; border: 2px dashed #ffffffaa; border-radius: 14px; pointer-events: none; }
+.live-scan.steady .live-frame { border-style: solid; border-color: var(--accent); }
+.live-tick { position: absolute; inset: 0; margin: auto; width: 120px; height: 120px; border-radius: 50%; background: #16a34ae6;
+  color: #fff; display: flex; align-items: center; justify-content: center; opacity: 0; transform: scale(.6);
+  transition: opacity .2s, transform .2s; pointer-events: none; }
+.live-tick.show { opacity: 1; transform: none; }
+.live-tick svg.i { width: 72px; height: 72px; }
+.live-top { position: absolute; top: 0; inset-inline: 0; padding: calc(14px + env(safe-area-inset-top)) 16px 26px; display: flex;
+  justify-content: space-between; align-items: center; gap: 10px; color: #fff; font-size: 15px;
+  background: linear-gradient(#000b, transparent); }
+.live-top .live-count { font-weight: 700; white-space: nowrap; }
+.live-bottom { position: absolute; bottom: 0; inset-inline: 0; padding: 26px 16px calc(18px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; background: linear-gradient(transparent, #000c); }
+.live-shoot { width: 74px; height: 74px; border-radius: 50%; border: 4px solid #fff; background: #ffffff33; cursor: pointer; flex-shrink: 0; }
+.live-shoot:active { background: #fff; }
+.live-auto, .live-done { min-width: 96px; padding: 11px 12px; border-radius: 12px; border: 1px solid #fff6; background: #0007;
+  color: #fff; font: inherit; font-size: 14px; cursor: pointer; }
+.live-auto.on { border-color: var(--accent); color: var(--accent); }
+.live-done { background: var(--accent); color: #0f172a; border-color: var(--accent); font-weight: 700; }
 button.link { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
 .review .written { display: block; color: var(--accent-text); font-size: 11px; margin-top: 3px; }
 .review tr.low td { background: rgba(250,204,21,0.10); }
@@ -1358,11 +1380,13 @@ function renderScan(message) {
   const done = st.pages.filter(p => p.status === 'done');
   const rows = done.reduce((n, p) => n + (p.rows || []).length, 0);
   const todo = st.pages.filter(p => p.status !== 'done').length;
-  $('drawerBody').innerHTML = `<p class="hint">صوّر الدفتر <b>صفحة ورا صفحة</b>. كل صورة تنرفع أول ما تصورها.
+  $('drawerBody').innerHTML = `<p class="hint">افتح الكاميرا وثبّتها على الصفحة: تتصور بروحها وتطلع ✓، اكلب الصفحة
+      وثبّت مرة ثانية، وهيچ لحد ما تخلص. كل صورة تنرفع أول ما تتصور.
       بعدين دوس "اقرا الصفحات" وأطلعلك جدول واحد بكل الأسطر، تراجعه وتسجله بدوسة وحدة.
       إذا عندك أرصدة بس (كل زبون شكد عليه)، أشّر "أرصدة منقولة" بالجدول.</p>
     <div class="actions">
-      <button class="big primary" id="scanShoot">📷 صوّر صفحة</button>
+      <button class="big primary" id="scanLive">📹 افتح الكاميرا وصوّر الصفحات ورا بعض</button>
+      <button class="big secondary" id="scanShoot">📷 صوّر صفحة وحدة</button>
       <button class="big secondary" id="scanPick">🖼 من الصور</button>
     </div>
     <input type="file" id="scanCam" accept="image/*" capture="environment" hidden>
@@ -1382,24 +1406,166 @@ function renderScan(message) {
   $('scanFiles').onchange = e => addScanPages(e.target.files);
 }
 
+// Upload one page and add it to the list. Returns an error message, or '' when it worked.
+async function uploadScanPage(blob, name) {
+  try {
+    const up = await fetch('/upload', {method: 'POST', body: blob,
+      headers: {'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(name || 'page.jpg')}});
+    const data = await up.json();
+    if (!up.ok) return data.message || 'ما گدرت أرفع الصورة.';
+    const st = scanState();
+    st.pages.push({file_id: data.file_id, status: 'new'});
+    saveScan(st);
+    return '';
+  } catch (e) {
+    return 'ما گدرت أرفع الصورة. تأكد من النت وعيد.';
+  }
+}
+
 async function addScanPages(files) {
   files = [...(files || [])];
   for (const [n, file] of files.entries()) {
     renderScan(`دا أرفع ${files.length > 1 ? `${n + 1} من ${files.length}` : 'الصفحة'}…`);
+    let err;
     try {
-      const blob = await shrinkImage(file);
-      const up = await fetch('/upload', {method: 'POST', body: blob,
-        headers: {'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name || 'page.jpg')}});
-      const data = await up.json();
-      if (!up.ok) return renderScan('⚠ ' + (data.message || 'ما گدرت أرفع الصورة.'));
-      const st = scanState();
-      st.pages.push({file_id: data.file_id, status: 'new'});
-      saveScan(st);
+      err = await uploadScanPage(await shrinkImage(file), file.name);
     } catch (e) {
-      return renderScan('⚠ ما گدرت أرفع الصورة. تأكد من النت وعيد.');
+      err = 'ما گدرت أرفع الصورة. تأكد من النت وعيد.';
     }
+    if (err) return renderScan('⚠ ' + err);
   }
   renderScan();
+}
+
+/* ---------- live scan: the camera stays open over the notebook ----------
+   Every 200 ms a tiny grey copy of the picture is compared with the one before. When it holds
+   still for about a second it is taken by itself (a ✓ and a buzz); the next page is only taken
+   after the picture moved (the page was turned) and settled on something different, so one page
+   is not taken twice. The button takes it at once; "تلقائي" turns the automatic taking off.
+   Pages are uploaded one after another in the background, in the order they were taken. */
+let live = null, scanQueue = Promise.resolve(), scanUploading = 0;
+const LIVE_W = 48, LIVE_H = 36;
+const LIVE_STILL = 4, LIVE_MOVING = 10, LIVE_NEW_PAGE = 5, LIVE_HOLD = 5;  // grey levels, samples
+
+function liveSample() {
+  const v = live.video;
+  if (!v.videoWidth) return null;
+  const c = live.small || (live.small = Object.assign(document.createElement('canvas'), {width: LIVE_W, height: LIVE_H}));
+  const ctx = c.getContext('2d', {willReadFrequently: true});
+  ctx.drawImage(v, 0, 0, LIVE_W, LIVE_H);
+  const d = ctx.getImageData(0, 0, LIVE_W, LIVE_H).data;
+  const g = new Float32Array(LIVE_W * LIVE_H);
+  for (let i = 0; i < g.length; i++) g[i] = (d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3;
+  return g;
+}
+const liveDiff = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length; };
+
+function liveMsg(text) { if (live) live.el.querySelector('.live-msg').textContent = text; }
+function liveCount() {
+  if (!live) return;
+  live.el.querySelector('.live-count').textContent = `${live.count} صفحة` + (scanUploading ? ` · دا أرفع ${scanUploading}` : '');
+}
+
+function liveWatch() {
+  if (!live || live.taking) return;
+  const g = liveSample();
+  if (!g) return;
+  const motion = live.prev ? liveDiff(g, live.prev) : 99;
+  live.prev = g;
+  if (motion > LIVE_MOVING) { live.still = 0; live.moved = true; live.el.classList.remove('steady'); return; }
+  live.still = motion < LIVE_STILL ? live.still + 1 : 0;
+  live.el.classList.toggle('steady', live.still >= LIVE_HOLD);
+  if (!live.auto || live.still < LIVE_HOLD) return;
+  if (live.shot && (!live.moved || liveDiff(g, live.shot) < LIVE_NEW_PAGE)) {
+    return liveMsg(live.auto ? 'انصورت ✓ اكلب الصفحة' : '');
+  }
+  const mean = g.reduce((a, b) => a + b, 0) / g.length;
+  if (mean < 45) return liveMsg('الصورة معتمة، شغّل ضوء أو قرّب للشباك');
+  liveTake();
+}
+
+function liveTake() {
+  if (!live || live.taking) return;
+  const v = live.video;
+  if (!v.videoWidth) return;
+  live.taking = true;
+  const scale = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.round(v.videoWidth * scale);
+  c.height = Math.round(v.videoHeight * scale);
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  live.shot = liveSample() || live.prev;
+  live.moved = false;
+  live.still = 0;
+  live.count++;
+  const n = live.count;
+  const tick = live.el.querySelector('.live-tick');
+  tick.classList.add('show');
+  setTimeout(() => tick.classList.remove('show'), 700);
+  try { navigator.vibrate && navigator.vibrate(80); } catch (e) { /* not on every phone */ }
+  liveMsg('انصورت ✓ اكلب الصفحة');
+  c.toBlob(blob => {
+    if (live) live.taking = false;
+    scanUploading++;
+    liveCount();
+    scanQueue = scanQueue.then(() => uploadScanPage(blob, `page-${n}.jpg`)).then(err => {
+      scanUploading--;
+      if (err) {
+        if (live) liveMsg(`⚠ صفحة ${n} ما انرفعت: ${err} صوّرها مرة ثانية.`);
+        else renderScan(`⚠ صفحة ${n} ما انرفعت: ${err} صوّرها مرة ثانية.`);
+      } else if (!live) {
+        renderScan(scanUploading ? `دا أرفع ${scanUploading} صفحة…` : '');
+      }
+      liveCount();
+    });
+  }, 'image/jpeg', 0.85);
+}
+
+async function openLiveScan() {
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return $('scanCam').click();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({audio: false,
+      video: {facingMode: {ideal: 'environment'}, width: {ideal: 1920}, height: {ideal: 1440}}});
+  } catch (e) {
+    return renderScan('⚠ ما گدرت أفتح الكاميرا. اسمح للموقع يستعمل الكاميرا، أو دوس "صوّر صفحة وحدة".');
+  }
+  const el = document.createElement('div');
+  el.className = 'live-scan';
+  el.innerHTML = `<video playsinline muted autoplay></video>
+    <div class="live-frame"></div>
+    <div class="live-tick">${icon('check')}</div>
+    <div class="live-top"><span class="live-msg">حط الصفحة كلها داخل الإطار وثبّت</span><span class="live-count">0 صفحة</span></div>
+    <div class="live-bottom">
+      <button class="live-auto on" type="button">تلقائي ✓</button>
+      <button class="live-shoot" type="button" aria-label="صوّر هسه"></button>
+      <button class="live-done" type="button">خلصت</button>
+    </div>`;
+  document.body.appendChild(el);
+  live = {el, stream, video: el.querySelector('video'), count: 0, auto: true, still: 0, prev: null, shot: null,
+          moved: false, taking: false};
+  live.video.srcObject = stream;
+  live.video.play().catch(() => {});
+  el.querySelector('.live-shoot').onclick = liveTake;
+  el.querySelector('.live-done').onclick = closeLiveScan;
+  el.querySelector('.live-auto').onclick = e => {
+    live.auto = !live.auto;
+    e.currentTarget.classList.toggle('on', live.auto);
+    e.currentTarget.textContent = live.auto ? 'تلقائي ✓' : 'تلقائي ✕';
+    liveMsg(live.auto ? 'ثبّت على الصفحة وتتصور بروحها' : 'دوس الدائرة حتى تصوّر');
+  };
+  live.timer = setInterval(liveWatch, 200);
+}
+
+function closeLiveScan() {
+  if (!live) return;
+  clearInterval(live.timer);
+  live.stream.getTracks().forEach(t => t.stop());
+  live.el.remove();
+  const taken = live.count;
+  live = null;
+  renderScan(scanUploading ? `دا أرفع ${scanUploading} صفحة…`
+    : taken ? `✓ انصورت ${taken} صفحة. دوس "اقرا الصفحات".` : '');
 }
 
 async function readScanPages() {
@@ -1477,6 +1643,7 @@ $('scanBtn').onclick = () => { openDrawer('scan', '📷 سكان الدفتر');
 $('drawerBody').addEventListener('click', e => {
   if (drawerKind !== 'scan') return;
   const t = e.target;
+  if (t.id === 'scanLive') return openLiveScan();
   if (t.id === 'scanShoot') return $('scanCam').click();
   if (t.id === 'scanPick') return $('scanFiles').click();
   if (t.id === 'scanRead' && !scanBusy) return readScanPages();
