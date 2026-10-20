@@ -660,6 +660,7 @@ select option, select optgroup { background: var(--surface-2); color: var(--text
         <button role="menuitem" id="alertsBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-bell"/></svg></span><span>التنبيهات</span><b class="badge" id="alertsCount"></b></button>
         <button role="menuitem" id="reportsBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-chart"/></svg></span>التقارير والربح</button>
         <button role="menuitem" id="saleBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-cart"/></svg></span>شاشة البيع</button>
+        <button role="menuitem" id="recurringBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-calendar"/></svg></span>الصرفيات الثابتة</button>
         <button role="menuitem" id="scanBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-camera"/></svg></span>سكان الدفتر</button>
         <button role="menuitem" id="ledgerBtn" aria-expanded="false"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-book"/></svg></span><span id="ledgerLbl">افتح الحسابات</span><i class="dot"></i></button>
         <button role="menuitem" id="sessionsBtn"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-history"/></svg></span>المحادثات القديمة</button>
@@ -1926,7 +1927,7 @@ $('newChat').onclick = () => {
 /* ---------- side panel ---------- */
 let drawerKind = null;  // which list is open: 'memory' | 'sessions'
 const DRAWER_ICONS = {alerts: 'bell', reports: 'chart', sale: 'cart', scan: 'camera', sessions: 'history', memory: 'bulb',
-  backups: 'download', password: 'lock', cashday: 'receipt'};
+  backups: 'download', password: 'lock', cashday: 'receipt', recurring: 'calendar'};
 function openDrawer(kind, title) {
   drawerKind = kind;
   const words = String(title).replace(/^[^\p{L}\p{N}]+/u, '');  // the old emoji in front, if any
@@ -2449,8 +2450,14 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chec
 $('agentStatus').onclick = async () => { openDrawer('alerts', '🔔 التنبيهات'); await checkAlerts(false); renderAlerts(); };
 
 $('alertsBtn').onclick = async () => { openDrawer('alerts', '🔔 التنبيهات'); await checkAlerts(false); renderAlerts(); };
+// The same fixed expenses and settings as at the bottom of the alerts, on their own screen
+$('recurringBtn').onclick = () => {
+  openDrawer('recurring', 'الصرفيات الثابتة');
+  $('drawerBody').innerHTML = '<div id="recurringBox"><p class="hint">…</p></div>';
+  loadRecurring();
+};
 $('drawerBody').addEventListener('click', async e => {
-  if (drawerKind !== 'alerts') return;
+  if (drawerKind !== 'alerts' && drawerKind !== 'recurring') return;
   const t = e.target.closest('button') || e.target;
   const post = (url, body, method = 'POST') => fetch(url, {method, headers: {'Content-Type': 'application/json'}, body: body && JSON.stringify(body)}).then(r => r.json());
   if (await alertAction(t)) return;
