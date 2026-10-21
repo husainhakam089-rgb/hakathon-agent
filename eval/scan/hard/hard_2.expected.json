@@ -1,0 +1,61 @@
+{
+  "date": "١٦/١٠",
+  "rows": [
+    {
+      "name": "ابو سجاد",
+      "amount": 20000,
+      "currency": "IQD",
+      "type": "payment",
+      "crossed_out": false,
+      "written": "ابو سجاد سدد 20"
+    },
+    {
+      "name": "زينب",
+      "amount": 4500,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "زينب ٤٥٠٠"
+    },
+    {
+      "name": "الحاج عبود",
+      "amount": 120000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "الحاج عبود 120"
+    },
+    {
+      "name": "محمد الكهربائي",
+      "amount": 25000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "محمد الكهربائي ٢٥"
+    },
+    {
+      "name": "ام فاطمة",
+      "amount": 6000,
+      "currency": "IQD",
+      "type": "payment",
+      "crossed_out": false,
+      "written": "ام فاطمة واصل ٦"
+    },
+    {
+      "name": "علاوي",
+      "amount": 14000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "علاوي 14"
+    },
+    {
+      "name": "ابو تبارك",
+      "amount": 33000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "ابو تبارك ٣٣"
+    }
+  ]
+}

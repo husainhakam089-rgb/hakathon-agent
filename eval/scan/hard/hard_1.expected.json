@@ -1,0 +1,69 @@
+{
+  "date": "١٥/١٠",
+  "rows": [
+    {
+      "name": "ابو سجاد",
+      "amount": 20000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "ابو سجاد 20"
+    },
+    {
+      "name": "ام فاطمة",
+      "amount": 12000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "ام فاطمة ١٢"
+    },
+    {
+      "name": "حمودي",
+      "amount": 15000,
+      "currency": "IQD",
+      "type": "payment",
+      "crossed_out": false,
+      "written": "واصل حمودي 15"
+    },
+    {
+      "name": "الاستاذ رعد",
+      "amount": 75000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "الاستاذ رعد ٧٥"
+    },
+    {
+      "name": "ابو كرار",
+      "amount": 30,
+      "currency": "USD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "ابو كرار 30 $"
+    },
+    {
+      "name": "مرتضى",
+      "amount": 9000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": true,
+      "written": "مرتضى ٩"
+    },
+    {
+      "name": "مرتضى",
+      "amount": 19000,
+      "currency": "IQD",
+      "type": "debt",
+      "crossed_out": false,
+      "written": "مرتضى ١٩"
+    },
+    {
+      "name": "ام سيف",
+      "amount": 10000,
+      "currency": "IQD",
+      "type": "payment",
+      "crossed_out": false,
+      "written": "ام سيف -10"
+    }
+  ]
+}
