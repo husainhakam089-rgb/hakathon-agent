@@ -111,7 +111,7 @@ class AnthropicLLM:
         if response.stop_reason == "refusal":
             return LLMResponse(text="", refused=True)
         if response.stop_reason == "max_tokens":
-            raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens")
+            raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens", retryable=True)
 
         text = "".join(b.text for b in response.content if b.type == "text").strip()
         calls = [ToolCall(b.id, b.name, dict(b.input)) for b in response.content if b.type == "tool_use"]
@@ -350,7 +350,7 @@ class GeminiLLM:
         candidate = response.candidates[0]
         reason = candidate.finish_reason
         if reason == t.FinishReason.MAX_TOKENS:
-            raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens")
+            raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens", retryable=True)
         parts = (candidate.content.parts if candidate.content else None) or []
         if not parts and reason in (t.FinishReason.SAFETY, t.FinishReason.PROHIBITED_CONTENT,
                                     t.FinishReason.BLOCKLIST, t.FinishReason.SPII):
@@ -428,7 +428,7 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 # Online on 18-10-2026 Groq answered 404 for llama-3.3-70b, llama-4-scout, qwen3-32b and kimi-k2: only
 # gpt-oss is left. GROQ_MODEL can still name another one.
 DEFAULT_GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
-GROQ_REPLY_TOKENS = 1200  # our replies are a sentence or a tool call; the free tier counts this room too
+GROQ_REPLY_TOKENS = 2000  # a sentence or a tool call plus gpt-oss's short thinking; the free tier counts this room too
 GROQ_HISTORY = 4          # earlier messages kept (two exchanges), plus all of this message's work
 GROQ_WAIT_SHORT = 10      # a wait this short is spent on the same model
 GROQ_WAIT_MAX = 60        # seconds worth waiting for the minute's limit to free up, once every model is busy
@@ -445,6 +445,26 @@ def _wait_seconds(r) -> float | None:
         except ValueError:
             return None
     return seconds + 0.5 if 0 <= seconds <= GROQ_WAIT_MAX else None
+
+
+def _made_up_tool_text(error_text: str) -> str | None:
+    """Groq refuses a call to a tool that was not offered (21-10-2026 online: gpt-oss called
+    "ask_user" with {"question": "تقصد 187,500؟"}). When that call carries a question or message
+    for the owner, it is the reply; None otherwise (the next model is asked)."""
+    try:
+        err = json.loads(error_text).get("error") or {}
+        if err.get("code") != "tool_use_failed":
+            return None
+        call = json.loads(err.get("failed_generation") or "{}")
+        args = call.get("arguments") or call.get("parameters") or {}
+        if isinstance(args, str):
+            args = json.loads(args)
+    except (ValueError, AttributeError, TypeError):
+        return None
+    for key in ("question", "message", "text", "reply", "content"):
+        if isinstance(args, dict) and isinstance(args.get(key), str) and args[key].strip():
+            return args[key].strip()
+    return None
 
 
 def _fits_per_minute(error_text: str, max_tokens) -> int | None:
@@ -563,6 +583,10 @@ class GroqLLM:
             if r.status_code == 413 and (fit := _fits_per_minute(r.text, body.get("max_tokens"))):
                 # the free tier counts the reply room too: ask again with only the room that fits
                 r = self._send(body, model, fit)
+            if r.status_code == 400 and (asked := _made_up_tool_text(r.text)):
+                # it called a tool that does not exist to ask the owner something: that question is the reply
+                self.model = model
+                return {"choices": [{"message": {"content": asked}, "finish_reason": "stop"}]}
             if r.status_code == 200:
                 self.model = model
                 return r.json()
@@ -572,7 +596,8 @@ class GroqLLM:
                 continue  # too big for this model's free per-minute limit: the next model has more room
             if r.status_code in (401, 403):
                 raise LLMError("مفتاح Groq غلط. تأكد من GROQ_API_KEY بملف .env", last)
-            if r.status_code in (404, 429, 500, 502, 503) or "model" in r.text[:200].lower() and r.status_code == 400:
+            if r.status_code in (404, 429, 500, 502, 503) or r.status_code == 400 and (
+                    "model" in r.text[:200].lower() or "tool_use_failed" in r.text):
                 continue  # this model is gone, busy or out of quota: the next one
             raise LLMError("صار خطأ بالطلب لـ Groq، عيد المحاولة.", last)
         if later:
@@ -592,11 +617,15 @@ class GroqLLM:
         # Light, so a message fits the free tier's tokens a minute (18-10-2026: refused at ~10,000)
         body = {"messages": self._messages(self._light_system(system), self._light_messages(messages)),
                 "max_tokens": self.max_tokens}
+        if "gpt-oss" in self.model:
+            # it thinks before answering and the thinking counts in max_tokens: online on
+            # 21-10-2026 the reply was cut off ("max_tokens"). Our turns need little thinking.
+            body["reasoning_effort"] = "low"
         if tools:
             body.update(tools=self._light_tools(tools), tool_choice="auto")
         choice = self._post(body)["choices"][0]
         if choice.get("finish_reason") == "length":
-            raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens")
+            raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens", retryable=True)
         msg = choice.get("message") or {}
         calls = []
         for i, tc in enumerate(msg.get("tool_calls") or []):

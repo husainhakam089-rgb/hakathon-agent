@@ -253,7 +253,8 @@ def test_weekly_wage_in_the_forecast_and_screen(conn, monkeypatch):
     for i in range(10):  # enough days of data for a forecast
         cid = db.add_customer(conn, f"ز{i}")
         db.add_transaction(conn, cid, "payment", 1000)
-        conn.execute("UPDATE transactions SET created_at = datetime('now','localtime', ?) WHERE customer_id = ?",
+        # dated back from the forecast's own day (it was 'now': the test broke once 17-10 had passed)
+        conn.execute("UPDATE transactions SET created_at = datetime('2026-10-17 12:00:00', ?) WHERE customer_id = ?",
                      (f"-{i + 1} days", cid))
     conn.commit()
     f = reports.cash_forecast(conn, days=28, today=date(2026, 10, 17))

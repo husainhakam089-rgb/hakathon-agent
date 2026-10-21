@@ -506,7 +506,7 @@ def test_groq_sends_a_light_request(monkeypatch):
     assert len(seen["tools"]) == len(TOOL_SCHEMAS)  # every tool is still there
     light = _json.dumps(seen, ensure_ascii=False)
     assert len(light) < 0.45 * len(_json.dumps(GroqLLM._tools(TOOL_SCHEMAS), ensure_ascii=False) + SYSTEM_PROMPT)
-    assert seen["max_tokens"] == 1200
+    assert seen["max_tokens"] == 2000  # 1200 until gpt-oss's thinking cut replies off (21-10-2026)
 
 
 def test_groq_light_request_keeps_this_messages_tool_work():
@@ -655,3 +655,38 @@ def test_fallback_chain_reaches_the_second_key_then_the_backup():
     good.model = "gemini-2"
     f = FallbackLLM(_Down(ALL_QUOTA_USED), FallbackLLM(good, _BackupDown()))
     assert f.complete("s", [], []).text == "من Groq" and f.model == "gemini-2"
+
+
+def test_groq_made_up_tool_question_becomes_the_reply():
+    # 21-10-2026 online: gpt-oss called "ask_user", which is not a tool; Groq refused the whole answer
+    failed = {"error": {"message": "Tool call validation failed: attempted to call tool 'ask_user' which was not in request.tools",
+                        "type": "invalid_request_error", "code": "tool_use_failed",
+                        "failed_generation": '{"name": "ask_user", "arguments": {"question":"تقصد 187,500؟"}}'}}
+    r = _groq(lambda req: httpx.Response(400, json=failed)).complete("s", [{"role": "user", "text": "x"}], [])
+    assert r.text == "تقصد 187,500؟" and r.tool_calls == []
+
+
+def test_groq_made_up_tool_without_a_question_tries_the_next_model():
+    tried = []
+    failed = {"error": {"code": "tool_use_failed", "failed_generation": '{"name": "nope", "arguments": {}}'}}
+
+    def handler(req):
+        tried.append(_json.loads(req.content)["model"])
+        return httpx.Response(400, json=failed) if len(tried) == 1 else _reply({"content": "هلا"})
+
+    assert _groq(handler).complete("s", [{"role": "user", "text": "x"}], []).text == "هلا" and len(tried) == 2
+
+
+def test_groq_asks_gpt_oss_to_think_little():
+    # 21-10-2026 online: its thinking used up the reply room ("max_tokens")
+    seen = {}
+
+    def handler(req):
+        seen.update(_json.loads(req.content))
+        return _reply({"content": "هلا"})
+
+    _groq(handler).complete("s", [{"role": "user", "text": "x"}], [])
+    assert seen["reasoning_effort"] == "low"
+    with pytest.raises(LLMError) as e:
+        _groq(lambda req: _reply({"content": ""}, finish="length")).complete("s", [{"role": "user", "text": "x"}], [])
+    assert e.value.retryable  # the agent starts the message again once
