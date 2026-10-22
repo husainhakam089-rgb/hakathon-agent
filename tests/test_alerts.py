@@ -278,5 +278,5 @@ def test_skipping_a_weekly_wage_says_this_week(conn, monkeypatch):
     month = c.post("/recurring", json={"reason": "إيجار", "amount": 250000, "day_of_month": 1}).json()
     w = c.post(f"/recurring/{week['recurring']['id']}/record", json={"session_id": "s1", "skip": True}).json()
     m = c.post(f"/recurring/{month['recurring']['id']}/record", json={"session_id": "s1", "skip": True}).json()
-    assert w["reply"] == "تمام، أجرة العامل ما تنسجل هالأسبوع."
-    assert m["reply"] == "تمام، إيجار ما تنسجل هالشهر."
+    assert w["reply"] == "تمام، أجرة العامل ما تتسجل هالأسبوع."
+    assert m["reply"] == "تمام، إيجار ما تتسجل هالشهر."

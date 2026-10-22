@@ -492,7 +492,7 @@ class Agent:
         if not bad:
             return None
         return {"ok": False, "error": "amount_not_from_owner",
-                "message": f"المبلغ {bad} ما مذكور بكلام صاحب المحل، فما انسجل. لا تسجل مبلغ ما گاله هو: "
+                "message": f"المبلغ {bad} ما مذكور بكلام صاحب المحل، فما تسجّل. لا تسجل مبلغ ما گاله هو: "
                            f"اسأله \"تقصد {bad}؟\" وسجل بس إذا وافق."}
 
     def _run_tool(self, session: Session, session_id: str, message: str, call) -> dict:

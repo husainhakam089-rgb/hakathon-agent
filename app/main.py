@@ -27,7 +27,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "37"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "38"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -203,7 +203,7 @@ async def remove_password(req: PasswordRequest, request: Request):
         auth.failed(request)
         return _error(403, "كلمة السر الحالية غلط.")
     if os.getenv("REQUIRE_PASSWORD") or (os.getenv("HOST") or "127.0.0.1") != "127.0.0.1":
-        return _error(409, "البرنامج مفتوح لغير هالحاسبة، فما ينشال منه كلمة السر.")
+        return _error(409, "البرنامج مفتوح لغير هالحاسبة، فما يتشال منه كلمة السر.")
     with agent.lock:
         db.set_setting(agent.conn, "password_hash", "")
     auth.STORED = ""
@@ -558,7 +558,7 @@ def record_recurring(rec_id: int, req: RecurringAction):
     if not result.get("ok"):
         return JSONResponse(result, status_code=422)
     if result.get("skipped"):
-        return {**result, "reply": f"تمام، {result['reason']} ما تنسجل {result.get('period_words', 'هالشهر')}."}
+        return {**result, "reply": f"تمام، {result['reason']} ما تتسجل {result.get('period_words', 'هالشهر')}."}
     reply = f"سجلت سحب {_money(result['amount'], result['currency'])} ({result['reason']})، صرفية ثابتة."
     agent.record_event(req.session_id, f"(وافقت على الصرفية الثابتة: {result['reason']})", reply)
     return {**result, "reply": reply}
@@ -689,14 +689,14 @@ def _pay_html(link: dict, customer: dict, shop: str, lines: list[dict], message:
     simulated = link["provider"] == "simulated"
     balance = db.get_balance(agent.conn, customer["id"])["IQD"]
     banner = ("<div class=test>🧪 وضع تجربة: هاي محاكاة لزين كاش وما تتحرك فلوس حقيقية. "
-              "لما تدوس ادفع، صاحب المحل يأكد إن الفلوس وصلته، وبعدها ينسجل التسديد.</div>" if simulated else "")
+              "لما تدوس ادفع، صاحب المحل يأكد إن الفلوس وصلته، وبعدها يتسجل التسديد.</div>" if simulated else "")
     if link["status"] == "paid":
-        body = f"<div class=ok>✓ انسجل التسديد: {link['amount']:,} دينار<br><small>{escape(link['paid_at'] or '')}</small></div>"
+        body = f"<div class=ok>✓ تسجّل التسديد: {link['amount']:,} دينار<br><small>{escape(link['paid_at'] or '')}</small></div>"
     elif link["status"] == "cancelled":
         body = "<div class=bad>هذا الرابط قديم وانلغى. اطلب رابط جديد من المحل.</div>"
     elif link.get("claimed_at"):
         body = (f"<div class=ok>✓ وصل للمحل إنك دفعت {link['amount']:,} دينار.<br>"
-                f"<small>ينسجل التسديد بحسابك لما صاحب المحل يتأكد.</small></div>")
+                f"<small>يتسجل التسديد بحسابك لما صاحب المحل يتأكد.</small></div>")
     elif balance <= 0:
         body = "<div class=ok>حسابك صافي، ما عليك شي هسه 🌷</div>"
     elif simulated:
@@ -986,7 +986,7 @@ def extract(req: ExtractRequest):
     except extraction.ExtractionNotReady as e:
         return _error(409, e.message)
     except NotImplementedError:
-        return _error(409, "ميزة الصور بعدها مو جاهزة: لازم تنكتب مطابقة الأسماء "
+        return _error(409, "ميزة الصور بعدها مو جاهزة: لازم تتكتب مطابقة الأسماء "
                            "(match_extracted_rows بملف app/extraction.py).")
     except LLMError as e:
         return _error(502, e.user_message)
@@ -1069,7 +1069,7 @@ def import_file_rows(req: FileRowsRequest):
         with agent.lock:
             review = extraction.build_review(agent.conn, result)
     except NotImplementedError:
-        return _error(409, "لازم تنكتب مطابقة الأسماء (match_extracted_rows) أول.")
+        return _error(409, "لازم تتكتب مطابقة الأسماء (match_extracted_rows) أول.")
     return {"ok": True, "file_id": req.file_id, "source_kind": "file", **review}
 
 

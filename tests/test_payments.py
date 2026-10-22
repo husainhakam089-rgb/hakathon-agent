@@ -157,7 +157,7 @@ def test_simulated_checkout_end_to_end(conn, client, ali):
     assert "وضع تجربة" in page and "45,000" in page and "أبو علي" in page and "طحين" not in page  # no owner notes
     done = client.post(f"/pay/{token}/confirm").text
     # security: the customer's press on a TEST page is only a claim, the debt stays
-    assert "ينسجل التسديد بحسابك لما صاحب المحل يتأكد" in done and db.get_balance(conn, ali)["IQD"] == 45000
+    assert "يتسجل التسديد بحسابك لما صاحب المحل يتأكد" in done and db.get_balance(conn, ali)["IQD"] == 45000
     client.post(f"/pay/{token}/confirm")
     claims = client.get("/alerts").json()["claimed_links"]
     assert [(c["name"], c["amount"]) for c in claims] == [("أبو علي", 45000)]
@@ -167,7 +167,7 @@ def test_simulated_checkout_end_to_end(conn, client, ali):
     assert client.post(f"/payment-links/{claims[0]['id']}/confirm").status_code == 409
     a = client.get("/alerts").json()
     assert a["claimed_links"] == [] and a["paid_links"] == []  # the owner did it himself: nothing to announce
-    assert "انسجل التسديد" in client.get(f"/pay/{token}").text
+    assert "تسجّل التسديد" in client.get(f"/pay/{token}").text
     assert client.get("/pay/nope").status_code == 404
 
 
@@ -217,7 +217,7 @@ def test_callback_refuses_a_forged_result(conn, client, ali, monkeypatch):
     assert client.get(f"/pay/{token}/callback", params={"token": forged}).status_code == 400
     assert db.get_balance(conn, ali)["IQD"] == 45000
     good = payments.jwt_encode({"status": "success", "orderid": token}, "s3cret")
-    assert "انسجل التسديد" in client.get(f"/pay/{token}/callback", params={"token": good}).text
+    assert "تسجّل التسديد" in client.get(f"/pay/{token}/callback", params={"token": good}).text
     assert db.get_balance(conn, ali)["IQD"] == 0
 
 

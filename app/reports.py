@@ -90,13 +90,13 @@ def profit(conn, period: str = "month", today: date | None = None) -> dict:
     net = {c: gross[c] - expenses[c] for c in db.CURRENCIES}
     notes = []
     if any(unknown.values()):
-        notes.append("بيع بمواد كلفتها مو مسجلة ما ينحسب ربحه")
+        notes.append("بيع بمواد كلفتها مو مسجلة ما يتحسب ربحه")
     if any(cash_ins.values()):
         notes.append("الوارد بدون مواد (مثل وارد محمد) دخل، بس ما نعرف كلفته فما داخل بالربح")
     if any(owner.values()):
         notes.append("اللي سحبته لنفسك (البيت، شخصي) مو مصروف للمحل، فما انطرح من الربح")
     if not sales_count:
-        notes.append("ما كو بيع مسجل بالمواد بهالفترة، فالربح ما ينحسب صح")
+        notes.append("ما كو بيع مسجل بالمواد بهالفترة، فالربح ما يتحسب صح")
     return {"period": period, "period_words": PERIOD_WORDS.get(period, period), "from": start, "to": end,
             "sales": revenue, "cost_of_goods": cost, "sales_without_cost": unknown, "gross_profit": gross,
             "expenses": expenses, "expenses_by_reason": list(by_reason.values()), "net_profit": net,

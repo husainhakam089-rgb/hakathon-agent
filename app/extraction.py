@@ -133,10 +133,10 @@ def _check_ready() -> None:
     from app.prompts import EXTRACTION_PROMPT
 
     if not (EXTRACTION_PROMPT or "").strip():
-        raise ExtractionNotReady("ميزة الصور بعدها مو جاهزة: لازم تنكتب تعليمات الاستخراج "
+        raise ExtractionNotReady("ميزة الصور بعدها مو جاهزة: لازم تتكتب تعليمات الاستخراج "
                                  "(EXTRACTION_PROMPT بملف app/prompts.py).")
     if not SUBMIT_EXTRACTION_SCHEMA:
-        raise ExtractionNotReady("ميزة الصور بعدها مو جاهزة: لازم ينكتب مخطط الاستخراج "
+        raise ExtractionNotReady("ميزة الصور بعدها مو جاهزة: لازم يتكتب مخطط الاستخراج "
                                  "(SUBMIT_EXTRACTION_SCHEMA بملف app/extraction.py).")
 
 

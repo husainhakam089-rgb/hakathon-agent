@@ -859,7 +859,7 @@ function remindCard(tool, r) {
   const post = (url, body) => fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
   if (tool === 'create_payment_link') {
     card.innerHTML = `<b>💳 رابط دفع ${esc(r.customer_name)}: ${fmt(r.amount)} دينار</b><div class="text" dir="ltr">${esc(r.url)}</div>
-      <small>${esc(r.provider)}. لما يدفع منه ينسجل التسديد وحده.</small>
+      <small>${esc(r.provider)}. لما يدفع منه يتسجل التسديد وحده.</small>
       <div class="row"><button class="yes" data-copy>📋 انسخ الرابط</button><button data-open>🔗 افتحه</button></div>`;
     card.querySelector('[data-copy]').onclick = e => { navigator.clipboard?.writeText(r.url); e.target.textContent = '✓ انسخ'; };
     card.querySelector('[data-open]').onclick = () => window.open(r.url, '_blank');
@@ -1315,7 +1315,7 @@ function renderReview(data) {
   }
 
   card.querySelector('.btn.no').onclick = () => {
-    finish('انلغى، ما انسجل شي.');
+    finish('انلغى، ما تسجّل شي.');
     addAgent('تمام، ما سجلت شي من الصورة.', []);
   };
 
@@ -1350,12 +1350,12 @@ function renderReview(data) {
         errorsEl.innerHTML = [res.data.message, ...(res.data.errors || [])].filter(Boolean).map(p => `<li>${esc(p)}</li>`).join('');
         return update();
       }
-      finish(`انسجل ✓ (${res.data.count} قيد)`);
+      finish(`تسجّل ✓ (${res.data.count} قيد)`);
       addAgent(res.data.reply, []);
       if (data.onCommitted) data.onCommitted();
       loadDebtors(true, 'customer');
     } catch (e) {
-      errorsEl.innerHTML = '<li>ما گدرت أوصل للسيرفر. ما انسجل شي، عيد المحاولة.</li>';
+      errorsEl.innerHTML = '<li>ما گدرت أوصل للسيرفر. ما تسجّل شي، عيد المحاولة.</li>';
       update();
     }
   };
@@ -1382,7 +1382,7 @@ function renderScan(message) {
   const rows = done.reduce((n, p) => n + (p.rows || []).length, 0);
   const todo = st.pages.filter(p => p.status !== 'done').length;
   $('drawerBody').innerHTML = `<p class="hint">افتح الكاميرا وثبّتها على الصفحة: تتصور بروحها وتطلع ✓، اكلب الصفحة
-      وثبّت مرة ثانية، وهيچ لحد ما تخلص. كل صورة تنرفع أول ما تتصور.
+      وثبّت مرة ثانية، وهيچ لحد ما تخلص. كل صورة تترفع أول ما تتصور.
       بعدين دوس "اقرا الصفحات" وأطلعلك جدول واحد بكل الأسطر، تراجعه وتسجله بدوسة وحدة.
       إذا عندك أرصدة بس (كل زبون شكد عليه)، أشّر "أرصدة منقولة" بالجدول.</p>
     <div class="actions">
@@ -1647,7 +1647,7 @@ function reviewScan() {
   const twice = Object.entries(seen).filter(([, pages]) => pages.size > 1)
     .map(([name, pages]) => `${name} (ص ${[...pages].join('، ')})`);
   const notes = [`من ${st.pages.filter(p => p.status === 'done').length} صفحة.`,
-    twice.length ? `⚠ أسماء بأكثر من صفحة، تأكد ما تنحسب مرتين: ${twice.slice(0, 8).join('، ')}` : '',
+    twice.length ? `⚠ أسماء بأكثر من صفحة، تأكد ما تتحسب مرتين: ${twice.slice(0, 8).join('، ')}` : '',
     ...sameperson(rows)].filter(Boolean).join(' ');
   closeDrawer();
   $('welcome')?.remove();
@@ -1667,7 +1667,7 @@ $('drawerBody').addEventListener('click', e => {
   if (t.dataset.scanDel !== undefined && !scanBusy) {
     const st = scanState(); st.pages.splice(+t.dataset.scanDel, 1); saveScan(st); return renderScan();
   }
-  if (t.id === 'scanReset' && !scanBusy && confirm('أشيل كل الصفحات وأبدي من جديد؟ (ما ينمسح شي من الدفتر)')) {
+  if (t.id === 'scanReset' && !scanBusy && confirm('أشيل كل الصفحات وأبدي من جديد؟ (ما يتمسح شي من الدفتر)')) {
     saveScan({pages: []}); return renderScan();
   }
 });
@@ -1871,10 +1871,10 @@ async function renderPassword(note) {
         <button class="big secondary" id="pwRemove">شيل كلمة السر</button></div>`;
   } else {
     html = `<p class="hint">⚠️ البرنامج <b>مو محمي</b> هسه: أي واحد يقعد على هالحاسبة يگدر يفتحه.
-        حط كلمة سر، وبعدها ما ينفتح إلا بيها (على هالحاسبة وعلى الموبايل).</p>
+        حط كلمة سر، وبعدها ما يتفتح إلا بيها (على هالحاسبة وعلى الموبايل).</p>
       <div class="fields">${field('pwNew', 'كلمة السر (6 على الأقل)', 'new-password')}${field('pwAgain', 'مرة ثانية', 'new-password')}</div>
       <div class="actions" style="margin-top:8px"><button class="big primary" id="pwSave">🔒 احمي البرنامج</button></div>
-      <p class="hint">احفظها بمكان أمين. إذا نسيتها، تنشال من الحاسبة نفسها (شوف README).</p>`;
+      <p class="hint">احفظها بمكان أمين. إذا نسيتها، تتشال من الحاسبة نفسها (شوف README).</p>`;
   }
   $('drawerBody').innerHTML = html + (note || '');
 }
@@ -1890,10 +1890,10 @@ $('drawerBody').addEventListener('click', async e => {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) return say(false, d.message || 'ما گدرت أحفظها.');
     $('logoutBtn').hidden = false; $('logoutAllBtn').hidden = false;
-    return say(true, '✓ انحفظت. من هسه البرنامج ما ينفتح إلا بكلمة السر.');
+    return say(true, '✓ انحفظت. من هسه البرنامج ما يتفتح إلا بكلمة السر.');
   }
   if (t.id === 'pwRemove') {
-    if (!confirm('أشيل كلمة السر؟ البرنامج يرجع ينفتح بدونها على هالحاسبة.')) return;
+    if (!confirm('أشيل كلمة السر؟ البرنامج يرجع يتفتح بدونها على هالحاسبة.')) return;
     const r = await fetch('/password', {method: 'DELETE', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({current: val('pwCurrent')})});
     const d = await r.json().catch(() => ({}));
@@ -2114,7 +2114,7 @@ function renderSale() {
       <div class="sale-total"><span>المجموع</span><b>${fmt(saleTotal())} <small>${word}</small></b></div>
       <div class="actions"><button class="big primary" id="saleDone">✓ سجّل البيعة</button>
         <button class="big secondary" id="saleClear">فرّغ السلة</button></div>`
-    : '<p class="hint">اضغط على مادة حتى تنضاف للسلة.</p>'}
+    : '<p class="hint">اضغط على مادة حتى تتضاف للسلة.</p>'}
     ${sale.note}
     <details ${editing ? 'open' : ''}><summary>${editing ? '✎ تعديل ' + esc(editing.name) : '＋ مادة جديدة'}</summary>
       <div class="fields">
@@ -2274,7 +2274,7 @@ function speakAlerts(a) {
     sub: 'طلبت أذكّرك بيها', actions: [{label: 'خلصت', yes: true, attr: `data-mine-done="${r.id}"`},
                                         {label: 'بعد ساعة', attr: `data-mine-snooze="${r.id}"`}]});
   for (const r of a.recurring_due) if (key('rec' + r.id)) lines.push({icon: 'calendar',
-    title: `موعد ${esc(r.reason)}: ${money(r.amount, r.currency)}`, sub: `صرفية ثابتة ${esc(r.label || '')}، ما انسجلت ${r.period_words || ''}.`,
+    title: `موعد ${esc(r.reason)}: ${money(r.amount, r.currency)}`, sub: `صرفية ثابتة ${esc(r.label || '')}، ما تسجّلت ${r.period_words || ''}.`,
     actions: [{label: 'سجّلها', yes: true, attr: `data-rec="${r.id}"`}, {label: `مو ${r.period_words || 'هالشهر'}`, attr: `data-rec-skip="${r.id}"`}]});
   if (a.overdue.length && key('overdue')) {
     const top = a.overdue.slice(0, 3).map(o => `${esc(o.name)} (${fmt(o.balance.IQD)}، ${o.days} يوم)`).join('، ');
@@ -2289,7 +2289,7 @@ function speakAlerts(a) {
     actions: [{label: 'وصلت، سجّل', yes: true, attr: `data-claim-ok="${c.id}"`}, {label: 'ما وصلت', attr: `data-claim-no="${c.id}"`}]});
   const paid = a.paid_links || [];
   for (const p of paid) lines.push({icon: 'card', title: `${esc(p.name)} دفع ${money(p.amount)} بزين كاش`,
-    sub: 'انسجل تسديد بحسابه وحده (ما دخل الجرار).'});
+    sub: 'تسجّل تسديد بحسابه وحده (ما دخل الجرار).'});
   if (paid.length) {
     fetch('/alerts/seen-payments', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: paid.map(p => p.id)})})
       .then(() => { loadDebtors(true, 'customer'); checkAlerts(false); });
@@ -2369,17 +2369,17 @@ function renderAlerts() {
   if (a.drawer_not_counted) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-receipt"/></svg>ما عديت الجرار اليوم</b>
     <small>عده وگلي: سديت، بالجرار كذا.</small><div class="row"><button class="yes" data-fill-chat="سديت، بالجرار ">اكتبها بالمحادثة</button></div></div>`;
   for (const r of a.recurring_due) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-calendar"/></svg>${esc(r.reason)}: ${fmt(r.amount)} ${word(r.currency)}</b>
-    <small>صرفية ثابتة ${esc(r.label)}، وما انسجلت ${r.period_words}.</small>
+    <small>صرفية ثابتة ${esc(r.label)}، وما تسجّلت ${r.period_words}.</small>
     <div class="row"><button class="yes" data-rec="${r.id}">✓ سجّلها</button><button data-rec-skip="${r.id}">مو ${r.period_words}</button></div></div>`;
   for (const r of (a.my_reminders || [])) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-alarm"/></svg>${esc(r.text)}</b>
     <small>طلبت أذكّرك بيها (${esc(shortDate(r.due_at))})${r.repeat !== 'none' ? ' · تتكرر' : ''}.</small>
     <div class="row"><button class="yes" data-mine-done="${r.id}">✓ خلصت</button><button data-mine-snooze="${r.id}">بعد ساعة</button>
       <button data-mine-tomorrow="${r.id}">باچر الصبح</button></div></div>`;
   for (const c of (a.claimed_links || [])) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-card"/></svg>${esc(c.name)} يگول دفع ${fmt(c.amount)} دينار بزين كاش</b>
-    <small>وضع تجربة: ما تتحرك فلوس، فما ينسجل شي إلا تأكد إنت إنها وصلتك (${esc(shortDate(c.claimed_at))}).</small>
+    <small>وضع تجربة: ما تتحرك فلوس، فما يتسجل شي إلا تأكد إنت إنها وصلتك (${esc(shortDate(c.claimed_at))}).</small>
     <div class="row"><button class="yes" data-claim-ok="${c.id}">✓ وصلت، سجّل التسديد</button><button data-claim-no="${c.id}">✕ ما وصلت</button></div></div>`;
   for (const p of (a.paid_links || [])) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-card"/></svg>${esc(p.name)} دفع ${fmt(p.amount)} دينار بزين كاش</b>
-    <small>انسجل تسديد بحسابه وحده (${esc(shortDate(p.paid_at))}).</small></div>`;
+    <small>تسجّل تسديد بحسابه وحده (${esc(shortDate(p.paid_at))}).</small></div>`;
   if (a.overdue.length) html += `<div class="alert-card"><b><svg class="i" aria-hidden="true"><use href="#i-users"/></svg>ديون متأخرة (أكثر من ${a.overdue_days} يوم بدون تسديد)</b>
     <small>دوس ✉️ وأكتبلك تذكير بيه رصيده ورابط دفع زين كاش، وإنت ترسله بضغطة.</small>
     ${a.overdue.slice(0, 15).map(o => `<div class="row" style="justify-content:space-between;align-items:center"><span>${esc(o.name)}
@@ -2541,7 +2541,7 @@ async function renderReports() {
     html += `<h3 class="cash-h"><svg class="i" aria-hidden="true"><use href="#i-receipt"/></svg>كشف حساب زبون</h3><p class="hint">صفحة بيها حساب زبون واحد بس، تطبعها أو تدزها إله.</p>
       <select id="stCustomer"><option value="">اختار الزبون…</option>${customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
       <div class="actions" style="margin-top:8px"><button class="big secondary" id="stOpen">افتح الكشف (${REP_PERIODS[repPeriod]})</button></div>`;
-    html += `<h3 class="cash-h"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>التقرير اليومي (ينكتب وحده)</h3><div id="dailyBox"><p class="hint">…</p></div>`;
+    html += `<h3 class="cash-h"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>التقرير اليومي (يتكتب وحده)</h3><div id="dailyBox"><p class="hint">…</p></div>`;
     body.innerHTML = html;
     loadDaily();
   } catch (e) {
@@ -2664,7 +2664,7 @@ $('rows').addEventListener('click', e => {
 function money(obj, cur) { return obj && obj[cur] !== undefined && obj[cur] !== null ? obj[cur] : null; }
 function cashCell(v) {
   if (v === null) return '<td class="num zero">—</td>';
-  return v < 0 ? `<td class="num neg-cell" title="الجرار ناقص أو أكو شي ما انسجل">ناقص ${fmt(-v)}</td>` : `<td class="num">${fmt(v)}</td>`;
+  return v < 0 ? `<td class="num neg-cell" title="الجرار ناقص أو أكو شي ما تسجّل">ناقص ${fmt(-v)}</td>` : `<td class="num">${fmt(v)}</td>`;
 }
 function renderDrawer() {
   const data = ledgers.drawer;

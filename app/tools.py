@@ -108,7 +108,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "undo_last",
-        "description": "يلغي آخر قيد انسجل بهذه الجلسة ويرجع شنو انلغى. إذا صاحب المحل ذكر اسم (\"حيدر غلط، شطبها\") "
+        "description": "يلغي آخر قيد تسجّل بهذه الجلسة ويرجع شنو انلغى. إذا صاحب المحل ذكر اسم (\"حيدر غلط، شطبها\") "
                        "مرر name: يلغي آخر قيد لهذا الشخص بالذات، مو آخر قيد بالمحادثة.",
         "input_schema": {
             "type": "object",
@@ -264,7 +264,7 @@ TOOL_SCHEMAS = [
     {
         "name": "record_sale",
         "description": "يسجل بيعة بمادة أو أكثر. المجموع يحسبه الكود. payment: cash (كاش، يدخل الجرار) أو debt (دين، "
-                       "ينضاف لحساب الزبون وحده ويحتاج customer_id) أو electronic (زين كاش، ماستر، كي كارد: ما يدخل الجرار).",
+                       "يتضاف لحساب الزبون وحده ويحتاج customer_id) أو electronic (زين كاش، ماستر، كي كارد: ما يدخل الجرار).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -349,7 +349,7 @@ TOOL_SCHEMAS = [
         "name": "drawer_details",
         "description": "تفاصيل الجرار سطر سطر، كل فلس من وين ووكت: الوارد (الفكة، التسديدات، الوارد مثل محمد 25، "
                        "والزيادة) والصادر (الدفع للموردين، السحوبات مثل راتب عامل، والنقص)، ومجموع الوارد والصادر والباقي بالجرار. "
-                       "which: last_close = آخر عدّة (الافتراضي)، since_last_count = من آخر عدّة لهسه (قبل ما ينعد).",
+                       "which: last_close = آخر عدّة (الافتراضي)، since_last_count = من آخر عدّة لهسه (قبل ما يتعد).",
         "input_schema": {
             "type": "object",
             "properties": {"which": {"type": "string", "enum": ["last_close", "since_last_count"]}},
@@ -402,7 +402,7 @@ TOOL_SCHEMAS = [
     {
         "name": "get_alerts",
         "description": "شنو لازم ينتبهله صاحب المحل هسه: الجرار ما انعد بعد الساعة المحددة، صرفيات ثابتة موعدها اليوم "
-                       "أو فات وما انسجلت، وزبائن عليهم دين وما سددوا من مدة.",
+                       "أو فات وما تسجّلت، وزبائن عليهم دين وما سددوا من مدة.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
@@ -427,12 +427,12 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "list_recurring_expenses",
-        "description": "الصرفيات الثابتة (الشهرية والأسبوعية) ويا أرقامها وموعدها، وأي وحدة انسجلت بموعدها الحالي.",
+        "description": "الصرفيات الثابتة (الشهرية والأسبوعية) ويا أرقامها وموعدها، وأي وحدة تسجّلت بموعدها الحالي.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "remove_recurring_expense",
-        "description": "يشيل صرفية ثابتة من القائمة برقمها (ما يمسح السحوبات اللي انسجلت قبل).",
+        "description": "يشيل صرفية ثابتة من القائمة برقمها (ما يمسح السحوبات اللي تسجّلت قبل).",
         "input_schema": {"type": "object", "properties": {"recurring_id": {"type": "integer"}}, "required": ["recurring_id"]},
     },
     {
@@ -457,7 +457,7 @@ TOOL_SCHEMAS = [
     # ----- Zain Cash links and reminders (stage 22) -----
     {
         "name": "set_customer_phone",
-        "description": "يحفظ رقم موبايل الزبون (حتى التذكير ينبعث له بالواتساب). \"رقم أبو علي 07701234567\".",
+        "description": "يحفظ رقم موبايل الزبون (حتى التذكير يتبعث له بالواتساب). \"رقم أبو علي 07701234567\".",
         "input_schema": {
             "type": "object",
             "properties": {"customer_id": {"type": "integer"}, "phone": {"type": "string"}},
@@ -467,7 +467,7 @@ TOOL_SCHEMAS = [
     {
         "name": "create_payment_link",
         "description": "يسوي رابط دفع بزين كاش لزبون (بالدينار). المبلغ افتراضيًا كل اللي عليه. لما يدفع منه، "
-                       "التسديد ينسجل بالدفتر وحده (إلكتروني، ما يدخل الجرار). \"سويله رابط دفع\".",
+                       "التسديد يتسجل بالدفتر وحده (إلكتروني، ما يدخل الجرار). \"سويله رابط دفع\".",
         "input_schema": {
             "type": "object",
             "properties": {"customer_id": {"type": "integer"},
@@ -477,7 +477,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "draft_reminder",
-        "description": "يكتب رسالة تذكير لزبون عليه دين، بيها رصيده ورابط دفع زين كاش. الرسالة ما تنبعث: "
+        "description": "يكتب رسالة تذكير لزبون عليه دين، بيها رصيده ورابط دفع زين كاش. الرسالة ما تتبعث: "
                        "صاحب المحل يشوفها ويدوس \"أرسل بالواتساب\". \"ذكّر أبو علي\"، \"ابعث تذكير للمتأخرين\" "
                        "(واحد واحد). note = سطر يريده صاحب المحل بالرسالة (اختياري).",
         "input_schema": {
@@ -617,7 +617,7 @@ def _drawer_meaning(report: dict) -> str:
                      + (f"، وأكو زيادة {diff:,} (بيع ما انكتب)" if diff > 0 else
                         f"، والجرار ناقص {-diff:,} {words[cur]}" if diff < 0 else "، ومطابق بالضبط"))
         elif diff < 0:
-            line += f" (الجرار ناقص {-diff:,} {words[cur]} أو أكو شي ما انسجل)"
+            line += f" (الجرار ناقص {-diff:,} {words[cur]} أو أكو شي ما تسجّل)"
         parts.append(line)
     if not parts:
         return "ما گدرت أحسب البيع: لازم عدّة بالبداية وبالنهاية لنفس العملة."
@@ -738,7 +738,7 @@ class DebtTools:
             if dup and dup["id"] not in self._turn_entries:
                 return _error(
                     "possible_duplicate",
-                    f"نفس القيد ({customer['name']}، {value:,}) انسجل قبل دقايق ({dup['created_at'][11:16]}). لا تسجل. "
+                    f"نفس القيد ({customer['name']}، {value:,}) تسجّل قبل دقايق ({dup['created_at'][11:16]}). لا تسجل. "
                     "اسأل صاحب المحل: 'سجلتها قبل شوية، هاي دفعة ثانية لو نفسها؟' وإذا گال ثانية عيد بـ confirmed=true.",
                     customer_name=customer["name"], amount=value, currency=currency, earlier_at=dup["created_at"])
         limit = self.large_amount_iqd if currency == "IQD" else USD_LARGE_AMOUNT
@@ -1210,7 +1210,7 @@ class DebtTools:
         if err:
             return err
         return {"ok": True, "customer_id": customer["id"], "customer_name": customer["name"], **link,
-                "meaning": "لما الزبون يدفع من الرابط، التسديد ينسجل وحده ويطلعلك تنبيه"}
+                "meaning": "لما الزبون يدفع من الرابط، التسديد يتسجل وحده ويطلعلك تنبيه"}
 
     def tool_draft_reminder(self, customer_id, note=None):
         customer, err = self._customer_or_error(customer_id)
@@ -1344,7 +1344,7 @@ class DebtTools:
         if not rec or not rec["active"]:
             return _error("recurring_not_found", "ما لگيت هالصرفية. شوف list_recurring_expenses.")
         if db.recurring_done_now(rec, datetime.now()):
-            return _error("already_done", f"{rec['reason']} انسجلت (أو انتركت) {rec['period_words']} من قبل.")
+            return _error("already_done", f"{rec['reason']} تسجّلت (أو انتركت) {rec['period_words']} من قبل.")
         if skip:
             db.mark_recurring_done(self.conn, rec["id"])
             return {"ok": True, "skipped": True, "reason": rec["reason"], "period_words": rec["period_words"]}
@@ -1414,7 +1414,7 @@ class DebtTools:
 
     def _same_message_error(self):
         return _error("undo_same_message",
-                      "آخر قيد انسجل بنفس هالرسالة، فما ينلغى بيها. لا تسجل وتلغي بنفس الرسالة: گول لصاحب المحل "
+                      "آخر قيد تسجّل بنفس هالرسالة، فما يتلغى بيها. لا تسجل وتلغي بنفس الرسالة: گول لصاحب المحل "
                       "شنو سجلت بالضبط، واسأله شنو يريد يلغي.")
 
     def _entry_party(self, entry):

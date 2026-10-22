@@ -41,7 +41,7 @@ def build(conn, today: date | None = None) -> str:
     zc = conn.execute("""SELECT COUNT(*) n, COALESCE(SUM(amount), 0) s FROM payment_links
                          WHERE status = 'paid' AND date(paid_at) = ?""", (today.isoformat(),)).fetchone()
     if zc["n"]:
-        lines.append(f"💳 زين كاش: {zc['n']} دفعة من الروابط بـ {zc['s']:,} دينار (انسجلت وحدها)")
+        lines.append(f"💳 زين كاش: {zc['n']} دفعة من الروابط بـ {zc['s']:,} دينار (تسجّلت وحدها)")
     closes = [c for c in db.drawer_closes(conn, 5) if c["counted"]["at"][:10] == today.isoformat()]
     if closes:
         diff = closes[0].get("difference") or {}
