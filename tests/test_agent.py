@@ -296,3 +296,17 @@ def test_llm_errors_are_logged_to_a_file(conn, tmp_path):
     llm = _FlakyLLM(LLMError("مفتاح غلط", "401 API_KEY_INVALID"))
     Agent(conn, llm=llm, log_path=tmp_path / "tool_calls.jsonl").chat("s", "هلا")
     assert "401 API_KEY_INVALID" in (tmp_path / "llm_errors.log").read_text(encoding="utf-8")
+
+
+def test_vague_company_gets_the_real_supplier_names(conn):
+    # 22-10-2026: "شكد عليّ للشركة؟" was answered with the total, then asked back with a made-up company
+    from app.agent import _vague_supplier_note
+
+    for name in ("شركة الزين", "مكتبة النور"):
+        db.add_customer(conn, name, kind="supplier")
+    db.add_customer(conn, "علي")  # "عليّ" in the question is not this customer
+    note = _vague_supplier_note(conn, "شكد عليّ للشركة؟")
+    assert "يا شركة؟" in note and "شركة الزين" in note and "مكتبة النور" in note
+    assert _vague_supplier_note(conn, "شكد عليّ لشركة الزين؟") == ""  # named: clear
+    assert _vague_supplier_note(conn, "شكد عليّ للموردين؟") == ""  # all of them: clear
+    assert _vague_supplier_note(conn, "شكد على أبو علي؟") == ""

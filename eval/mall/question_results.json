@@ -299,11 +299,11 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "مجموع الديون على الزبائن 2,728,500 دينار (على 16 زبون).",
+      "reply": "مجموع الديون على 16 زبون هو 2,728,500 دينار.",
       "tools": [
         "list_debtors"
       ],
-      "seconds": 38.5,
+      "seconds": 3.8,
       "model": "gemini-3.6-flash"
     },
     {
@@ -317,12 +317,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "أكثر وحدة عليها دين هي أم علي، بذمتها 434,000 دينار.\nالمجموع الكلي للديون على الكل هو 2,728,500 دينار.",
+      "reply": "أكثر وحدة عليها دين هي أم علي، حسابها 434,000 دينار. ومجموع الديون الكلي 2,728,500 دينار.",
       "tools": [
         "list_debtors"
       ],
-      "seconds": 3.1,
-      "model": "gemini-3.6-flash"
+      "seconds": 11.3,
+      "model": "gemini-3-flash-preview"
     },
     {
       "id": 19,
@@ -335,12 +335,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "مجموع ديون الزبائن الكلي 2,728,500 دينار على 16 زبون، وماكو ديون بالدولار.",
+      "reply": "المجموع الكلي للدين على الناس هو 2,728,500 دينار.",
       "tools": [
         "list_debtors"
       ],
-      "seconds": 57.5,
-      "model": "gemini-3.7-flash"
+      "seconds": 1.8,
+      "model": "gemini-3.5-flash-lite"
     },
     {
       "id": 20,
@@ -353,11 +353,11 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "أكثر زبون عليه دين هو أم علي، ومطلوب 434,000 دينار.",
+      "reply": "أم علي أكثر وحدة عليها دين، باقي عليها 434,000 دينار.",
       "tools": [
         "list_debtors"
       ],
-      "seconds": 3.1,
+      "seconds": 1.8,
       "model": "gemini-3.5-flash-lite"
     },
     {
@@ -371,12 +371,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "عليك لشركة الزين 3,100,000 دينار.",
+      "reply": "عليّ لشركة الزين 3,100,000 دينار.",
       "tools": [
         "find_supplier"
       ],
-      "seconds": 17.5,
-      "model": "gemini-3.6-flash"
+      "seconds": 1.4,
+      "model": "gemini-3.5-flash-lite"
     },
     {
       "id": 22,
@@ -389,12 +389,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "أنت تطلبه 450,000 دينار (حسابك عنده زايد).",
+      "reply": "عليّ إلهم 450,000 دينار.",
       "tools": [
         "find_supplier"
       ],
-      "seconds": 48.3,
-      "model": "gemini-3-flash-preview"
+      "seconds": 1.5,
+      "model": "gemini-3.5-flash-lite"
     },
     {
       "id": 23,
@@ -407,12 +407,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "مطلوب منك لشركة الريم للمنظفات 400,000 دينار.",
+      "reply": "عليّ إلهم 400,000 دينار.",
       "tools": [
         "find_supplier"
       ],
-      "seconds": 3.5,
-      "model": "gemini-3-flash-preview"
+      "seconds": 1.6,
+      "model": "gemini-3.5-flash-lite"
     },
     {
       "id": 24,
@@ -425,12 +425,13 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "مطلوب منك لمكتبة النور 470,000 دينار.",
+      "reply": "عليّك لمكتبة النور 470,000 دينار.",
       "tools": [
-        "find_supplier"
+        "find_supplier",
+        "get_supplier_balance"
       ],
-      "seconds": 5.4,
-      "model": "gemini-3-flash-preview"
+      "seconds": 3.1,
+      "model": "gemini-3.5-flash-lite"
     },
     {
       "id": 25,
@@ -443,7 +444,7 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "عليك 850,000 دينار لمعمل ألعاب بغداد.",
+      "reply": "عليّ لشركة معمل ألعاب بغداد 850,000 دينار.",
       "tools": [
         "find_supplier"
       ],
@@ -461,12 +462,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "مطلوب منك للشركات حالياً 4,820,000 دينار. أكثرهم شركة الزين (3,100,000 دينار) ومعمل ألعاب بغداد (850,000 دينار).",
+      "reply": "مجموع اللي عليك لكل الشركات 4,820,000 دينار.",
       "tools": [
         "list_suppliers"
       ],
-      "seconds": 3.3,
-      "model": "gemini-3-flash-preview"
+      "seconds": 1.8,
+      "model": "gemini-3.5-flash-lite"
     },
     {
       "id": 27,
@@ -479,12 +480,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "مجموع اللي عليك للموردين 4,820,000 دينار، وأكثر واحد يطلبك شركة الزين (3,100,000 دينار).",
+      "reply": "المجموع الكلي المتبقي للموردين هو 4,820,000 دينار عراقي، متوزع بالش شكل التالي: شركة الزين 3,100,000، معمل ألعاب بغداد 850,000، مكتبة النور 470,000، وشركة الريم للمنظفات 400,000 دينار.",
       "tools": [
         "list_suppliers"
       ],
-      "seconds": 98.8,
-      "model": "gemini-3-flash-preview"
+      "seconds": 1.7,
+      "model": "gemini-3.5-flash-lite"
     },
     {
       "id": 28,
@@ -1112,12 +1113,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "صرفنا 360,000 دينار على المولدة هالشهر.",
+      "reply": "صرفت 360,000 دينار على المولدة هالشهر.",
       "tools": [
         "list_withdrawals"
       ],
-      "seconds": 1.4,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 20.6,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 62,
@@ -1130,12 +1131,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "صرفتوا الشهر الماضي 360,000 دينار على المولدة.",
+      "reply": "صرفتوا على المولدة الشهر الماضي 360,000 دينار.",
       "tools": [
         "list_withdrawals"
       ],
-      "seconds": 1.4,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 18.5,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 63,
@@ -1148,12 +1149,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "دفعنا 500,000 دينار إيجار هالشهر.",
+      "reply": "دفعت 500,000 دينار إيجار هالشهر.",
       "tools": [
         "list_withdrawals"
       ],
-      "seconds": 1.7,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 15.0,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 64,
@@ -1166,11 +1167,11 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "سحبت الشهر الماضي 800,000 دينار للرواتب.",
+      "reply": "دفعنا 800,000 دينار رواتب الشهر الماضي (من سحب واحد).",
       "tools": [
         "list_withdrawals"
       ],
-      "seconds": 1.6,
+      "seconds": 3.6,
       "model": "gemini-3.5-flash-lite"
     },
     {
@@ -1184,12 +1185,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "صرفنا 174,000 دينار على الأكل هالشهر.",
+      "reply": "صرفتوا 174,000 دينار على الأكل هالشهر.",
       "tools": [
         "list_withdrawals"
       ],
-      "seconds": 1.7,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 12.7,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 66,
@@ -1206,8 +1207,8 @@
       "tools": [
         "list_withdrawals"
       ],
-      "seconds": 1.8,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 17.6,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 67,
@@ -1220,12 +1221,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "صرفتوا هالشهر 85,000 دينار على النقل، من 5 سحوبات.",
+      "reply": "صرفت هالشهر 85,000 دينار على النقل.",
       "tools": [
         "list_withdrawals"
       ],
-      "seconds": 45.3,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 11.2,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 68,
@@ -1238,12 +1239,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "صرفنا 170,000 دينار على النقل الشهر الماضي.",
+      "reply": "صرفت الشهر الماضي 170,000 دينار على النقل.",
       "tools": [
         "list_withdrawals"
       ],
-      "seconds": 1.5,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 10.8,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 69,
@@ -1256,12 +1257,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "سحبت هالشهر للبيت 4,858,500 دينار.",
+      "reply": "سحبت للبيت هالشهر مجموع 4,858,500 دينار.",
       "tools": [
         "list_withdrawals"
       ],
-      "seconds": 1.5,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 7.8,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 70,
@@ -1274,12 +1275,12 @@
       "ask": false,
       "status": "pass",
       "why": "",
-      "reply": "سحبت هالأسبوع للبيت 1,514,000 دينار.",
+      "reply": "سحبت للبيت هالأسبوع مجموع 1,514,000 دينار.",
       "tools": [
         "list_withdrawals"
       ],
-      "seconds": 44.1,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 3.8,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 71,
@@ -1704,10 +1705,10 @@
       "ask": true,
       "status": "pass",
       "why": "سأل",
-      "reply": "سؤالك عام، تقصد شكد عليك للموردين لو شكد سحوبات اليوم؟",
+      "reply": "تقصد شكد عليه لشركة معينة (مورد)، لو شكد باقي بذمة زبون معين؟ ومنو هو هذا الشخص أو الشركة؟",
       "tools": [],
-      "seconds": 0.9,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 2.8,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 94,
@@ -1716,13 +1717,11 @@
       "holdout": false,
       "expected": [],
       "ask": true,
-      "status": "fail",
-      "why": "جاوب بدل ما يسأل",
-      "reply": "مجموع سحوبات اليوم 7,000 دينار (للأكل).",
-      "tools": [
-        "list_withdrawals"
-      ],
-      "seconds": 1.5,
+      "status": "pass",
+      "why": "سأل",
+      "reply": "تقصد سحوبات اليوم، لو اللي دفعته للموردين، لو شي ثاني؟",
+      "tools": [],
+      "seconds": 0.7,
       "model": "gemini-3.5-flash-lite"
     },
     {
@@ -1734,10 +1733,10 @@
       "ask": true,
       "status": "pass",
       "why": "سأل",
-      "reply": "عفية، منو هذا؟ منو تسجل عليه 25 ألف؟",
+      "reply": "على منو أسجل 25,000 دينار؟ ما عرفت الزبون، انطيني اسمه.",
       "tools": [],
-      "seconds": 1.7,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 2.2,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 96,
@@ -1748,12 +1747,12 @@
       "ask": true,
       "status": "pass",
       "why": "سأل",
-      "reply": "عندي \"أم حسين\" عليها 228,500 دينار، و\"أبو حسين\" عليه 360,500 دينار. تقصد منو بيهما؟",
+      "reply": "لگيت أكثر من زبون باسم حسين، تقصد أبو حسين لو أم حسين؟",
       "tools": [
         "find_customer"
       ],
-      "seconds": 2.2,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 4.2,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 97,
@@ -1764,12 +1763,12 @@
       "ask": true,
       "status": "pass",
       "why": "سأل",
-      "reply": "تقصد منو؟ أبو علي، علي النجار، لو أم علي؟",
+      "reply": "أكو أكثر من زبون بهذا الاسم، تقصد أبو علي، علي النجار، لو أم علي؟",
       "tools": [
         "find_customer"
       ],
-      "seconds": 1.5,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 4.3,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 98,
@@ -1780,10 +1779,10 @@
       "ask": true,
       "status": "pass",
       "why": "سأل",
-      "reply": "شنو قصدك، ياهو اللي دفع؟",
+      "reply": "تقصد سحوبات اليوم، لو المبالغ اللي دفعوها الزبائن، لو شي ثاني دفعته للموردين؟",
       "tools": [],
-      "seconds": 0.9,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 6.1,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 99,
@@ -1792,14 +1791,12 @@
       "holdout": false,
       "expected": [],
       "ask": true,
-      "status": "fail",
-      "why": "جاوب بدل ما يسأل",
-      "reply": "عليك للشركات والموردين مجموع 4,820,000 دينار، وهذا تفصيلهم:\n- شركة الزين: 3,100,000 دينار\n- معمل ألعاب بغداد: 850,000 دينار\n- مكتبة النور: 470,000 دينار\n- شركة الريم للمنظفات: 400,000 دينار",
-      "tools": [
-        "list_suppliers"
-      ],
-      "seconds": 7.9,
-      "model": "gemini-3.1-flash-lite"
+      "status": "pass",
+      "why": "سأل",
+      "reply": "يا شركة؟ تقصد شركة الزين، مندوب البيبسي، شركة الريم للمنظفات، مكتبة النور، لو معمل ألعاب بغداد؟",
+      "tools": [],
+      "seconds": 0.9,
+      "model": "gemini-3.5-flash-lite"
     },
     {
       "id": 100,
@@ -1810,10 +1807,10 @@
       "ask": true,
       "status": "pass",
       "why": "سأل",
-      "reply": "يا كيس بعت؟ والمادة شنو، وطريقة الدفع كاش لو دين؟",
+      "reply": "شنو المادة اللي بعتها؟ وبيا سعر؟",
       "tools": [],
-      "seconds": 0.8,
-      "model": "gemini-3.5-flash-lite"
+      "seconds": 6.1,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 101,
@@ -1824,12 +1821,12 @@
       "ask": true,
       "status": "pass",
       "why": "سأل",
-      "reply": "گول يا هو بيهم تقصد؟ عندي: أبو علي، أبو حسين، أبو حيدر، أبو أحمد، أبو جاسم، لو أبو مصطفى؟",
+      "reply": "لقيت أكثر من زبون يبدأ اسمه بـ \"أبو\"، تقصد أبو علي، أبو حسين، أبو حيدر، أبو أحمد، أبو جاسم، لو أبو مصطفى؟",
       "tools": [
         "find_customer"
       ],
-      "seconds": 6.9,
-      "model": "gemini-3.1-flash-lite"
+      "seconds": 9.9,
+      "model": "gemini-3.1-flash-lite-preview"
     },
     {
       "id": 102,
@@ -1840,10 +1837,10 @@
       "ask": true,
       "status": "pass",
       "why": "سأل",
-      "reply": "تقصد منو بالضبط؟ ما عرفت منو الزبونة اللي تسأل عنها، انطيني اسمها حتى أشوفلك حسابها.",
+      "reply": "منو تقصد؟ ياريت تذكر اسم الزبون أو الشركة.",
       "tools": [],
-      "seconds": 3.6,
-      "model": "gemini-3.1-flash-lite"
+      "seconds": 1.1,
+      "model": "gemini-3.5-flash-lite"
     }
   ]
 }

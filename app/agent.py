@@ -191,6 +191,24 @@ def _named_party(conn, message: str) -> str | None:
     return max(named, key=lambda c: len(c["normalized_name"]))["name"] if named else None
 
 
+_ONE_COMPANY = re.compile(r"(?<!\w)لل(?:شركه|شركة|مورد|معمل|مندوب)(?!\w)")
+
+
+def _vague_supplier_note(conn, message: str) -> str:
+    """"شكد عليّ للشركة؟" with no name and more than one supplier: on 22-10-2026 the model once
+    answered with the total, and once asked back naming a company that is not in the notebook.
+    For this message only: the real names, so it asks "يا شركة؟" with them."""
+    text = " " + " ".join(re.sub(r"[^\w\s]", " ", normalize(message or "")).split()) + " "
+    if not _ONE_COMPANY.search(text):
+        return ""
+    suppliers = db.all_customers(conn, "supplier")
+    if len(suppliers) < 2 or any(c["normalized_name"] and f" {c['normalized_name']} " in text for c in suppliers):
+        return ""
+    names = "، ".join(c["name"] for c in suppliers[:10])
+    return ("\n\n## ملاحظة لهالرسالة بس\nصاحب المحل گال \"للشركة\" بدون اسم وعنده أكثر من مورد. لا تجاوب بالمجموع: "
+            f"اسأله \"يا شركة؟\" واذكر من هالأسماء بس (لا تذكر غيرها): {names}.")
+
+
 def _with_done_note(reply: str, tool_log: list[dict]) -> str:
     """When a turn fails after a tool already wrote something, say what was
     saved, so the shop owner does not resend the message and record it twice."""
@@ -353,13 +371,14 @@ class Agent:
         empty_retry = None  # index in `turn` of the note asking for a reply after an empty one
         restarted = False
         wrote = False  # a write tool succeeded this message: never start it again
+        vague_note = _vague_supplier_note(self.conn, message)
         try:
             llm = self.get_llm()
             iteration = 0
             while iteration < MAX_ITERATIONS:
                 iteration += 1
                 # Re-read every call: a remember/forget earlier in this turn shows up at once.
-                system = SYSTEM_PROMPT + memory_block(db.list_memories(self.conn))
+                system = SYSTEM_PROMPT + memory_block(db.list_memories(self.conn)) + vague_note
                 try:
                     response = llm.complete(system, session.history() + turn, TOOL_SCHEMAS)
                 except LLMError as e:
