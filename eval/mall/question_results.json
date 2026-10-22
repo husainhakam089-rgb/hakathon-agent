@@ -73,6 +73,24 @@
       "model": "gemini-3-flash-preview"
     },
     {
+      "id": 5,
+      "category": "رصيد زبون",
+      "q": "شكد على أم زينب؟",
+      "holdout": true,
+      "expected": [
+        56000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "أم زينب عليها 56,000 دينار.",
+      "tools": [
+        "find_customer"
+      ],
+      "seconds": 7.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
       "id": 6,
       "category": "رصيد زبون",
       "q": "شكد باقي على أبو مصطفى؟",
@@ -145,6 +163,24 @@
       "model": "gemini-3.5-flash"
     },
     {
+      "id": 10,
+      "category": "رصيد زبون",
+      "q": "شكد باقي على كرار؟",
+      "holdout": true,
+      "expected": [
+        135000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "باقي على كرار 135,000 دينار.",
+      "tools": [
+        "find_customer"
+      ],
+      "seconds": 2.3,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
       "id": 11,
       "category": "رصيد زبون",
       "q": "أبو أحمد شكد عليه؟",
@@ -161,6 +197,1653 @@
       ],
       "seconds": 2.9,
       "model": "gemini-3.5-flash"
+    },
+    {
+      "id": 12,
+      "category": "رصيد زبون",
+      "q": "حساب أم علي شكد صار؟",
+      "holdout": false,
+      "expected": [
+        434000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "أم علي باقي عليها 434,000 دينار.",
+      "tools": [
+        "find_customer"
+      ],
+      "seconds": 37.9,
+      "model": "gemini-3.7-flash"
+    },
+    {
+      "id": 13,
+      "category": "رصيد زبون",
+      "q": "شكد على الأستاذ سعد؟",
+      "holdout": false,
+      "expected": [
+        69000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "على الأستاذ سعد 69,000 دينار.",
+      "tools": [
+        "find_customer"
+      ],
+      "seconds": 10.2,
+      "model": "gemini-3.7-flash"
+    },
+    {
+      "id": 14,
+      "category": "رصيد زبون",
+      "q": "شكد باقي على أبو جاسم؟",
+      "holdout": false,
+      "expected": [
+        171500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "باقي على أبو جاسم 171,500 دينار.",
+      "tools": [
+        "find_customer"
+      ],
+      "seconds": 9.1,
+      "model": "gemini-3.6-flash"
+    },
+    {
+      "id": 15,
+      "category": "رصيد زبون",
+      "q": "حيدر الكهربائي شكد عليه؟",
+      "holdout": true,
+      "expected": [
+        115500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "حيدر الكهربائي عليه 115,500 دينار.",
+      "tools": [
+        "find_customer"
+      ],
+      "seconds": 2.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 16,
+      "category": "رصيد زبون",
+      "q": "حساب أم نور شكد صار؟",
+      "holdout": false,
+      "expected": [
+        203000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "حساب أم نور صار عليها 203,000 دينار.",
+      "tools": [
+        "find_customer"
+      ],
+      "seconds": 7.1,
+      "model": "gemini-3.6-flash"
+    },
+    {
+      "id": 17,
+      "category": "مجموع الديون",
+      "q": "شكد مجموع الديون على الزبائن؟",
+      "holdout": false,
+      "expected": [
+        2728500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "مجموع الديون على الزبائن 2,728,500 دينار (على 16 زبون).",
+      "tools": [
+        "list_debtors"
+      ],
+      "seconds": 38.5,
+      "model": "gemini-3.6-flash"
+    },
+    {
+      "id": 18,
+      "category": "مجموع الديون",
+      "q": "منو أكثر واحد عليه دين؟",
+      "holdout": false,
+      "expected": [
+        434000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "أكثر وحدة عليها دين هي أم علي، بذمتها 434,000 دينار.\nالمجموع الكلي للديون على الكل هو 2,728,500 دينار.",
+      "tools": [
+        "list_debtors"
+      ],
+      "seconds": 3.1,
+      "model": "gemini-3.6-flash"
+    },
+    {
+      "id": 19,
+      "category": "مجموع الديون",
+      "q": "شكد إلي على الناس كلهم؟",
+      "holdout": false,
+      "expected": [
+        2728500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "مجموع ديون الزبائن الكلي 2,728,500 دينار على 16 زبون، وماكو ديون بالدولار.",
+      "tools": [
+        "list_debtors"
+      ],
+      "seconds": 57.5,
+      "model": "gemini-3.7-flash"
+    },
+    {
+      "id": 20,
+      "category": "مجموع الديون",
+      "q": "أكثر زبون مطلوب شكد عليه؟",
+      "holdout": true,
+      "expected": [
+        434000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "أكثر زبون عليه دين هو أم علي، ومطلوب 434,000 دينار.",
+      "tools": [
+        "list_debtors"
+      ],
+      "seconds": 3.1,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 21,
+      "category": "الموردين",
+      "q": "شكد عليّ لـ شركة الزين؟",
+      "holdout": false,
+      "expected": [
+        3100000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "عليك لشركة الزين 3,100,000 دينار.",
+      "tools": [
+        "find_supplier"
+      ],
+      "seconds": 17.5,
+      "model": "gemini-3.6-flash"
+    },
+    {
+      "id": 22,
+      "category": "الموردين",
+      "q": "شكد عليّ لـ مندوب البيبسي؟",
+      "holdout": false,
+      "expected": [
+        -450000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "أنت تطلبه 450,000 دينار (حسابك عنده زايد).",
+      "tools": [
+        "find_supplier"
+      ],
+      "seconds": 48.3,
+      "model": "gemini-3-flash-preview"
+    },
+    {
+      "id": 23,
+      "category": "الموردين",
+      "q": "شكد عليّ لـ شركة الريم للمنظفات؟",
+      "holdout": false,
+      "expected": [
+        400000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "مطلوب منك لشركة الريم للمنظفات 400,000 دينار.",
+      "tools": [
+        "find_supplier"
+      ],
+      "seconds": 3.5,
+      "model": "gemini-3-flash-preview"
+    },
+    {
+      "id": 24,
+      "category": "الموردين",
+      "q": "شكد عليّ لـ مكتبة النور؟",
+      "holdout": false,
+      "expected": [
+        470000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "مطلوب منك لمكتبة النور 470,000 دينار.",
+      "tools": [
+        "find_supplier"
+      ],
+      "seconds": 5.4,
+      "model": "gemini-3-flash-preview"
+    },
+    {
+      "id": 25,
+      "category": "الموردين",
+      "q": "شكد عليّ لـ معمل ألعاب بغداد؟",
+      "holdout": true,
+      "expected": [
+        850000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "عليك 850,000 دينار لمعمل ألعاب بغداد.",
+      "tools": [
+        "find_supplier"
+      ],
+      "seconds": 1.6,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 26,
+      "category": "الموردين",
+      "q": "شكد مطلوب مني للشركات كلها؟",
+      "holdout": false,
+      "expected": [
+        4820000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "مطلوب منك للشركات حالياً 4,820,000 دينار. أكثرهم شركة الزين (3,100,000 دينار) ومعمل ألعاب بغداد (850,000 دينار).",
+      "tools": [
+        "list_suppliers"
+      ],
+      "seconds": 3.3,
+      "model": "gemini-3-flash-preview"
+    },
+    {
+      "id": 27,
+      "category": "الموردين",
+      "q": "شكد عليّ للموردين؟",
+      "holdout": false,
+      "expected": [
+        4820000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "مجموع اللي عليك للموردين 4,820,000 دينار، وأكثر واحد يطلبك شركة الزين (3,100,000 دينار).",
+      "tools": [
+        "list_suppliers"
+      ],
+      "seconds": 98.8,
+      "model": "gemini-3-flash-preview"
+    },
+    {
+      "id": 28,
+      "category": "بيع مادة",
+      "q": "شكد بعنا طحين هالشهر؟",
+      "holdout": false,
+      "expected": [
+        2050000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا 82 كيس طحين هالشهر، بمبلغ 2,050,000 دينار وربحها 246,000 دينار من 48 بيعة.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 12.3,
+      "model": "gemini-3-flash-preview"
+    },
+    {
+      "id": 29,
+      "category": "بيع مادة",
+      "q": "شكد بعنا طحين هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        825000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا 33 كيس طحين هالأسبوع بمبلغ 825,000 دينار، وربحنا بيهم 99,000 دينار من 20 بيعة.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 5.1,
+      "model": "gemini-3-flash-preview"
+    },
+    {
+      "id": 30,
+      "category": "بيع مادة",
+      "q": "شكد بعنا رز هالشهر؟",
+      "holdout": true,
+      "expected": [
+        1020000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا 34 كيس رز هالشهر، وقيمته 1,020,000 دينار (ربحك بيه 136,000 دينار).",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 2.5,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 31,
+      "category": "بيع مادة",
+      "q": "شكد بعنا رز هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        330000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "انباع 11 كيس رز هالأسبوع بقيمة 330,000 دينار، وبربح 44,000 دينار من 7 بيعات.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 3.0,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 32,
+      "category": "بيع مادة",
+      "q": "شكد بعنا سكر هالشهر؟",
+      "holdout": false,
+      "expected": [
+        1420000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "هالشهر بعنا 71 كيس سكر، بمجموع 1,420,000 دينار، وربحنا بيها 177,500 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 3.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 33,
+      "category": "بيع مادة",
+      "q": "شكد بعنا سكر هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        260000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا 13 كيس سكر هالأسبوع بمبلغ 260,000 دينار، وصافي الربح 32,500 دينار من 9 بيعات.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 2.7,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 34,
+      "category": "بيع مادة",
+      "q": "شكد بعنا زيت هالشهر؟",
+      "holdout": false,
+      "expected": [
+        392000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا هالشهر 98 قنينة زيت، ومجموعهن 392,000 دينار وربحهن 98,000.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 2.8,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 35,
+      "category": "بيع مادة",
+      "q": "شكد بعنا زيت هالأسبوع؟",
+      "holdout": true,
+      "expected": [
+        128000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا 32 قنينة زيت هالأسبوع بمبلغ 128,000 دينار، وربحنا بيها 32,000 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 60.9,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 36,
+      "category": "بيع مادة",
+      "q": "شكد بعنا شاي هالشهر؟",
+      "holdout": false,
+      "expected": [
+        438000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا 73 علبة شاي هالشهر بقيمة 438,000 دينار، وربحنا بيها 109,500 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 3.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 37,
+      "category": "بيع مادة",
+      "q": "شكد بعنا شاي هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        138000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا 23 علبة شاي هالأسبوع، ومجموعهن 138,000 دينار بربح 34,500 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 84.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 38,
+      "category": "بيع مادة",
+      "q": "شكد بعنا معجون طماطة هالشهر؟",
+      "holdout": false,
+      "expected": [
+        87000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا 58 علبة معجون طماطة هالشهر، بقيمة 87,000 دينار وربح 23,200 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 4.4,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 39,
+      "category": "بيع مادة",
+      "q": "شكد بعنا معجون طماطة هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        24000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "انباع من المعجون 16 علبة هالأسبوع، ومجموع البيع 24,000 دينار وبربحه 6,400 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 3.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 40,
+      "category": "بيع مادة",
+      "q": "شكد بعنا حليب هالشهر؟",
+      "holdout": true,
+      "expected": [
+        675000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "هالشهر بعنا 75 كارتون حليب، ومجموعهن 675,000 دينار (ربحهن 112,500 دينار).",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 3.4,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 41,
+      "category": "بيع مادة",
+      "q": "شكد بعنا حليب هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        189000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا 21 كارتون حليب هالأسبوع بمبلغ 189,000 دينار، والربح 31,500 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 2.3,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 42,
+      "category": "بيع مادة",
+      "q": "شكد بعنا عدس هالشهر؟",
+      "holdout": false,
+      "expected": [
+        107500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا هالشهر 43 كيلو عدس، بـ 107,500 دينار، وربحنا بيها 25,800 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 2.9,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 43,
+      "category": "بيع مادة",
+      "q": "شكد بعنا عدس هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        35000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "هالأسبوع بعنا 14 كيلو عدس بمبلغ 35,000 دينار (ربحها 8,400 دينار من 6 بيعات).",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 45.0,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 44,
+      "category": "عدد مادة",
+      "q": "كم طبقة بيض انباع هالشهر؟",
+      "holdout": false,
+      "expected": [
+        77
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "انباع هالشهر 77 طبقة بيض، بمبلغ 462,000 دينار وربحها 77,000 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 6.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 45,
+      "category": "عدد مادة",
+      "q": "كم باكيت مناديل انباع هالشهر؟",
+      "holdout": true,
+      "expected": [
+        86
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "انباع 86 باكيت مناديل هالشهر بمبلغ 172,000 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 3.3,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 46,
+      "category": "عدد مادة",
+      "q": "كم قطعة صابون انباع هالشهر؟",
+      "holdout": false,
+      "expected": [
+        110
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "انباع هالشهر 110 قطعة صابون، بمجموع 110,000 دينار من 65 بيعة.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 6.7,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 47,
+      "category": "عدد مادة",
+      "q": "كم كيس مسحوق غسيل انباع هالشهر؟",
+      "holdout": false,
+      "expected": [
+        40
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "انباعو 40 كيس مسحوق غسيل هالشهر، بمبلغ 280,000 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 8.5,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 48,
+      "category": "عدد مادة",
+      "q": "كم قنينة كلور انباع هالشهر؟",
+      "holdout": false,
+      "expected": [
+        73
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "انباعن 73 قنينة كلور هالشهر، بمبلغ 109,500 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 8.1,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 49,
+      "category": "مجموع البيع",
+      "q": "شكد بعنا هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        2695500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "إجمالي المبيعات هالأسبوع 2,695,500 دينار (1,748,000 كاش، 399,500 دينار، و548,000 إلكتروني). أكثر شي انباع الطحين (33 كيس بـ 825,000 دينار).",
+      "tools": [
+        "item_sales"
+      ],
+      "seconds": 5.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 50,
+      "category": "مجموع البيع",
+      "q": "شكد بعنا هالشهر؟",
+      "holdout": true,
+      "expected": [
+        8641500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "مجموع البيع هالشهر 8,641,500 دينار. (نقدي: 6,247,500، دين: 1,251,000، إلكتروني: 1,143,000).",
+      "tools": [
+        "item_sales"
+      ],
+      "seconds": 1.7,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 51,
+      "category": "مجموع البيع",
+      "q": "شكد بعنا الشهر الماضي؟",
+      "holdout": false,
+      "expected": [
+        12902500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "مجموع المبيعات الشهر الماضي صار 12,902,500 دينار.",
+      "tools": [
+        "item_sales"
+      ],
+      "seconds": 4.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 52,
+      "category": "مجموع البيع",
+      "q": "شكد بعنا زين كاش وماستر هالشهر؟",
+      "holdout": false,
+      "expected": [
+        1143000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "مجموع البيع بالزين كاش والماستر هالشهر 1,143,000 دينار.",
+      "tools": [
+        "item_sales"
+      ],
+      "seconds": 4.6,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 53,
+      "category": "مجموع البيع",
+      "q": "شكد بعنا دين هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        399500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا هالأسبوع بـ 399,500 دينار بالدين.",
+      "tools": [
+        "item_sales"
+      ],
+      "seconds": 5.5,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 54,
+      "category": "مجموع البيع",
+      "q": "شكد بعنا كاش الشهر الماضي؟",
+      "holdout": false,
+      "expected": [
+        8774000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "الشهر الماضي بعنا كاش بـ 8,774,000 دينار.",
+      "tools": [
+        "item_sales"
+      ],
+      "seconds": 5.3,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 55,
+      "category": "الربح",
+      "q": "شكد ربحت هالشهر؟",
+      "holdout": true,
+      "expected": [
+        398000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "صافي ربحك هالشهر 398,000 دينار، من إجمالي بيع 8,641,500 دينار (550 بيعة)، بعد ما طرحنا كلفة البضاعة والصرفيات.",
+      "tools": [
+        "profit_report"
+      ],
+      "seconds": 2.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 56,
+      "category": "الربح",
+      "q": "شكد ربحت الشهر الماضي؟",
+      "holdout": false,
+      "expected": [
+        301350
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "الشهر الماضي بعت بـ 12,902,500 دينار، كلفة البضاعة 10,223,150 دينار، وصرفت 2,058,000 دينار (مثل الإيجار والرواتب)، وصافّي ربحك 301,350 دينار من 764 بيعة و45 سحب.",
+      "tools": [
+        "profit_report"
+      ],
+      "seconds": 5.1,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 57,
+      "category": "الربح",
+      "q": "شكد ربحت هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        408850
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "الربح الصافي هالأسبوع 408,850 دينار، من 167 بيعة و8 سحوبات.",
+      "tools": [
+        "profit_report"
+      ],
+      "seconds": 58.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 58,
+      "category": "الربح",
+      "q": "شكد ربحت البارحة؟",
+      "holdout": false,
+      "expected": [
+        76250
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "ربحك الصافي البارحة 76,250 دينار (من 30 بيعة وصرفية وحدة).",
+      "tools": [
+        "profit_report"
+      ],
+      "seconds": 1.9,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 59,
+      "category": "الربح",
+      "q": "شكد ربحت اليوم؟",
+      "holdout": false,
+      "expected": [
+        34250
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "الربح الصافي اليوم 34,250 دينار (من 6 بيعات وصرفية وحدة). البيع الكلي 237,000 وكلفة البضاعة 195,750 والصرفيات 7,000 دينار.",
+      "tools": [
+        "profit_report"
+      ],
+      "seconds": 2.6,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 60,
+      "category": "الربح",
+      "q": "شكد الربح الصافي للشهر الماضي؟",
+      "holdout": true,
+      "expected": [
+        301350
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "البيع بالشهر الماضي 12,902,500 دينار، كلفة البضاعة 10,223,150، والصرفيات 2,058,000 من 45 سحب، والربح الصافي 301,350 دينار من 764 بيعة.",
+      "tools": [
+        "profit_report"
+      ],
+      "seconds": 1.9,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 61,
+      "category": "الصرفيات",
+      "q": "شكد صرفنا على المولدة هالشهر؟",
+      "holdout": false,
+      "expected": [
+        360000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "صرفنا 360,000 دينار على المولدة هالشهر.",
+      "tools": [
+        "list_withdrawals"
+      ],
+      "seconds": 1.4,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 62,
+      "category": "الصرفيات",
+      "q": "شكد صرفنا على المولدة الشهر الماضي؟",
+      "holdout": false,
+      "expected": [
+        360000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "صرفتوا الشهر الماضي 360,000 دينار على المولدة.",
+      "tools": [
+        "list_withdrawals"
+      ],
+      "seconds": 1.4,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 63,
+      "category": "الصرفيات",
+      "q": "شكد دفعنا إيجار هالشهر؟",
+      "holdout": false,
+      "expected": [
+        500000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "دفعنا 500,000 دينار إيجار هالشهر.",
+      "tools": [
+        "list_withdrawals"
+      ],
+      "seconds": 1.7,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 64,
+      "category": "الصرفيات",
+      "q": "شكد دفعنا رواتب الشهر الماضي؟",
+      "holdout": false,
+      "expected": [
+        800000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "سحبت الشهر الماضي 800,000 دينار للرواتب.",
+      "tools": [
+        "list_withdrawals"
+      ],
+      "seconds": 1.6,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 65,
+      "category": "الصرفيات",
+      "q": "شكد صرفنا على الأكل هالشهر؟",
+      "holdout": true,
+      "expected": [
+        174000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "صرفنا 174,000 دينار على الأكل هالشهر.",
+      "tools": [
+        "list_withdrawals"
+      ],
+      "seconds": 1.7,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 66,
+      "category": "الصرفيات",
+      "q": "شكد صرفنا على الأكل هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        58000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "صرفنا 58,000 دينار على الأكل هالأسبوع.",
+      "tools": [
+        "list_withdrawals"
+      ],
+      "seconds": 1.8,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 67,
+      "category": "الصرفيات",
+      "q": "شكد صرفنا على النقل هالشهر؟",
+      "holdout": false,
+      "expected": [
+        85000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "صرفتوا هالشهر 85,000 دينار على النقل، من 5 سحوبات.",
+      "tools": [
+        "list_withdrawals"
+      ],
+      "seconds": 45.3,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 68,
+      "category": "الصرفيات",
+      "q": "شكد صرفنا على النقل الشهر الماضي؟",
+      "holdout": false,
+      "expected": [
+        170000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "صرفنا 170,000 دينار على النقل الشهر الماضي.",
+      "tools": [
+        "list_withdrawals"
+      ],
+      "seconds": 1.5,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 69,
+      "category": "الصرفيات",
+      "q": "شكد سحبت للبيت هالشهر؟",
+      "holdout": false,
+      "expected": [
+        4858500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "سحبت هالشهر للبيت 4,858,500 دينار.",
+      "tools": [
+        "list_withdrawals"
+      ],
+      "seconds": 1.5,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 70,
+      "category": "الصرفيات",
+      "q": "شكد سحبت للبيت هالأسبوع؟",
+      "holdout": true,
+      "expected": [
+        1514000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "سحبت هالأسبوع للبيت 1,514,000 دينار.",
+      "tools": [
+        "list_withdrawals"
+      ],
+      "seconds": 44.1,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 71,
+      "category": "كشف حساب",
+      "q": "شكد حساب أبو علي هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        34500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "حساب أبو علي هالأسبوع: الرصيد قبل الفترة كان -9,500 دينار، وصار عليه ديون بـ 44,000 دينار من 3 قيود، والرصيد هسه 34,500 دينار.",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 3.4,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 72,
+      "category": "كشف حساب",
+      "q": "شكد حساب علي النجار هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        287000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "حساب علي النجار هالأسبوع: رصيده قبل الفترة 275,500، اجته ديون بـ 76,500 وسدد 65,000، وصار باقيه 287,000 دينار (من 3 قيود).",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 4.0,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 73,
+      "category": "كشف حساب",
+      "q": "شكد حساب أم حسين هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        228500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "حساب أم حسين هالأسبوع: الرصيد قبل الفترة 260,500 دينار، صار عليه ديون 8,000 دينار وتسديدات 40,000 دينار، والرصيد هسه 228,500 دينار من 4 قيود. وكشف الحساب الكامل للطباعة بـ ☰ ← 📊 التقارير.",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 53.5,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 74,
+      "category": "كشف حساب",
+      "q": "شكد حساب أبو حسين هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        360500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "رصيده قبل هالأسبوع 348,000 دينار، أخذ بضاعة بـ 12,500 دينار، وما صار أي تسديد، وصار حسابه 360,500 دينار بـ قيد واحد. الكشف الكامل بـ ☰ ← 📊 التقارير.",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 3.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 75,
+      "category": "كشف حساب",
+      "q": "شكد حساب أم زينب هالأسبوع؟",
+      "holdout": true,
+      "expected": [
+        56000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "حساب أم زينب هالأسبوع: الرصيد قبل الفترة 46,500 دينار، صار عليه دين بـ 34,500 دينار وتسديد بـ 25,000 دينار، وصافي الحساب هسه 56,000 دينار من قيدين.",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 2.4,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 76,
+      "category": "كشف حساب",
+      "q": "شكد حساب أبو مصطفى هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        68500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "حساب أبو مصطفى هالأسبوع: بادي برصيد 143,500 دينار، سدد 75,000، وباقي عليه 68,500 دينار.",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 2.4,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 77,
+      "category": "كشف حساب",
+      "q": "شكد حساب مصطفى الحداد هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        238000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "رصيد مصطفى الحداد قبل هالأسوع 218,000 دينار، أخذ ديون بـ 30,000 دينار وسدد 10,000 دينار، وصار رصيده هسه 238,000 دينار (من 4 قيود).",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 3.4,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 78,
+      "category": "كشف حساب",
+      "q": "شكد حساب أبو حيدر هالأسبوع؟",
+      "holdout": false,
+      "expected": [
+        51500
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "حساب أبو حيدر هالأسبوع: ديونه صارت 53,500 دينار من 3 قيود، ورصيده هسه 51,500 دينار عليه.",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 2.9,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 79,
+      "category": "كشف حساب",
+      "q": "كشف حساب أم مريم هالشهر، شكد صار عليه؟",
+      "holdout": false,
+      "expected": [
+        107000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "رصيد أم مريم هالشهر: بدت بـ 152,500 دينار، وصار عليها 107,000 دينار (من 10 قيود). الكشف الكامل بـ ☰ ← 📊 التقارير.",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 2.9,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 80,
+      "category": "كشف حساب",
+      "q": "كشف حساب كرار هالشهر، شكد صار عليه؟",
+      "holdout": true,
+      "expected": [
+        135000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "رصيد كرار هالشهر صار 135,000 دينار، من 13 قيد (ديون بـ 191,500 وتسديدات بـ 90,000). الكشف الكامل بـ ☰ ← 📊 التقارير.",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 2.3,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 81,
+      "category": "كشف حساب",
+      "q": "كشف حساب أبو أحمد هالشهر، شكد صار عليه؟",
+      "holdout": false,
+      "expected": [
+        169000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "رصيد أبو أحمد هالشهر: بداء بـ 66,500، وصار عليه دين جديد بـ 127,500 وسدّد 25,000، وصافي الحساب هسه 169,000 دينار من 7 قيود.",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 5.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 82,
+      "category": "كشف حساب",
+      "q": "كشف حساب أم علي هالشهر، شكد صار عليه؟",
+      "holdout": false,
+      "expected": [
+        434000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "حساب أم علي هالشهر: بضاعة بـ 129,000 دينار وتسديد بـ 55,000، ورصيدها صار 434,000 دينار.",
+      "tools": [
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 7.0,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 83,
+      "category": "كشف حساب",
+      "q": "كشف حساب الأستاذ سعد هالشهر، شكد صار عليه؟",
+      "holdout": false,
+      "expected": [
+        69000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "ماكو قيود جديدة هالشهر، رصيده مثل ما كان 69,000 دينار.",
+      "tools": [
+        "find_customer",
+        "find_customer",
+        "customer_statement"
+      ],
+      "seconds": 5.3,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 84,
+      "category": "بيع مادة",
+      "q": "شكد بعنا شامبو الشهر الماضي؟",
+      "holdout": false,
+      "expected": [
+        280000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا الشهر الماضي 56 قنينة شامبو، بمجموع 280,000 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 2.7,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 85,
+      "category": "بيع مادة",
+      "q": "شكد بعنا معطر الشهر الماضي؟",
+      "holdout": true,
+      "expected": [
+        175000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "الشهر الماضي انباع 50 قنينة معطر، ومجموعها 175,000 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 2.5,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 86,
+      "category": "بيع مادة",
+      "q": "شكد بعنا كرة قدم الشهر الماضي؟",
+      "holdout": false,
+      "expected": [
+        400000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "الشهر الماضي بعنا 40 قطعة كرة قدم، مجموعهن 400,000 دينار وبربحهن 120,000 دينار من 23 بيعة.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 3.1,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 87,
+      "category": "بيع مادة",
+      "q": "شكد بعنا دمية الشهر الماضي؟",
+      "holdout": false,
+      "expected": [
+        345000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بعنا 23 قطعة دمية الشهر الماضي، بمبلغ 345,000 دينار.",
+      "tools": [
+        "find_item",
+        "item_sales"
+      ],
+      "seconds": 195.4,
+      "model": "gemma-4-26b-a4b-it"
+    },
+    {
+      "id": 88,
+      "category": "الجرار",
+      "q": "شكد بعنا نقد البارحة حسب الجرار؟",
+      "holdout": false,
+      "expected": [
+        212000
+      ],
+      "ask": false,
+      "status": "fail",
+      "why": "الرقم الصحيح 212,000 مو بالرد",
+      "reply": "البارحة بعت نقداً بـ 211,000 دينار حسب الجرار.",
+      "tools": [
+        "drawer_history"
+      ],
+      "seconds": 2.6,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 89,
+      "category": "الجرار",
+      "q": "شكد عديت بالجرار البارحة؟",
+      "holdout": false,
+      "expected": [
+        397000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "البارحة عديت بالجرار 397,000 دينار، وطلع البيع النقدي 211,000 من مجموع بيع 531,500.",
+      "tools": [
+        "drawer_history"
+      ],
+      "seconds": 1.7,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 90,
+      "category": "الجرار",
+      "q": "البارحة الجرار چان بيه زيادة لو نقص؟ شكد؟",
+      "holdout": true,
+      "expected": [
+        1000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "البارحة چان بيه زيادة 1,000 دينار.",
+      "tools": [
+        "drawer_history"
+      ],
+      "seconds": 1.3,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 91,
+      "category": "الجرار",
+      "q": "شكد چان بالجرار قبل البارحة آخر الليل؟",
+      "holdout": false,
+      "expected": [
+        280000
+      ],
+      "ask": false,
+      "status": "pass",
+      "why": "",
+      "reply": "بالجرار قبل البارحة آخر الليل چان 280,000 دينار.",
+      "tools": [
+        "drawer_history"
+      ],
+      "seconds": 1.7,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 92,
+      "category": "الجرار",
+      "q": "شكد بعنا نقد قبل البارحة؟",
+      "holdout": false,
+      "expected": [
+        262000
+      ],
+      "ask": false,
+      "status": "fail",
+      "why": "الرقم الصحيح 262,000 مو بالرد",
+      "reply": "البيع النقدي قبل البارحة كان 252,000 دينار.",
+      "tools": [
+        "drawer_history"
+      ],
+      "seconds": 1.5,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 93,
+      "category": "سؤال غامض",
+      "q": "شكد عليه؟",
+      "holdout": false,
+      "expected": [],
+      "ask": true,
+      "status": "pass",
+      "why": "سأل",
+      "reply": "سؤالك عام، تقصد شكد عليك للموردين لو شكد سحوبات اليوم؟",
+      "tools": [],
+      "seconds": 0.9,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 94,
+      "category": "سؤال غامض",
+      "q": "شكد طلعت؟",
+      "holdout": false,
+      "expected": [],
+      "ask": true,
+      "status": "fail",
+      "why": "جاوب بدل ما يسأل",
+      "reply": "مجموع سحوبات اليوم 7,000 دينار (للأكل).",
+      "tools": [
+        "list_withdrawals"
+      ],
+      "seconds": 1.5,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 95,
+      "category": "سؤال غامض",
+      "q": "سجل عليه 25",
+      "holdout": true,
+      "expected": [],
+      "ask": true,
+      "status": "pass",
+      "why": "سأل",
+      "reply": "عفية، منو هذا؟ منو تسجل عليه 25 ألف؟",
+      "tools": [],
+      "seconds": 1.7,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 96,
+      "category": "سؤال غامض",
+      "q": "شكد على حسين؟",
+      "holdout": false,
+      "expected": [],
+      "ask": true,
+      "status": "pass",
+      "why": "سأل",
+      "reply": "عندي \"أم حسين\" عليها 228,500 دينار، و\"أبو حسين\" عليه 360,500 دينار. تقصد منو بيهما؟",
+      "tools": [
+        "find_customer"
+      ],
+      "seconds": 2.2,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 97,
+      "category": "سؤال غامض",
+      "q": "شكد على علي؟",
+      "holdout": false,
+      "expected": [],
+      "ask": true,
+      "status": "pass",
+      "why": "سأل",
+      "reply": "تقصد منو؟ أبو علي، علي النجار، لو أم علي؟",
+      "tools": [
+        "find_customer"
+      ],
+      "seconds": 1.5,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 98,
+      "category": "سؤال غامض",
+      "q": "شكد دفع؟",
+      "holdout": false,
+      "expected": [],
+      "ask": true,
+      "status": "pass",
+      "why": "سأل",
+      "reply": "شنو قصدك، ياهو اللي دفع؟",
+      "tools": [],
+      "seconds": 0.9,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 99,
+      "category": "سؤال غامض",
+      "q": "شكد عليّ للشركة؟",
+      "holdout": false,
+      "expected": [],
+      "ask": true,
+      "status": "fail",
+      "why": "جاوب بدل ما يسأل",
+      "reply": "عليك للشركات والموردين مجموع 4,820,000 دينار، وهذا تفصيلهم:\n- شركة الزين: 3,100,000 دينار\n- معمل ألعاب بغداد: 850,000 دينار\n- مكتبة النور: 470,000 دينار\n- شركة الريم للمنظفات: 400,000 دينار",
+      "tools": [
+        "list_suppliers"
+      ],
+      "seconds": 7.9,
+      "model": "gemini-3.1-flash-lite"
+    },
+    {
+      "id": 100,
+      "category": "سؤال غامض",
+      "q": "بعت كيس",
+      "holdout": true,
+      "expected": [],
+      "ask": true,
+      "status": "pass",
+      "why": "سأل",
+      "reply": "يا كيس بعت؟ والمادة شنو، وطريقة الدفع كاش لو دين؟",
+      "tools": [],
+      "seconds": 0.8,
+      "model": "gemini-3.5-flash-lite"
+    },
+    {
+      "id": 101,
+      "category": "سؤال غامض",
+      "q": "سجل على أبو 10 آلاف",
+      "holdout": false,
+      "expected": [],
+      "ask": true,
+      "status": "pass",
+      "why": "سأل",
+      "reply": "گول يا هو بيهم تقصد؟ عندي: أبو علي، أبو حسين، أبو حيدر، أبو أحمد، أبو جاسم، لو أبو مصطفى؟",
+      "tools": [
+        "find_customer"
+      ],
+      "seconds": 6.9,
+      "model": "gemini-3.1-flash-lite"
+    },
+    {
+      "id": 102,
+      "category": "سؤال غامض",
+      "q": "شكد باقي عليها؟",
+      "holdout": false,
+      "expected": [],
+      "ask": true,
+      "status": "pass",
+      "why": "سأل",
+      "reply": "تقصد منو بالضبط؟ ما عرفت منو الزبونة اللي تسأل عنها، انطيني اسمها حتى أشوفلك حسابها.",
+      "tools": [],
+      "seconds": 3.6,
+      "model": "gemini-3.1-flash-lite"
     }
   ]
 }
