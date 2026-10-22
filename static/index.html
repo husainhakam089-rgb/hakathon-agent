@@ -989,6 +989,22 @@ function stopVoice(discard = false) {
   if (discard) { const r = rec; rec = null; r.abort(); } else rec.stop();
 }
 
+// Phones (Chrome on Android above all) send every new piece with the words before it again, so
+// adding the pieces up wrote "سجل سجل على سجل على أبو علي" and cut words. On a phone one sentence
+// is heard at a time (press 🎤 again to go on), and pieces that repeat what came before are merged.
+const PHONE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+function joinHeard(sofar, next) {
+  sofar = sofar.trim(); next = next.trim();
+  if (!sofar || !next) return sofar || next;
+  if (next.startsWith(sofar)) return next;  // the new piece already holds all of it
+  if (sofar.endsWith(next)) return sofar;   // the same piece again
+  const a = sofar.split(/\s+/), b = next.split(/\s+/);
+  for (let k = Math.min(a.length, b.length); k > 1; k--) {  // the end of one is the start of the other
+    if (a.slice(-k).join(' ') === b.slice(0, k).join(' ')) return [...a, ...b.slice(k)].join(' ');
+  }
+  return sofar + ' ' + next;
+}
+
 function startVoice() {
   if (busy) return;
   voiceHint('');
@@ -996,7 +1012,7 @@ function startVoice() {
   const r = rec = new SpeechRec();
   r.lang = voiceLang;
   r.interimResults = true;
-  r.continuous = true;
+  r.continuous = !PHONE;
   r.maxAlternatives = 1;
   // Status line so the owner can tell where it stops: mic -> voice -> text.
   let heard = false, audio = false, speech = false, failed = false;
@@ -1005,7 +1021,7 @@ function startVoice() {
   r.onresult = e => {
     if (r !== rec) return;  // late result after the message was sent
     let text = '';
-    for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+    for (let i = 0; i < e.results.length; i++) text = joinHeard(text, e.results[i][0].transcript);
     heard = true;
     voiceHint('');
     fromVoice = true;
@@ -1050,7 +1066,7 @@ function startVoice() {
   recording = true;
   $('mic').classList.add('on');
   $('mic').innerHTML = icon('stop');
-  $('input').placeholder = 'دا أسمعك... (30 ثانية بالأكثر)';
+  $('input').placeholder = PHONE ? 'دا أسمعك... (جملة وحدة، ودوس 🎤 مرة ثانية حتى تكمل)' : 'دا أسمعك... (30 ثانية بالأكثر)';
   voiceTimer = setTimeout(stopVoice, VOICE_MAX_MS);
 }
 
