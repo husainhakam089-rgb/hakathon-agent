@@ -49,7 +49,7 @@ def build(conn, today: date | None = None) -> str:
         lines.append("🧾 الجرار: انعد" + ("" if d is None else
                      (" ومضبوط ✓" if d == 0 else f"، الفرق {d:+,} دينار")))
     else:
-        lines.append("🧾 الجرار: ما انعد اليوم")
+        lines.append(drawer_check(conn))
     overdue = db.overdue_debts(conn, None, datetime.combine(today, datetime.max.time()))
     if overdue:
         top = "، ".join(f"{o['name']} ({o['balance']['IQD']:,})" for o in overdue[:3])
@@ -60,6 +60,23 @@ def build(conn, today: date | None = None) -> str:
     for r in due:
         lines.append(f"📅 باچر موعد {r['reason']}: {r['amount']:,} {'دولار' if r['currency'] == 'USD' else 'دينار'}")
     return "\n".join(lines)
+
+
+def drawer_check(conn) -> str:
+    """The end-of-day check without the count: what the drawer should hold by what was recorded,
+    and where it came from. The owner counts and compares (or tells the agent the count)."""
+    r = db.drawer_report(conn)
+    exp = (r.get("expected_now") or {}).get("IQD")
+    if exp is None:
+        return "🧾 الجرار: ما انعد اليوم، وما أعرف الفكة، فما أگدر أحسب شكد المفروض بيه."
+    parts = [f"الفكة {r['start']['iqd']:,}"]
+    for key, word, sign in (("sales_cash", "بيع كاش", "+"), ("customer_payments", "تسديدات", "+"),
+                            ("cash_ins", "وارد", "+"), ("withdrawals", "سحوبات", "−"),
+                            ("supplier_payments", "للموردين", "−")):
+        if r[key]["IQD"]:
+            parts.append(f"{sign} {word} {r[key]['IQD']:,}")
+    return (f"🧾 الجرار: حسب المسجل المفروض بيه {exp:,} دينار ({' '.join(parts)}). "
+            "عدّه وگلي «سديت، بالجرار كذا» حتى أطابق، أو اطلب التفاصيل.")
 
 
 def telegram_ready() -> bool:

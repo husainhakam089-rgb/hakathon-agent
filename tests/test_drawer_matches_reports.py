@@ -50,3 +50,18 @@ def test_a_shop_that_records_no_sales_keeps_the_old_reading(conn, tools):
     assert c["day_cash_sales"] == c["cash_sales"] == {"IQD": 100000}  # the count is the only measure
     assert c["day_total_sales"] == c["total_sales"] == {"IQD": 175000}
     assert "البيع النقدي 100,000" in c["meaning"]
+
+
+def test_end_of_day_check_without_the_count(conn):
+    # 24-10-2026: the owner wants the day checked at its end without telling the count first
+    from app import daily
+
+    db.add_drawer_count(conn, "open", 150000, None)  # the morning float
+    ali = db.add_customer(conn, "أبو علي")
+    db.add_transaction(conn, ali, "payment", 20000)
+    db.add_withdrawal(conn, 5000, "IQD", "غدا")
+    r = db.drawer_report(conn)
+    assert r["expected_now"]["IQD"] == 150000 + 20000 - 5000
+    line = daily.drawer_check(conn)
+    assert "165,000" in line and "الفكة 150,000" in line and "تسديدات 20,000" in line and "سحوبات 5,000" in line
+    assert "165,000" in daily.build(conn)

@@ -641,6 +641,13 @@ def drawer_report(conn, count: dict | None = None) -> dict:
         report.update(expected=expected, difference=difference, cash_sales=cash_sales, total_sales=total_sales,
                       shortage=any(v < 0 for v in difference.values()))
         report.update(_same_as_reports(moves, difference, cash_sales, total_sales))
+    elif prev:
+        # not counted yet: what the drawer should hold now by what was recorded, so the end of
+        # the day can be checked without asking the owner for the count first
+        report["expected_now"] = {
+            cur: (prev[key] + moves["customer_payments"][cur] + moves["cash_ins"][cur] + moves["sales_cash"][cur]
+                  - moves["supplier_payments"][cur] - moves["withdrawals"][cur])
+            for cur, key in (("IQD", "iqd"), ("USD", "usd")) if prev[key] is not None}
     return report
 
 

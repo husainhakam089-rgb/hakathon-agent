@@ -2286,6 +2286,11 @@ function speakAlerts(a) {
   if (a.drawer_not_counted && key('drawer')) lines.push({icon: 'receipt', title: 'ما عديت الجرار اليوم',
     sub: `صارت الساعة ${hourWords(a.drawer_hour)}. عده وگلي: سديت، بالجرار كذا.`,
     actions: [{label: 'اكتبها', yes: true, attr: 'data-fill-chat="سديت، بالجرار "'}]});
+  // the end of the day (the report hour): the day's report and the drawer check, once, without being asked
+  if (a.day_report && key('day' + a.day_report.day)) lines.push({icon: 'chart', title: 'تقرير اليوم والمطابقة',
+    sub: esc(a.day_report.text).split('\n').slice(1).filter(Boolean).join('<br>'),
+    actions: [{label: 'التفاصيل', yes: true, attr: 'data-fill-chat="انطيني تفاصيل الجرار اليوم"'},
+              ...(a.drawer_counted_today ? [] : [{label: 'عديت الجرار', attr: 'data-fill-chat="سديت، بالجرار "'}])]});
   for (const r of (a.my_reminders || [])) if (key('mine' + r.id + r.due_at)) lines.push({icon: 'alarm', title: esc(r.text),
     sub: 'طلبت أذكّرك بيها', actions: [{label: 'خلصت', yes: true, attr: `data-mine-done="${r.id}"`},
                                         {label: 'بعد ساعة', attr: `data-mine-snooze="${r.id}"`}]});

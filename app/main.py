@@ -27,7 +27,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "42"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "43"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -520,7 +520,12 @@ def _extra_settings() -> dict:
 @app.get("/alerts")
 def alerts():
     with agent.lock:
-        return db.alerts(agent.conn)
+        result = db.alerts(agent.conn)
+        now = datetime.now()
+        if now.hour >= int(db.get_setting(agent.conn, "report_hour")):
+            # the end of the day: the day's report with the drawer check, put in the chat once
+            result["day_report"] = {"day": now.date().isoformat(), "text": daily.build(agent.conn, now.date())}
+        return result
 
 
 @app.get("/recurring")
