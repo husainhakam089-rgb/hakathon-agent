@@ -398,3 +398,26 @@ def test_memory_limits(tools, conn, monkeypatch):
     tools.execute("remember", {"fact": "أ"})
     tools.execute("remember", {"fact": "ب"})
     assert tools.execute("remember", {"fact": "ج"})["error"] == "memory_full"
+
+
+def test_ali_is_not_abu_ali(conn):
+    # 24-10-2026 online: "سجل على علي 25 الف" went on أبو علي, the only name with علي in it
+    from app.tools import DebtTools
+
+    abu = db.add_customer(conn, "أبو علي")
+    t = DebtTools(conn)
+
+    def debt(msg, cid):
+        t.source_message = msg
+        return t.execute("record_debt", {"customer_id": cid, "amount": 5000, "currency": "IQD"})
+
+    r = debt("سجل على علي 25 الف", abu)
+    assert r["error"] == "which_party" and "تقصد أبو علي" in r["message"] and "أضيف علي" in r["message"]
+    assert db.get_balance(conn, abu)["IQD"] == 0
+    for msg in ("سجل على ابو علي 25", "سجل على أبوعلي 25", "إي", "سجل عليه 5 بعد", "سجل على الحساب 5"):
+        assert debt(msg, abu)["ok"], msg  # the whole name, or no name at all: as before
+    ali = db.add_customer(conn, "علي")
+    assert debt("سجل على أبو علي 5", ali)["error"] == "which_party"  # and the other way round
+    assert debt("سجل على علي 5", ali)["ok"]
+    t.source_message = None  # direct calls (no owner message) are not checked
+    assert t.execute("record_debt", {"customer_id": abu, "amount": 1000, "currency": "IQD"})["ok"]

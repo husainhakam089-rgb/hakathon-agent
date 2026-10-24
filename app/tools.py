@@ -13,6 +13,8 @@ from app import db, payments, reports
 from app.arabic import find_matches, normalize
 
 USD_LARGE_AMOUNT = 1000  # treated as equivalent to LARGE_AMOUNT_IQD (no FX conversion in v0)
+# "أبو/أم علي" is not "علي": a different person in a shop's notebook
+_KIN = ("ابو", "ام", "ابن", "بنت", "اخو", "اخت", "مرت")
 MAX_MEMORIES = 50
 MAX_MEMORY_CHARS = 200
 
@@ -719,9 +721,45 @@ class DebtTools:
     def _customer_or_error(self, customer_id):
         return self._party_or_error(customer_id, "customer")
 
+    def _which_party(self, party, kind):
+        """24-10-2026 online: "سجل على علي 25 الف" went on أبو علي, the only name with علي in it.
+        "علي" and "أبو علي" (or "أم علي") are different people: when the owner said the name
+        without its أبو/أم, or with one this party does not have, nothing is recorded and he is
+        asked which one he means. The whole name, or no name at all ("دفع 7500"، "إي"), goes
+        through as before."""
+        if not self.source_message:
+            return None
+        raw = re.sub(r"(?<!\w)على(?!\w)", " ", self.source_message)  # "على" normalizes to "علي"
+        text = " " + " ".join(re.sub(r"[^\w\s]", " ", normalize(raw)).split()) + " "
+        name = party.get("normalized_name") or normalize(party["name"])
+        if f" {name} " in text:
+            return None
+        words = party["name"].split()
+        said = None
+        if len(words) > 1 and normalize(words[0]) in _KIN:
+            rest = normalize(" ".join(words[1:]))
+            if f" {rest} " in text:
+                said = " ".join(words[1:])  # "علي" for "أبو علي"
+        else:
+            for k in _KIN:
+                if f" {normalize(k + ' ' + party['name'])} " in text:
+                    said = f"{k} {party['name']}"  # "أبو علي" for "علي"
+                    break
+        if said is None:
+            return None
+        label = "مورد" if kind == "supplier" else "زبون"
+        return _error("which_party",
+                      f"صاحب المحل گال «{said}» مو «{party['name']}»، وهذول شخصين مختلفين. لا تسجل. "
+                      f"اسأله: \"ما عندي {label} اسمه {said}. تقصد {party['name']}، لو أضيف {said} جديد؟\" "
+                      "وإذا گال يقصده عيد نفس الاستدعاء ويا اسمه الكامل بكلامه، وإذا گال ضيفه استدعي الإضافة.",
+                      customer_name=party["name"], said=said)
+
     def _record(self, tx_type, customer_id, amount, currency="IQD", note=None, confirmed=False,
                 kind="customer", from_drawer=True):
         customer, err = self._party_or_error(customer_id, kind)
+        if err:
+            return err
+        err = self._which_party(customer, kind)
         if err:
             return err
 
