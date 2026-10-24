@@ -421,3 +421,18 @@ def test_ali_is_not_abu_ali(conn):
     assert debt("سجل على علي 5", ali)["ok"]
     t.source_message = None  # direct calls (no owner message) are not checked
     assert t.execute("record_debt", {"customer_id": abu, "amount": 1000, "currency": "IQD"})["ok"]
+
+
+def test_open_an_account_is_the_owners_go_ahead(conn):
+    # 24-10-2026: "اذا ما عنده حساب افتحله حساب" and "سويلها حساب جديد" still asked "أضيفه؟"
+    from app.tools import DebtTools
+
+    t = DebtTools(conn)
+    for msg, name in [("سجل على كرار 20 الف، اذا ما عنده حساب افتحله حساب", "كرار"),
+                      ("سجل على ام سجاد 5 الاف وإذا مو موجودة سويلها حساب جديد", "ام سجاد"),
+                      ("افتح حساب باسم حمودي وسجل عليه 10", "حمودي"),
+                      ("سجل على سلام 10 الاف واذا ما موجود حسابه ضيفه", "سلام")]:
+        t.source_message = msg
+        assert t.execute("add_customer", {"name": name})["ok"], msg
+    t.source_message = "سجل على ضياء 10"  # a new name alone still asks first
+    assert t.execute("add_customer", {"name": "ضياء"})["error"] == "ask_first"

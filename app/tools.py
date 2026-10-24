@@ -847,8 +847,12 @@ class DebtTools:
         """"الحجي كريم عليه 100 دولار، ضيفه": the owner named the new person AND said to add them in
         this same message, so asking "أضيفه؟" again only annoys. A new name alone still asks first."""
         text = " " + " ".join(re.sub(r"[^\w\s]", " ", normalize(self.source_message or "")).split()) + " "
-        said_add = re.search(r"(^|\s)(ضيف|اضيف|ضيفه|ضيفها|ضيفهم|اضيفه|اضيفها|ضيفلي|ضيفيه|سجله جديد|سجلها جديده)(\s|$)",
-                             text)
+        said_add = (re.search(r"(^|\s)(ضيف|اضيف|ضيفه|ضيفها|ضيفهم|اضيفه|اضيفها|ضيفلي|ضيفيه|ضيفوه|اضافه|سجله جديد|"
+                              r"سجلها جديده)(\s|$)", text)
+                    # "افتحله حساب"، "سويلها حساب جديد"، "افتح حساب باسم كرار": opening an account is adding
+                    or re.search(r"(^|\s)(افتح|افتحله|افتحلها|افتحلي|سوي|سويله|سويلها|سويلي|اعمل|اعمله|اعملها)"
+                                 r"(\s+(له|لها))?\s+حساب", text)
+                    or re.search(r"(^|\s)حساب(ه|ها)?\s+جديد", text))
         return bool(said_add) and f" {normalize(name)} " in text
 
     def _add_party(self, name, phone, kind):
