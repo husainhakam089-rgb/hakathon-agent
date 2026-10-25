@@ -135,6 +135,25 @@ GUARDED_AMOUNTS = {"record_debt": ("amount",), "record_payment": ("amount",), "r
                    "record_cash_in": ("amount",), "count_drawer": ("iqd", "usd"), "set_drawer_opening": ("iqd", "usd")}
 _AFFIRM = re.compile(r"^\s*(?:اي|إي|ايه|إيه|أي|نعم|اكيد|أكيد|تمام|صح|سجل|سجلها|سجله|سجّل|يب|اوك|اوكي|ok|بلي|بلى|موافق)(?:\s|[,،.!]|$)",
                      re.IGNORECASE)
+# 25-10-2026 online: the agent put the figures, the owner answered "اخي انت اشتغلها من يمك" and was
+# told to type them himself. A short answer that says "go ahead" in his own words is agreement too;
+# any "no" in it is not. (Only for the figures: an undo still needs "اي" or the word itself.)
+_GO_AHEAD = {"اي", "إي", "ايه", "نعم", "اكيد", "أكيد", "تمام", "صح", "موافق", "اوك", "اوكي", "ok", "ماشي",
+             "سجل", "سجلها", "سجلهن", "سجلهم", "سجله", "سجّل", "سجّلها", "سجّلهن",
+             "سوي", "سويها", "سويهن", "سويهم", "سويه", "اشتغل", "اشتغلها", "اشتغلهن", "اشتغلهم",
+             "نفذ", "نفذها", "نفذهن", "كمل", "كملها", "كملهن", "ادفع", "ادفعها", "ادفعهن", "ادفعهم",
+             "اعتمد", "اعتمدها", "امشي", "توكل", "يلا"}
+_NO = {"لا", "لأ", "مو", "ما", "كلا", "بلاش", "ماريد", "مااريد", "لاتسجل", "لاتسوي", "غلط"}
+
+
+def _agreed(message: str) -> bool:
+    """The owner said yes to what the agent just proposed: "اي"، or a short "انت سويها"، "زين سجلهن"."""
+    if _AFFIRM.match(message or ""):
+        return True
+    words = re.sub(r"[^\w\s]", " ", message or "").split()
+    return 0 < len(words) <= 8 and not any(w in _NO for w in words) and any(w in _GO_AHEAD for w in words)
+
+
 _UNDO = re.compile(r"شطب|غلط|رجع|رجّع|الغ|ألغ|إلغ|امسح|إمسح|احذف|احذف|شيل|undo", re.IGNORECASE)
 RECENT_OWNER_MESSAGES = 3
 
@@ -479,7 +498,7 @@ class Agent:
         history = session.history()
         for m in [m for m in history if m.get("role") == "user"][-RECENT_OWNER_MESSAGES:]:
             allowed |= _owner_amounts(m.get("text", ""))
-        if _AFFIRM.match(message or ""):  # "اي" to "تقصد 100,000؟": he agreed to that figure
+        if _agreed(message):  # "اي" to "تقصد 100,000؟": he agreed to that figure
             last = next((m for m in reversed(history) if m.get("role") == "assistant" and m.get("text")), None)
             if last:
                 allowed |= _numbers(last["text"])

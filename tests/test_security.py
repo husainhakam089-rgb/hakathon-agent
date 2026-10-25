@@ -227,3 +227,21 @@ def test_forgot_password_tool(conn, stored_reset, monkeypatch):
     monkeypatch.setattr(reset_password.db, "connect", lambda: conn)
     reset_password.main()
     assert db.get_setting(conn, "password_hash") == ""
+
+
+def test_go_ahead_in_his_own_words_is_agreement(conn):
+    # 25-10-2026 online: the agent put the figures and "اخي انت اشتغلها من يمك" was refused
+    from app.agent import _agreed
+
+    for yes in ("اي", "اخي انت اشتغلها من يمك", "زين سجلهن", "يلا سويها", "اوكي ادفعهن", "تمام"):
+        assert _agreed(yes), yes
+    for no in ("لا", "لا تسجلها", "مو هيچ", "ما اريد", "شكد عليه؟",
+               "اخي انت اشتغلها من يمك بس هاي الأرقام غلط وصلحها لأن المبلغ مو صحيح"):
+        assert not _agreed(no), no
+    a = db.add_customer(conn, "أبو علي")
+    db.add_transaction(conn, a, "debt", 150000)
+    agent = Agent(conn, llm=FakeLLM(_pay(45000, a), LLMResponse(text="أسجل تسديد 45,000 على أبو علي؟"),
+                                    _pay(45000, a), LLMResponse(text="سجلت.")), log_path=None)
+    agent.chat("s", "أبو علي جاب فلوس")
+    assert agent.chat("s", "اخي انت اشتغلها من يمك")["tool_calls"][0]["result"]["ok"]
+    assert db.get_balance(conn, a)["IQD"] == 105000
