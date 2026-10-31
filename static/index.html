@@ -669,6 +669,20 @@ html:not(.light) .msg.agent { box-shadow: 0 4px 14px rgba(0,0,0,.25); }
 /* the dropdown lists: the browser draws them white, the text was white too, so the names were hidden */
 :root { color-scheme: dark; } html.light { color-scheme: light; }
 select option, select optgroup { background: var(--surface-2); color: var(--text); }
+
+/* ==================== Easier on the eyes for a long day (31-10-2026) ====================
+   A layer on top of everything above, nothing above is changed: a dark grey instead of near
+   black, orange kept for what matters (send, amounts, answer buttons), the owner's messages
+   tinted instead of solid orange, a fainter glow, and clear white text. */
+:root:not(.light) {
+  --bg: #131316; --surface: #1a1a1e; --surface-2: #212126;
+  --text: #fafafa; --muted: #b4b4bc; --faint: #8b8b95;
+  --accent-text: #f2b04a; --accent-soft: rgba(245,158,11,.09); --accent-border: rgba(245,158,11,.30);
+}
+html:not(.light) body { background: radial-gradient(1100px 520px at 100% -8%, rgba(245,158,11,.04), transparent 62%), var(--bg); }
+.msg.user { background: var(--accent-soft); color: var(--text); border: 1px solid var(--accent-border); box-shadow: none; }
+html:not(.light) .msg.agent { box-shadow: none; }
+.rcpt { box-shadow: none; }
 </style>
 </head>
 <body>
@@ -803,7 +817,12 @@ function applyTheme(mode) {
   $('themeLbl').textContent = mode === 'light' ? 'الوضع الغامق' : 'الوضع الفاتح';
   store.set('debt_theme', mode);
 }
+const themeChosen = store.get('debt_theme');  // read before the line below stores one
 applyTheme(store.get('debt_theme') || 'dark');
+if (!themeChosen) {  // 31-10-2026: no choice yet: the phone's own setting, and not kept, so it keeps following it
+  applyTheme(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  store.set('debt_theme', '');
+}
 $('theme').onclick = () => applyTheme(document.documentElement.classList.contains('light') ? 'dark' : 'light');
 
 /* ---------- chat ---------- */
