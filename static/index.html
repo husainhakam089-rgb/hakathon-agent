@@ -946,10 +946,12 @@ function answerChoices(text, calls) {
     if ((c.tool === 'find_customer' || c.tool === 'find_supplier') && r.ok && r.count && text.includes('تقصد')) {
       const names = r.matches.slice(0, 4).map(m => m.name);
       const asked = String((c.input || {}).query || '').trim();  // "تقصد أم حسين لو أضيف حسين جديد؟"
-      return /أضيف|اضيف/.test(text) && asked && !names.includes(asked) ? [...names, `ضيف ${asked} جديد`] : names;
+      // a name that is not one of them can always be added: "تقصد أبو علي؟" -> [أبو علي] [ضيف علي جديد]
+      return asked && !names.includes(asked) && !r.from_memory ? [...names, `ضيف ${asked} جديد وكمّل`] : names;
     }
   }
   if (/أضيفه|اضيفه|أضيفها|اضيفها/.test(text)) return ['إي، ضيفه', 'لا'];
+  if (/متأكد|متاكد|أسجلها|أسجله|أسجلهن/.test(text)) return ['إي، سجّل', 'لا'];
   return [];
 }
 $('messages').addEventListener('click', e => {

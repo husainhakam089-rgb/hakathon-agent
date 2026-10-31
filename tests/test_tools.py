@@ -451,3 +451,31 @@ def test_yes_to_add_a_name_that_is_part_of_another(conn):
     t.turn = 2
     t.source_message = "إي، ضيفه"
     assert t.execute("add_customer", {"name": "حسين"})["ok"]
+
+
+def test_same_payment_again_in_one_conversation_needs_the_owners_yes(conn):
+    # 31-10-2026 (a day in the shop): sent twice, recorded twice: the model confirmed it by itself
+    from app.tools import DebtTools
+
+    ali = db.add_customer(conn, "أبو علي")
+    db.add_transaction(conn, ali, "debt", 50000)
+    t = DebtTools(conn)
+    pay = {"customer_id": ali, "amount": 10000, "currency": "IQD"}
+    t.turn, t._turn_entries, t.source_message = 1, set(), "أبو علي دفع 10"
+    assert t.execute("record_payment", pay)["ok"]
+    t.turn, t._turn_entries = 2, set()
+    assert t.execute("record_payment", {**pay, "confirmed": True})["error"] == "possible_duplicate"
+    t.turn, t._turn_entries, t.source_message = 3, set(), "دفعة ثانية، سجّلها"
+    assert t.execute("record_payment", {**pay, "confirmed": True})["ok"]
+    assert db.get_balance(conn, ali)["IQD"] == 30000
+
+
+def test_a_name_from_the_owners_memory_is_found(conn):
+    # 31-10-2026: "تذكر إن أم زينب نفسها أم زوزو", then "سجل على أم زوزو 5" asked to add someone new
+    from app.tools import DebtTools
+
+    zainab = db.add_customer(conn, "أم زينب")
+    db.add_memory(conn, "أم زينب نفسها أم زوزو")
+    r = DebtTools(conn).execute("find_customer", {"query": "أم زوزو"})
+    assert r["count"] == 1 and r["matches"][0]["id"] == zainab and "أم زوزو" in r["from_memory"]
+    assert DebtTools(conn).execute("find_customer", {"query": "سلام"})["count"] == 0

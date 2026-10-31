@@ -15,6 +15,8 @@ from app.arabic import find_matches, normalize
 USD_LARGE_AMOUNT = 1000  # treated as equivalent to LARGE_AMOUNT_IQD (no FX conversion in v0)
 # "أبو/أم علي" is not "علي": a different person in a shop's notebook
 _KIN = ("ابو", "ام", "ابن", "بنت", "اخو", "اخت", "مرت")
+# the owner saying a repeated entry is really a second one (normalized text)
+_REPEAT_OK = re.compile(r"(^|\s)(ثاني|ثانيه|ثانيه،|مره ثانيه|جديده|غيرها|اي|ايه|نعم|اكيد|موافق|تمام|سجلها|سجله|سجلهن|سجلها،)(\s|$|[،,.])")
 MAX_MEMORIES = 50
 MAX_MEMORY_CHARS = 200
 
@@ -771,8 +773,14 @@ class DebtTools:
         if currency not in db.CURRENCIES:
             return _error("invalid_currency", "العملة لازم تكون IQD أو USD")
 
-        if not confirmed:
+        # 31-10-2026 (a day in the shop): "أبو علي دفع 10" sent twice in one conversation was recorded
+        # twice; the model had passed confirmed=true by itself. A repeat of an entry made earlier in this
+        # same conversation goes through only on the owner's own yes ("دفعة ثانية"، "إي"...).
+        self_confirmed = confirmed and self.source_message and not _REPEAT_OK.search(normalize(self.source_message))
+        if not confirmed or self_confirmed:
             dup = db.recent_duplicate(self.conn, customer["id"], tx_type, value, currency)
+            if dup and confirmed and dup["id"] not in self.session_tx_ids:
+                dup = None  # confirmed, and not this conversation's own entry: as before
             if dup and dup["id"] not in self._turn_entries:
                 return _error(
                     "possible_duplicate",
@@ -879,6 +887,18 @@ class DebtTools:
 
     def tool_find_customer(self, query):
         matches = self._matches(query, "customer")
+        if not matches:
+            # 31-10-2026: "تذكر إن أم زينب نفسها أم زوزو", then "سجل على أم زوزو 5" asked to add a new
+            # customer. A name the owner taught is looked up in his memory: the people named with it.
+            q = normalize(str(query))
+            for mem in db.list_memories(self.conn):
+                text = " " + " ".join(re.sub(r"[^\w\s]", " ", normalize(mem["text"])).split()) + " "
+                if q and f" {q} " in text:
+                    found = [{"id": c["id"], "name": c["name"], "balance": db.get_balance(self.conn, c["id"])}
+                             for c in db.all_customers(self.conn, "customer")
+                             if c["normalized_name"] and f" {c['normalized_name']} " in text]
+                    if found:
+                        return {"ok": True, "count": len(found), "matches": found, "from_memory": mem["text"]}
         return {"ok": True, "count": len(matches), "matches": matches}
 
     def tool_add_customer(self, name, phone=None):

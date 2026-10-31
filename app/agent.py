@@ -191,6 +191,14 @@ def _guard_reason(name: str, args: dict, allowed: set[int], balance: dict | None
     return None
 
 
+# 31-10-2026 (a day in the shop): "سجلت على أبو علي 100 دولار" with no tool called: nothing was written.
+# A reply that says it recorded, paid, added or cancelled something when no writing tool worked in
+# this message is sent back once; if it says so again, the owner is told plainly nothing was saved.
+_CLAIMS_WRITE = re.compile(r"(?<![\w])(?<!ما )(?<!ما گدرت )(سجلت|سجّلت|سجلتها|سجّلتها|سجلته|سجّلته|ضفت|ضفته|ضفتها|"
+                           r"شطبت|شطبتها|لغيت|ألغيت|لغيته|ألغيته|حفظت|فتحت حساب)(?![\w])")
+FALSE_WRITE_NOTE = ("تنبيه من النظام (مو من صاحب المحل): ردك يگول إنك سجلت أو غيرت شي، بس ما اشتغلت ولا أداة تسجيل "
+                    "بهالرسالة، فما انحفظ شي. إذا صاحب المحل طلب تسجيل، استدعي الأداة هسه. وإذا لا، صحح ردك ولا تگول سجلت.")
+NOTHING_SAVED = "ما سجلت شي بعد. عيد طلبك بجملة وحدة، مثل: سجل على أبو علي 25 الف."
 EMPTY_NOTE = ("تنبيه من النظام (مو من صاحب المحل): ردك طلع فارغ. اكتب لصاحب المحل جملة قصيرة بلهجته: "
               "شنو سويت بالضبط، أو ليش ما سويت شي، أو شنو تحتاج منه.")
 NUMBER_NOTE = ("تنبيه من النظام (مو من صاحب المحل): ردك بيه أرقام ما طلعت من الأدوات ولا من كلام صاحب المحل: {nums}. "
@@ -226,6 +234,21 @@ def _vague_supplier_note(conn, message: str) -> str:
     names = "، ".join(c["name"] for c in suppliers[:10])
     return ("\n\n## ملاحظة لهالرسالة بس\nصاحب المحل گال \"للشركة\" بدون اسم وعنده أكثر من مورد. لا تجاوب بالمجموع: "
             f"اسأله \"يا شركة؟\" واذكر من هالأسماء بس (لا تذكر غيرها): {names}.")
+
+
+_WHO_WORDS = re.compile(r"(?<!\w)(عليه|عليها|عليهم|دفع|دفعت|سدد|سددت|حسابه|حسابها|باقي)(?!\w)")
+
+
+def _vague_person_note(conn, message: str, history: list[dict]) -> str:
+    """"شكد عليه؟" with no name, and no one named in the last messages either: on 31-10-2026 the
+    agent answered with what the shop owes its suppliers. For this message only: ask who."""
+    if len((message or "").split()) > 4 or not _WHO_WORDS.search(message or "") or _named_party(conn, message):
+        return ""
+    earlier = [m.get("text", "") for m in history if m.get("role") == "user"][-2:]
+    if any(_named_party(conn, t) for t in earlier):
+        return ""  # a follow-up about the person just talked about
+    return ("\n\n## ملاحظة لهالرسالة بس\nصاحب المحل ما ذكر منو، وما تحچينا عن أحد بالرسائل اللي قبلها. "
+            "لا تجاوب بمجموع ولا تختار أحد: اسأله \"تقصد منو؟\".")
 
 
 def _with_done_note(reply: str, tool_log: list[dict]) -> str:
@@ -387,10 +410,11 @@ class Agent:
 
         reply = None
         number_retry = None  # index in `turn` of the note asking to fix invented figures
+        claim_retry = None  # index in `turn` of the note about saying "سجلت" when nothing was written
         empty_retry = None  # index in `turn` of the note asking for a reply after an empty one
         restarted = False
         wrote = False  # a write tool succeeded this message: never start it again
-        vague_note = _vague_supplier_note(self.conn, message)
+        vague_note = _vague_supplier_note(self.conn, message) + _vague_person_note(self.conn, message, session.history())
         try:
             llm = self.get_llm()
             iteration = 0
@@ -425,6 +449,15 @@ class Agent:
                     continue
                 if not response.tool_calls:
                     reply = response.text or _done_summary(tool_log) or EMPTY_REPLY
+                    if not wrote and not any(e["result"].get("ok") for e in tool_log if e["tool"] in WRITE_TOOLS) \
+                            and _CLAIMS_WRITE.search(reply) and "؟" not in reply:
+                        if claim_retry is None:
+                            log.warning("Reply says it recorded but no write tool ran: asking the model again")
+                            claim_retry = len(turn)
+                            turn.append({"role": "assistant", "text": reply, "tool_calls": []})
+                            turn.append({"role": "user", "text": FALSE_WRITE_NOTE})
+                            continue
+                        reply = NOTHING_SAVED
                     bad = unsupported_numbers(reply, self._allowed_numbers(session, message, turn, tool_log))
                     if bad and number_retry is None:
                         log.warning("Unsupported figures %s in reply, asking the model to fix it", bad)
@@ -462,7 +495,7 @@ class Agent:
             log.exception("Agent turn failed")
             reply = _with_done_note("صار خطأ غير متوقع، عيد المحاولة.", tool_log)
 
-        for at in sorted((i for i in (number_retry, empty_retry) if i is not None), reverse=True):
+        for at in sorted((i for i in (number_retry, empty_retry, claim_retry) if i is not None), reverse=True):
             del turn[at:at + 2]  # keep the history clean: drop the rejected draft and the note
         turn.append({"role": "assistant", "text": reply, "tool_calls": []})
         session.commit(turn)

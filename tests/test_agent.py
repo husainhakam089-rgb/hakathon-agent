@@ -310,3 +310,30 @@ def test_vague_company_gets_the_real_supplier_names(conn):
     assert _vague_supplier_note(conn, "شكد عليّ لشركة الزين؟") == ""  # named: clear
     assert _vague_supplier_note(conn, "شكد عليّ للموردين؟") == ""  # all of them: clear
     assert _vague_supplier_note(conn, "شكد على أبو علي؟") == ""
+
+
+def test_nameless_question_with_no_one_before_asks_who(conn):
+    # 31-10-2026: "شكد عليه؟" after unrelated messages was answered with the suppliers' total
+    from app.agent import _vague_person_note
+
+    db.add_customer(conn, "أبو علي")
+    assert "تقصد منو" in _vague_person_note(conn, "شكد عليه؟", [{"role": "user", "text": "شنو أحسن مطعم؟"}])
+    assert _vague_person_note(conn, "شكد عليه؟", [{"role": "user", "text": "سجل على أبو علي 10"}]) == ""  # follow-up
+    assert _vague_person_note(conn, "شكد على أبو علي؟", []) == ""
+
+
+def test_saying_recorded_without_recording_is_caught(conn):
+    # 31-10-2026 (a day in the shop): "سجلت على أبو علي 100 دولار" with no tool called
+    a = db.add_customer(conn, "أبو علي")
+    agent = Agent(conn, llm=FakeLLM(LLMResponse(text="سجلت على أبو علي 100 دولار."),
+                                    LLMResponse(text="سجلت على أبو علي 100 دولار.")), log_path=None)
+    out = agent.chat("s", "سجل على أبو علي 100 دولار")
+    assert "ما سجلت شي" in out["reply"] and db.get_balance(conn, a)["USD"] == 0
+    fixed = Agent(conn, llm=FakeLLM(
+        LLMResponse(text="سجلت على أبو علي 100 دولار."),
+        LLMResponse(text="", tool_calls=[ToolCall("t1", "record_debt", {"customer_id": a, "amount": 100, "currency": "USD"})]),
+        LLMResponse(text="سجلت على أبو علي 100 دولار.")), log_path=None)
+    assert "سجلت" in fixed.chat("s2", "سجل على أبو علي 100 دولار")["reply"] and db.get_balance(conn, a)["USD"] == 100
+    # a read-only answer that mentions an old entry is left alone
+    ok = Agent(conn, llm=FakeLLM(LLMResponse(text="آخر قيد على أبو علي كان 100 دولار.")), log_path=None)
+    assert ok.chat("s3", "شنو آخر قيد؟")["reply"] == "آخر قيد على أبو علي كان 100 دولار."
