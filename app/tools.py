@@ -943,11 +943,32 @@ class DebtTools:
 
     # ----- suppliers -----
 
+    def _customer_named(self, name):
+        """A customer whose whole name is exactly this one, or None."""
+        q = normalize(str(name or ""))
+        return next((c for c in db.find_customers(self.conn, str(name or ""), "customer") if c["normalized_name"] == q), None)
+
     def tool_find_supplier(self, query):
         matches = self._matches(query, "supplier")
-        return {"ok": True, "ledger": "supplier", "count": len(matches), "matches": matches}
+        result = {"ok": True, "ledger": "supplier", "count": len(matches), "matches": matches}
+        cust = None if matches else self._customer_named(query)
+        if cust:
+            # 31-10-2026: "أم حسين جابت 10 الاف" was searched among the suppliers and the owner was
+            # asked to add her as a supplier, though she is a customer with a debt. Say so here.
+            result.update(customer_match={"id": cust["id"], "name": cust["name"],
+                                          "balance": db.get_balance(self.conn, cust["id"])},
+                          message=f"«{cust['name']}» زبون موجود، مو مورد. لا تضيفه مورد ولا تسأل. إذا جاب أو دفع فلوس "
+                                  "فهذا تسديد من زبون: record_payment ويا customer_id هذا. وإذا أخذ = record_debt.")
+        return result
 
     def tool_add_supplier(self, name, phone=None):
+        # a name that is a customer's is not made a supplier on the model's own idea; the owner saying
+        # so ("ضيف سعد مورد") still can (one person in both books), and direct calls are as before
+        cust = self._customer_named(name) if self.source_message and not self._owner_said_add(name) else None
+        if cust and not [c for c in db.find_customers(self.conn, name, "supplier")
+                         if c["normalized_name"] == normalize(name)]:
+            return _error("is_customer", f"«{cust['name']}» زبون موجود، مو مورد. لا تضيفه مورد. إذا جاب فلوس = "
+                          "record_payment ويا customer_id هذا.", customer_id=cust["id"], customer_name=cust["name"])
         return self._add_party(name, phone, "supplier")
 
     def tool_record_purchase(self, supplier_id, amount, currency="IQD", note=None, confirmed=False):

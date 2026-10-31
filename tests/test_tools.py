@@ -479,3 +479,19 @@ def test_a_name_from_the_owners_memory_is_found(conn):
     r = DebtTools(conn).execute("find_customer", {"query": "أم زوزو"})
     assert r["count"] == 1 and r["matches"][0]["id"] == zainab and "أم زوزو" in r["from_memory"]
     assert DebtTools(conn).execute("find_customer", {"query": "سلام"})["count"] == 0
+
+
+def test_a_customer_is_never_offered_as_a_new_supplier(conn):
+    # 31-10-2026: "أم حسين جابت 10 الاف" -> "ما عندي مورد اسمه أم حسين، أضيفه؟" though she is a customer
+    from app.tools import DebtTools
+
+    hussein = db.add_customer(conn, "أم حسين")
+    t = DebtTools(conn)
+    r = t.execute("find_supplier", {"query": "أم حسين"})
+    assert r["count"] == 0 and r["customer_match"]["id"] == hussein and "record_payment" in r["message"]
+    t.source_message = "أم حسين جابت 10 الاف"
+    r = t.execute("add_supplier", {"name": "أم حسين"})
+    assert r["error"] == "is_customer" and r["customer_id"] == hussein
+    t.turn, t.source_message = 5, "ضيف أم حسين مورد"  # the owner himself: one person in both books
+    assert t.execute("add_supplier", {"name": "أم حسين"})["ok"]
+    assert "customer_match" not in t.execute("find_supplier", {"query": "مخبز جديد"})
