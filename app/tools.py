@@ -838,7 +838,9 @@ class DebtTools:
 
     def _matches(self, query, kind):
         matches = db.find_customers(self.conn, str(query), kind)
-        if not matches:
+        if not any(c["normalized_name"] == normalize(str(query)) for c in matches):
+            # a new name, even when it is part of others ("حسين" in "أم حسين"): once the owner
+            # answers "أضيفه؟" with "إي" next message, it is added without asking again
             self._new_name_turn.setdefault((kind, normalize(str(query))), self.turn)
         return [{"id": c["id"], "name": c["name"], "balance": db.get_balance(self.conn, c["id"])}
                 for c in matches]

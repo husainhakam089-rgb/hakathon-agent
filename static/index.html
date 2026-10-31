@@ -638,6 +638,34 @@ html.light .alert-bubble { background: #fffaf2; }
 .week-chart .day { font-size: 10px; fill: var(--muted); } .week-chart .val { font-size: 10px; font-weight: 700; fill: var(--accent-text); }
 @media (max-width: 860px) { .alert-bubble { width: 100%; } .ab-act { width: 100%; } .ab-btn { flex: 1; } }
 
+/* the reply as cards (31-10-2026): a receipt for each entry, buttons to answer a question */
+.ans { display: flex; gap: 8px; flex-wrap: wrap; }
+.ans button { border-radius: 12px; padding: 9px 14px; font-size: 14px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--accent-border); background: var(--accent-soft); color: var(--accent-text); }
+.ans button.y { background: var(--grad); color: #111827; border-color: transparent; }
+.ans button:hover { filter: brightness(1.08); }
+.rcpt { width: 100%; min-width: min(300px, 78vw); border: 1px solid var(--accent-border); border-radius: 18px; overflow: hidden;
+  background: var(--surface-2); box-shadow: 0 8px 26px rgba(0,0,0,.30); }
+html.light .rcpt { background: #fff; box-shadow: 0 6px 18px rgba(15,23,42,.08); }
+.rcpt .rh { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: linear-gradient(90deg, rgba(52,211,153,.13), transparent); }
+.rcpt .ok { width: 28px; height: 28px; border-radius: 50%; background: rgba(52,211,153,.18); color: var(--good);
+  display: grid; place-items: center; flex-shrink: 0; }
+.rcpt .ok svg.i { width: 15px; height: 15px; }
+.rcpt .rh b { font-size: 14.5px; } .rcpt .rh small { display: block; color: var(--muted); font-size: 11.5px; }
+.rcpt .rb { display: flex; align-items: center; gap: 12px; padding: 4px 14px 12px; }
+.rcpt .amt { font-size: 28px; font-weight: 700; color: var(--accent-text); font-variant-numeric: tabular-nums; }
+.rcpt .amt small { font-size: 13px; color: var(--muted); font-weight: 500; }
+.rcpt .flow { margin-inline-start: auto; text-align: left; font-size: 12px; color: var(--muted); line-height: 1.7; }
+.rcpt .flow b { color: var(--text); font-size: 15px; }
+.rcpt .ra { display: flex; gap: 8px; padding: 0 14px 12px; }
+.rcpt .ra button { flex: 1; border-radius: 12px; padding: 9px 6px; font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--border); background: var(--card-strong); color: var(--text); }
+.rcpt .ra button:hover { border-color: var(--accent-border); color: var(--accent-text); }
+/* a little more depth, the same colours */
+html:not(.light) body { background: radial-gradient(900px 500px at 100% -10%, rgba(217,119,6,.14), transparent 60%), var(--bg); }
+.msg.user { box-shadow: 0 6px 18px rgba(217,119,6,.22); }
+html:not(.light) .msg.agent { box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+
 /* the dropdown lists: the browser draws them white, the text was white too, so the names were hidden */
 :root { color-scheme: dark; } html.light { color-scheme: light; }
 select option, select optgroup { background: var(--surface-2); color: var(--text); }
@@ -811,6 +839,7 @@ function scrollDown() { const m = $('messages'); m.scrollTop = m.scrollHeight; }
 
 function addUser(text) {
   $('welcome')?.remove();
+  document.querySelectorAll('#messages .ans').forEach(a => a.remove());  // the question was answered
   const div = document.createElement('div');
   div.className = 'msg user';
   div.textContent = text;
@@ -833,6 +862,15 @@ function addAgent(text, toolCalls, isError) {
   const wrap = document.createElement('div');
   wrap.className = 'agent-wrap';
   wrap.innerHTML = `<div class="msg agent${isError ? ' error' : ''}">${esc(text)}</div>`;
+  const receipts = isError ? [] : (toolCalls || []).filter(c => RECEIPT_TOOLS[c.tool] && c.result && c.result.ok);
+  if (receipts.length) {
+    // a short "تمام، سجلت..." says what the card says: the card alone; anything longer keeps the text too
+    if (text.length < 140 && !text.includes('؟')) wrap.querySelector('.msg').remove();
+    for (const c of receipts.slice(0, 4)) wrap.insertAdjacentHTML('beforeend', receiptCard(c));
+  }
+  const choices = isError ? [] : answerChoices(text, toolCalls || []);
+  if (choices.length) wrap.insertAdjacentHTML('beforeend', `<div class="ans">${choices.map((c, i) =>
+    `<button type="button" class="${i ? '' : 'y'}" data-say="${esc(c)}">${esc(c)}</button>`).join('')}</div>`);
   if (toolCalls && toolCalls.length) {
     const btn = document.createElement('button');
     btn.className = 'why-btn';
@@ -847,6 +885,52 @@ function addAgent(text, toolCalls, isError) {
   $('messages').appendChild(wrap);
   scrollDown();
 }
+
+/* ---------- the reply as cards (31-10-2026): a receipt for what was recorded, buttons to answer ----------
+   Drawn from the tool results only: every figure on a card is what the code returned. */
+const RECEIPT_TOOLS = {record_debt: 'دين على', record_payment: 'تسديد من', record_purchase: 'بضاعة بالدين من',
+  record_supplier_payment: 'دفعة إلى'};
+function receiptCard(c) {
+  const r = c.result, sup = r.ledger === 'supplier';
+  const name = sup ? r.supplier_name : r.customer_name;
+  const cur = r.currency || 'IQD', word = cur === 'USD' ? 'دولار' : 'دينار';
+  const after = ((sup ? r.balance_owed_by_me : r.balance) || {})[cur];
+  const up = c.tool === 'record_debt' || c.tool === 'record_purchase';
+  const before = after == null ? null : after + (up ? -r.amount : r.amount);
+  const flow = after == null ? '' : `<div class="flow">قبل ${before < 0 ? (sup ? 'إلك عنده ' : 'إله عندك ') + fmt(-before) : fmt(before)}<br>
+    <b>${sup ? 'عليك إله' : after < 0 ? 'إله عندك' : 'صار عليه'} ${fmt(Math.abs(after))}</b></div>`;
+  const note = r.drawer ? ` · ${esc(r.drawer)}` : r.from_drawer === false ? ' · ما دخل الجرار' : '';
+  return `<div class="rcpt">
+    <div class="rh"><div class="ok">${icon('check')}</div><div><b>تسجّل ${RECEIPT_TOOLS[c.tool]} ${esc(name)}</b>
+      <small>هسه${note}</small></div></div>
+    <div class="rb"><div class="amt">${fmt(r.amount)} <small>${word}</small></div>${flow}</div>
+    <div class="ra"><button type="button" data-say="${esc(name)} غلط، شطبها">↶ شطبها</button>
+      <button type="button" data-say="كشف حساب ${esc(name)}">كشف حسابه</button>
+      ${!sup && after > 0 ? `<button type="button" data-say="ذكّر ${esc(name)}">ذكّره</button>` : ''}</div></div>`;
+}
+// The agent asked something it can be answered with one press: the choices come from what the tools said.
+function answerChoices(text, calls) {
+  if (!text.includes('؟') || calls.some(c => RECEIPT_TOOLS[c.tool] && c.result && c.result.ok)) return [];
+  for (const c of [...calls].reverse()) {
+    const r = c.result || {};
+    if (r.error === 'which_party' && r.customer_name && r.said) return [r.customer_name, `ضيف ${r.said} جديد`];
+    if (r.error === 'ask_first') return ['إي، ضيفه', 'لا'];
+    if (r.error === 'possible_duplicate') return ['دفعة ثانية، سجّلها', 'نفسها، لا تسجل'];
+    if (r.error === 'confirmation_required' || r.error === 'amount_not_from_owner') return ['إي، سجّل', 'لا'];
+    if ((c.tool === 'find_customer' || c.tool === 'find_supplier') && r.ok && r.count && text.includes('تقصد')) {
+      const names = r.matches.slice(0, 4).map(m => m.name);
+      const asked = String((c.input || {}).query || '').trim();  // "تقصد أم حسين لو أضيف حسين جديد؟"
+      return /أضيف|اضيف/.test(text) && asked && !names.includes(asked) ? [...names, `ضيف ${asked} جديد`] : names;
+    }
+  }
+  if (/أضيفه|اضيفه|أضيفها|اضيفها/.test(text)) return ['إي، ضيفه', 'لا'];
+  return [];
+}
+$('messages').addEventListener('click', e => {
+  const b = e.target.closest('[data-say]');
+  if (!b || busy) return;
+  send(b.dataset.say);
+});
 
 /* ---------- stage 22: the agent writes the reminder, the owner sends it with one press ---------- */
 function waLink(phone, text) {

@@ -436,3 +436,18 @@ def test_open_an_account_is_the_owners_go_ahead(conn):
         assert t.execute("add_customer", {"name": name})["ok"], msg
     t.source_message = "سجل على ضياء 10"  # a new name alone still asks first
     assert t.execute("add_customer", {"name": "ضياء"})["error"] == "ask_first"
+
+
+def test_yes_to_add_a_name_that_is_part_of_another(conn):
+    # 31-10-2026: "سجل على حسين 5" -> "ما عندي زبون اسمه حسين، أضيفه؟" (أم حسين exists) -> "إي"
+    # asked "أضيفه؟" again: the name was only taken as new when the search found nothing at all
+    from app.tools import DebtTools
+
+    db.add_customer(conn, "أم حسين")
+    t = DebtTools(conn)
+    t.turn = 1
+    t.source_message = "سجل على حسين 5 الاف"
+    assert t.execute("find_customer", {"query": "حسين"})["count"] == 1
+    t.turn = 2
+    t.source_message = "إي، ضيفه"
+    assert t.execute("add_customer", {"name": "حسين"})["ok"]
