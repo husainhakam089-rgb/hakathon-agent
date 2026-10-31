@@ -670,6 +670,13 @@ html:not(.light) .msg.agent { box-shadow: 0 4px 14px rgba(0,0,0,.25); }
 :root { color-scheme: dark; } html.light { color-scheme: light; }
 select option, select optgroup { background: var(--surface-2); color: var(--text); }
 
+/* messages waiting their turn while the agent answers (31-10-2026) */
+.queue { display: flex; flex-direction: column; gap: 6px; margin: 0 12px 8px; }
+.queue .q-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
+  padding: 7px 10px; border-radius: 12px; border: 1px dashed var(--accent-border); background: var(--accent-soft); }
+.queue .q-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue .q-item button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 6px; }
+
 /* ==================== Easier on the eyes for a long day (31-10-2026) ====================
    A layer on top of everything above, nothing above is changed: a dark grey instead of near
    black, orange kept for what matters (send, amounts, answer buttons), the owner's messages
@@ -947,8 +954,8 @@ function answerChoices(text, calls) {
 }
 $('messages').addEventListener('click', e => {
   const b = e.target.closest('[data-say]');
-  if (!b || busy) return;
-  send(b.dataset.say);
+  if (!b) return;
+  send(b.dataset.say);  // while the agent answers, it waits its turn like a typed message
 });
 
 /* ---------- stage 22: the agent writes the reminder, the owner sends it with one press ---------- */
@@ -1000,8 +1007,10 @@ async function remindFromAlerts(customerId) {
 
 function setBusy(on) {
   busy = on;
-  $('send').disabled = on;
-  $('input').disabled = on;
+  // 31-10-2026: the owner can type or speak the next message while the agent answers this one:
+  // it waits its turn (see queueMessage), so the box stays open
+  $('input').placeholder = on ? 'اكتب، ورسالتك تنتظر دورها' : 'اكتب رسالتك هنا...';
+  if (!on) setTimeout(nextInQueue, 0);
   if (on) {
     const t = document.createElement('div');
     t.className = 'thinking'; t.id = 'thinking';
@@ -1014,8 +1023,45 @@ function setBusy(on) {
   }
 }
 
+/* Messages written while the agent is still answering: they wait above the box, in order, each
+   can be taken back with ✕, and each is sent (and answered) on its own once the one before is done. */
+const waiting = [];
+function renderQueue() {
+  let box = $('queue');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'queue';
+    box.className = 'queue';
+    $('form').before(box);
+  }
+  box.innerHTML = waiting.map((m, i) => `<div class="q-item"><span>⏳ بالدور: ${esc(m.text)}</span>
+    <button type="button" data-unqueue="${i}" title="شيلها">✕</button></div>`).join('');
+  box.hidden = !waiting.length;
+}
+function queueMessage(text) {
+  waiting.push({text, voice: fromVoice});
+  stopVoice(true);
+  $('input').value = '';
+  setVoicePreview(false);
+  renderQueue();
+}
+function nextInQueue() {
+  if (busy || !waiting.length) return;
+  const m = waiting.shift();
+  renderQueue();
+  fromVoice = m.voice;
+  send(m.text);
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-unqueue]');
+  if (!b) return;
+  waiting.splice(+b.dataset.unqueue, 1);
+  renderQueue();
+});
+
 async function send(text) {
   text = text.trim();
+  if (busy && !attachment && text) return queueMessage(text);
   if (busy) return;
   if (attachment) return sendAttachment(text);
   if (!text) return;
@@ -1109,8 +1155,7 @@ function joinHeard(sofar, next) {
 }
 
 function startVoice() {
-  if (busy) return;
-  voiceHint('');
+  voiceHint('');  // also while the agent answers: what is said waits its turn
   const before = $('input').value.trim();
   const r = rec = new SpeechRec();
   r.lang = voiceLang;
