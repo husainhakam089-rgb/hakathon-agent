@@ -15,6 +15,10 @@ from app.arabic import find_matches, normalize
 USD_LARGE_AMOUNT = 1000  # treated as equivalent to LARGE_AMOUNT_IQD (no FX conversion in v0)
 # "أبو/أم علي" is not "علي": a different person in a shop's notebook
 _KIN = ("ابو", "ام", "ابن", "بنت", "اخو", "اخت", "مرت")
+# units a shop sells by, and the shop's own names for an item (normalized), for finding "طبقة بيض"
+_UNIT_WORDS = {"طبقه", "كارتون", "كارتونه", "كيس", "قنينه", "علبه", "كيلو", "باكيت", "باكيته", "حبه", "قطعه",
+               "صندوق", "درزن", "لتر", "ربطه", "شده", "ربع", "نص", "كيلوين"}
+_ITEM_SYNONYMS = {"مي": "ماء", "ماي": "ماء", "مويه": "ماء", "مياه": "ماء", "سكر": "شكر", "شكر": "سكر"}
 # the owner saying a repeated entry is really a second one (normalized text)
 _REPEAT_OK = re.compile(r"(^|\s)(ثاني|ثانيه|ثانيه،|مره ثانيه|جديده|غيرها|اي|ايه|نعم|اكيد|موافق|تمام|سجلها|سجله|سجلهن|سجلها،)(\s|$|[،,.])")
 MAX_MEMORIES = 50
@@ -1043,11 +1047,33 @@ class DebtTools:
     # ----- items and sales -----
 
     def tool_find_item(self, query):
-        matches = db.find_items(self.conn, str(query or ""))
+        query = str(query or "")
+        matches = db.find_items(self.conn, query)
+        said_unit = None
         if not matches:
-            self._new_name_turn.setdefault(("item", normalize(str(query or ""))), self.turn)
-        return {"ok": True, "count": len(matches),
-                "matches": [{k: m[k] for k in ("id", "name", "unit", "price", "cost", "currency")} for m in matches]}
+            # 31-10-2026: "بعت طبقة بيض وكارتون مي": "طبقة بيض" was not found though بيض is an item.
+            # Try again without the unit and the count, and with the names a shop says for the same
+            # thing (مي = ماء، سكر = شكر).
+            words = query.split()
+            said_unit = next((w for w in words if normalize(w) in _UNIT_WORDS), None)
+            rest = [w for w in words if normalize(w) not in _UNIT_WORDS and not re.fullmatch(r"[\d٠-٩]+", w)]
+            for cand in [" ".join(rest)] + [_ITEM_SYNONYMS.get(normalize(w), "") for w in rest]:
+                if cand and cand != query:
+                    matches = db.find_items(self.conn, cand)
+                    if matches:
+                        break
+        if not matches:
+            self._new_name_turn.setdefault(("item", normalize(query)), self.turn)
+        result = {"ok": True, "count": len(matches),
+                  "matches": [{k: m[k] for k in ("id", "name", "unit", "price", "cost", "currency")} for m in matches]}
+        if said_unit and len(matches) == 1:
+            unit = matches[0].get("unit") or ""
+            if normalize(unit) == normalize(said_unit) or normalize(unit) in normalize(said_unit):
+                result["unit_note"] = f"گال «{said_unit}» بدون رقم = وحدة وحدة (1 {unit})."
+            else:
+                result["unit_note"] = (f"گال «{said_unit}» والمادة تنباع بـ«{unit}»: لا تسجلها 1. اسأله "
+                                       f"الـ{said_unit} بيه كم {unit}، أو بيش باعه.")
+        return result
 
     def tool_add_item(self, name, price, cost=None, unit=None, currency="IQD"):
         name = " ".join(str(name or "").split())
@@ -1210,6 +1236,11 @@ class DebtTools:
         last = db.last_drawer_count(self.conn)
         since = db.drawer_report(self.conn)
         result = {"ok": True, "ledger": "drawer", "since_last_count": since}
+        # 31-10-2026: "شكد بعنا اليوم؟" was answered "ما عندي تفاصيل البيعات" until the drawer was
+        # counted. The sales recorded today (the same figures as the reports) are always here.
+        today = reports.period_summary(self.conn, "today")
+        result["sales_today"] = {"total": today["sales_total"], "by_payment": today["sales_by_payment"],
+                                 "note": "البيع المسجل اليوم (نفس التقارير). جاوب بيه على شكد بعنا اليوم."}
         if last and last["kind"] == "close":
             result["last_close"] = db.drawer_report(self.conn, last)
         if last is None:

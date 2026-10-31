@@ -495,3 +495,28 @@ def test_a_customer_is_never_offered_as_a_new_supplier(conn):
     t.turn, t.source_message = 5, "ضيف أم حسين مورد"  # the owner himself: one person in both books
     assert t.execute("add_supplier", {"name": "أم حسين"})["ok"]
     assert "customer_match" not in t.execute("find_supplier", {"query": "مخبز جديد"})
+
+
+def test_an_item_said_with_its_unit_is_found(conn):
+    # 31-10-2026: "بعت طبقة بيض وكارتون مي": "ماكو مادة طبقة بيض" though بيض is an item
+    from app.tools import DebtTools
+
+    egg = db.add_item(conn, "بيض", 6000, 5250, "طبقة")
+    water = db.add_item(conn, "ماء", 250, 160, "قنينة")
+    t = DebtTools(conn)
+    r = t.execute("find_item", {"query": "طبقة بيض"})
+    assert r["matches"][0]["id"] == egg and "وحدة وحدة" in r["unit_note"]
+    r = t.execute("find_item", {"query": "كارتون مي"})
+    assert r["matches"][0]["id"] == water and "بيه كم قنينة" in r["unit_note"]
+    assert t.execute("find_item", {"query": "بيض"})["count"] == 1 and "unit_note" not in t.execute("find_item", {"query": "بيض"})
+    assert t.execute("find_item", {"query": "طبقة ماكو"})["count"] == 0
+
+
+def test_drawer_status_says_what_was_sold_today(conn):
+    # 31-10-2026: "شكد بعنا اليوم؟" -> "ما عندي تفاصيل البيعات اليوم" before the drawer was counted
+    from app.tools import DebtTools
+
+    egg = db.add_item(conn, "بيض", 6000, 5250, "طبقة")
+    db.add_sale(conn, "cash", [{"item_id": egg, "qty": 2, "unit_price": 6000, "unit_cost": 5250}], source="screen")
+    r = DebtTools(conn).execute("drawer_status", {})
+    assert r["sales_today"]["total"]["IQD"] == 12000 and r["sales_today"]["by_payment"]["cash"]["IQD"] == 12000
