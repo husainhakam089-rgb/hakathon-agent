@@ -565,6 +565,21 @@ _OWNER_PAID = re.compile(_LEAD + r"(?:(?:دفعت|سددت|سدّدت|سلمت|�
 _OWNER_TOOK = re.compile(_LEAD + r"(?:اخذت|أخذت|خذيت)\s+(?:من(?!\s*(?:عندي|عندنا))|بضاعة)")
 
 
+# 31-10-2026 online: "ابو علي نطاني 20" asked "أضيف زبون اسمه أبو علي نطاني؟". A payment verb said
+# after the name is not part of it.
+_PAY_VERBS = {"دفع", "دفعت", "دفعلي", "سدد", "سددت", "سددلي", "جاب", "جابت", "جابلي", "نطاني", "نطتني",
+              "انطاني", "انطتني", "نطي", "نطت", "عطاني", "عطتني", "اعطاني", "اعطتني", "عطي", "عطت",
+              "واصلني", "واصلتني"}
+
+
+def _without_pay_verb(name) -> str | None:
+    """"ابو علي نطاني" -> "ابو علي"; None when the name does not end with a payment verb."""
+    words = str(name or "").split()
+    if len(words) > 1 and normalize(words[-1]) in _PAY_VERBS:
+        return " ".join(words[:-1])
+    return None
+
+
 # remember() only when the owner's own message teaches or asks to remember (stage 12):
 # the model must not decide by itself what to keep.
 _TEACHING = re.compile(r"تذكر|تذكّر|احفظ|احفض|خلي\s*(?:ب|في)\s*بالك|من\s*هسه|من\s*الآن|من\s*الان|اعتبر|يعني|نفسه|نفسها|"
@@ -903,9 +918,19 @@ class DebtTools:
                              if c["normalized_name"] and f" {c['normalized_name']} " in text]
                     if found:
                         return {"ok": True, "count": len(found), "matches": found, "from_memory": mem["text"]}
+        short = None if matches else _without_pay_verb(query)
+        if short:
+            found = self._matches(short, "customer")
+            if found:
+                return {"ok": True, "count": len(found), "matches": found,
+                        "message": f"\"{str(query).split()[-1]}\" فعل دفع مو جزء من الاسم: الزبون {short} دفع."}
         return {"ok": True, "count": len(matches), "matches": matches}
 
     def tool_add_customer(self, name, phone=None):
+        short = _without_pay_verb(name)
+        if short:
+            return _error("name_has_verb", f"\"{str(name).split()[-1]}\" معناها دفع، مو جزء من الاسم. "
+                          f"دوّر على \"{short}\" وسجل تسديد (record_payment)، لا تضيف زبون جديد.")
         return self._add_party(name, phone, "customer")
 
     def tool_record_debt(self, customer_id, amount, currency="IQD", note=None, confirmed=False):

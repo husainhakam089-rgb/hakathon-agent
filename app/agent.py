@@ -12,7 +12,7 @@ from app import db
 from app.arabic import normalize
 from app.llm import LLMError, make_llm
 from app.prompts import SYSTEM_PROMPT, memory_block
-from app.tools import TOOL_SCHEMAS, DebtTools
+from app.tools import _OWNER_PAID, TOOL_SCHEMAS, DebtTools
 
 log = logging.getLogger("debt_agent")
 
@@ -154,6 +154,31 @@ def _agreed(message: str) -> bool:
     return 0 < len(words) <= 8 and not any(w in _NO for w in words) and any(w in _GO_AHEAD for w in words)
 
 
+# 31-10-2026 online: "دفع 20 الف وخذ كيس طحين دين" became a 20,000 DEBT on أبو علي (his balance went
+# up instead of down), and "ابو علي نطاني 20" was read as a name. In the owner's words a "paid" verb
+# means money came in: a debt for it is refused, and a message with a payment AND goods / a debt in it
+# is two movements, shown to the owner before either is written. ("ما دفع" = didn't pay: not a payment.)
+_PAID_WORD = re.compile(r"(?<!\w)(?<!ما )(?<!لا )(?<!مو )و?(?P<w>دفع|دفعت|دفعلي|دفعها|دفعهن|سدد|سددت|سددلي|سدده|سددها|"
+                        r"جاب|جابت|جابلي|جابتلي|نطاني|نطتني|انطاني|انطتني|نطي|نطت|نطالي|عطاني|عطتني|اعطاني|"
+                        r"اعطتني|عطي|عطت|واصلني|واصلتني)(?!\w)")
+_TOOK_WORD = re.compile(r"(?<!\w)و?(?:خذ|اخذ|ياخذ|خذت|اخذت(?!\s+من(?:ه|ها)\b)|خذا|شال|شالت|دين|بالدين|ع?الحساب|"
+                        r"عالدفتر|(?<!اللي )(?<!الي )(?<!ما )عليه|(?<!اللي )(?<!الي )(?<!ما )عليها)(?!\w)")
+
+
+def _paid_word(message: str) -> str | None:
+    if _OWNER_PAID.search(message or ""):  # "دفعت لأبو علي": the owner paid, not a customer
+        return None
+    found = _PAID_WORD.search(normalize(message or ""))
+    return found.group("w") if found else None
+
+
+def _two_movements(message: str) -> bool:
+    """A payment and goods / a debt in one message: "دفع 20 الف وخذ كيس طحين دين"."""
+    text = normalize(message or "")
+    paid = _PAID_WORD.search(text) if not _OWNER_PAID.search(message or "") else None
+    return bool(paid) and bool(_TOOK_WORD.search(text[:paid.start()] + " " + text[paid.end():]))
+
+
 _UNDO = re.compile(r"شطب|غلط|رجع|رجّع|الغ|ألغ|إلغ|امسح|إمسح|احذف|احذف|شيل|undo", re.IGNORECASE)
 RECENT_OWNER_MESSAGES = 3
 
@@ -199,6 +224,32 @@ _CLAIMS_WRITE = re.compile(r"(?<![\w])(?<!ما )(?<!ما گدرت )(سجلت|س�
 FALSE_WRITE_NOTE = ("تنبيه من النظام (مو من صاحب المحل): ردك يگول إنك سجلت أو غيرت شي، بس ما اشتغلت ولا أداة تسجيل "
                     "بهالرسالة، فما انحفظ شي. إذا صاحب المحل طلب تسجيل، استدعي الأداة هسه. وإذا لا، صحح ردك ولا تگول سجلت.")
 NOTHING_SAVED = "ما سجلت شي بعد. عيد طلبك بجملة وحدة، مثل: سجل على أبو علي 25 الف."
+# 31-10-2026 (trial of the two-movement fix): the owner said "سجّل الاثنين", the payment came back
+# possible_duplicate and the reply only said the flour was recorded. A write the code held back for
+# the owner's answer must be in the reply as a question; otherwise the model is asked once, and then
+# the code says it itself.
+HELD = {"possible_duplicate", "confirmation_required", "two_movements", "looks_like_payment", "amount_not_from_owner"}
+HELD_NOTE = ("تنبيه من النظام (مو من صاحب المحل): هذني ما تسجلن وينتظرن جواب صاحب المحل: {held}. "
+             "ردك ما يسأله عنهن. اكتب الرد من جديد: گوله شنو انسجل وشنو ما انسجل وليش، واسأله سؤال واضح.")
+_LABELS = {"record_debt": "دين", "record_payment": "تسديد", "record_sale": "بيع", "record_purchase": "شراء",
+           "record_supplier_payment": "دفعة لمورد", "record_withdrawal": "مصروف", "record_cash_in": "وارد"}
+
+
+def _held_writes(tool_log: list[dict]) -> list[str]:
+    """Writes the code held back this message (and the model did not get through after)."""
+    done = {(e["tool"], (e.get("input") or {}).get("customer_id"), (e.get("input") or {}).get("amount"))
+            for e in tool_log if e["result"].get("ok") and e["tool"] in WRITE_TOOLS}
+    held = []
+    for e in tool_log:
+        args = e.get("input") or {}
+        key = (e["tool"], args.get("customer_id"), args.get("amount"))
+        if e["result"].get("error") in HELD and e["tool"] in WRITE_TOOLS and key not in done:
+            text = _LABELS.get(e["tool"], e["tool"]) + (f" {args['amount']:,}" if isinstance(args.get("amount"), (int, float)) else "")
+            if text not in held:
+                held.append(text)
+    return held
+
+
 EMPTY_NOTE = ("تنبيه من النظام (مو من صاحب المحل): ردك طلع فارغ. اكتب لصاحب المحل جملة قصيرة بلهجته: "
               "شنو سويت بالضبط، أو ليش ما سويت شي، أو شنو تحتاج منه.")
 NUMBER_NOTE = ("تنبيه من النظام (مو من صاحب المحل): ردك بيه أرقام ما طلعت من الأدوات ولا من كلام صاحب المحل: {nums}. "
@@ -412,6 +463,7 @@ class Agent:
         number_retry = None  # index in `turn` of the note asking to fix invented figures
         claim_retry = None  # index in `turn` of the note about saying "سجلت" when nothing was written
         empty_retry = None  # index in `turn` of the note asking for a reply after an empty one
+        held_retry = None  # index in `turn` of the note about writes held for the owner's answer
         restarted = False
         wrote = False  # a write tool succeeded this message: never start it again
         vague_note = _vague_supplier_note(self.conn, message) + _vague_person_note(self.conn, message, session.history())
@@ -432,7 +484,7 @@ class Agent:
                         raise
                     log.warning("LLM error mid-message, starting it again: %s", e.detail)
                     self._log_llm_error(e)
-                    restarted, number_retry = True, None
+                    restarted, number_retry, held_retry = True, None, None
                     turn[:] = turn[:1]
                     tool_log.clear()
                     iteration = 0
@@ -458,6 +510,15 @@ class Agent:
                             turn.append({"role": "user", "text": FALSE_WRITE_NOTE})
                             continue
                         reply = NOTHING_SAVED
+                    held = _held_writes(tool_log) if "؟" not in reply else []
+                    if held and held_retry is None:
+                        log.warning("Writes held for the owner %s but the reply does not ask: asking the model again", held)
+                        held_retry = len(turn)
+                        turn.append({"role": "assistant", "text": reply, "tool_calls": []})
+                        turn.append({"role": "user", "text": HELD_NOTE.format(held="، ".join(held))})
+                        continue
+                    if held:
+                        reply += "\n⚠️ هذني ما تسجلن بعد وينتظرن جوابك: " + "، ".join(held) + ". أسجلهن؟"
                     bad = unsupported_numbers(reply, self._allowed_numbers(session, message, turn, tool_log))
                     if bad and number_retry is None:
                         log.warning("Unsupported figures %s in reply, asking the model to fix it", bad)
@@ -495,7 +556,7 @@ class Agent:
             log.exception("Agent turn failed")
             reply = _with_done_note("صار خطأ غير متوقع، عيد المحاولة.", tool_log)
 
-        for at in sorted((i for i in (number_retry, empty_retry, claim_retry) if i is not None), reverse=True):
+        for at in sorted((i for i in (number_retry, empty_retry, claim_retry, held_retry) if i is not None), reverse=True):
             del turn[at:at + 2]  # keep the history clean: drop the rejected draft and the note
         turn.append({"role": "assistant", "text": reply, "tool_calls": []})
         session.commit(turn)
@@ -549,6 +610,17 @@ class Agent:
             named = _named_party(self.conn, message)
             if named:  # the owner named someone: undo that person's entry, not just the last one
                 call.input = {**(call.input or {}), "name": named}
+        if call.name in ("record_debt", "record_payment", "record_sale") and _two_movements(message) \
+                and not _AFFIRM.match(message or ""):
+            return {"ok": False, "error": "two_movements",
+                    "message": "رسالة صاحب المحل بيها حركتين: تسديد (دفع) وأخذ بضاعة أو دين. لا تسجل ولا وحدة هسه: "
+                               "اعرضهن عليه سطر سطر (١- فلان دفع كذا، ينزل من دينه. ٢- أخذ كذا دين/بيع، يصعد عليه) "
+                               "واسأله \"أسجل الاثنين؟\" وسجل بس من يوافق."}
+        paid = _paid_word(message) if call.name == "record_debt" else None
+        if paid and not _AFFIRM.match(message or ""):
+            return {"ok": False, "error": "looks_like_payment",
+                    "message": f"صاحب المحل گال \"{paid}\" يعني الزبون دفع فلوس: هذا تسديد (record_payment، ينزل من دينه) "
+                               f"مو دين. لا تسجل دين. اسأله \"تقصد دفع (تسديد)؟\" وسجل بس من يجاوب."}
         if call.name not in GUARDED_AMOUNTS:
             return None
         args = call.input or {}

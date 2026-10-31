@@ -245,3 +245,65 @@ def test_go_ahead_in_his_own_words_is_agreement(conn):
     agent.chat("s", "أبو علي جاب فلوس")
     assert agent.chat("s", "اخي انت اشتغلها من يمك")["tool_calls"][0]["result"]["ok"]
     assert db.get_balance(conn, a)["IQD"] == 105000
+
+
+# ---------- 31-10-2026 online: a payment became a debt ----------
+def _call(name, **args):
+    return LLMResponse(text="", tool_calls=[ToolCall("t", name, args)])
+
+
+def test_a_payment_word_never_becomes_a_debt(conn):
+    """"ابو علي نطاني 20" / "دفع 20": a record_debt for it is refused, the balance does not go up."""
+    a = db.add_customer(conn, "أبو علي")
+    db.add_transaction(conn, a, "debt", 77500)
+    for msg in ("ابو علي نطاني 20", "أبو علي نطى 20", "ابو علي دفع 20", "ابو علي عطاني 20", "واصلني من ابو علي 20",
+                "ابو علي جاب 20"):
+        agent = Agent(conn, llm=FakeLLM(_call("record_debt", customer_id=a, amount=20000, currency="IQD"),
+                                        LLMResponse(text="تقصد دفع؟")), log_path=None)
+        assert agent.chat(msg, msg)["tool_calls"][0]["result"]["error"] == "looks_like_payment", msg
+    assert db.get_balance(conn, a)["IQD"] == 77500
+    # "ما دفع" = didn't pay: a debt is fine; and so is the owner's answer "لا، دين"
+    for msg, amount in (("ابو علي ما دفع، سجل عليه 20", 20000), ("سجل على ابو علي 15", 15000)):
+        agent = Agent(conn, llm=FakeLLM(_call("record_debt", customer_id=a, amount=amount, currency="IQD"),
+                                        LLMResponse(text="سجلت")), log_path=None)
+        assert agent.chat(msg, msg)["tool_calls"][0]["result"]["ok"], msg
+
+
+def test_payment_and_goods_in_one_message_are_shown_first(conn):
+    """"دفع 20 الف وخذ كيس طحين دين": nothing is written until the owner agrees, then both are."""
+    a = db.add_customer(conn, "أبو علي")
+    db.add_transaction(conn, a, "debt", 77500)
+    pay = _pay(20000, a)
+    debt = _call("record_debt", customer_id=a, amount=7500, currency="IQD", note="كيس طحين")
+    agent = Agent(conn, llm=FakeLLM(pay, debt, LLMResponse(text="١- دفع 20,000 ٢- كيس طحين دين. أسجل الاثنين؟"),
+                                    pay, debt, LLMResponse(text="سجلتهن")), log_path=None)
+    first = agent.chat("s", "دفع 20 الف وخذ كيس طحين دين 7500")
+    assert [c["result"]["error"] for c in first["tool_calls"]] == ["two_movements", "two_movements"]
+    assert db.get_balance(conn, a)["IQD"] == 77500
+    second = agent.chat("s", "إي، سجّل الاثنين")
+    assert all(c["result"]["ok"] for c in second["tool_calls"])
+    assert db.get_balance(conn, a)["IQD"] == 77500 - 20000 + 7500
+
+
+def test_a_payment_verb_is_not_part_of_the_name(conn):
+    from app.tools import DebtTools
+    a = db.add_customer(conn, "أبو علي")
+    tools = DebtTools(conn)
+    found = tools.execute("find_customer", {"query": "ابو علي نطاني"})
+    assert found["count"] == 1 and found["matches"][0]["id"] == a
+    assert tools.execute("add_customer", {"name": "أبو علي نطاني"})["error"] == "name_has_verb"
+    assert tools.execute("find_customer", {"query": "حسين"})["count"] == 0
+
+
+def test_a_held_write_is_always_asked_about(conn):
+    """The payment came back possible_duplicate and the reply only said the flour was recorded."""
+    a = db.add_customer(conn, "أبو علي")
+    db.add_transaction(conn, a, "payment", 20000)
+    db.add_transaction(conn, a, "debt", 77500)
+    silent = LLMResponse(text="تمام، كيس الطحين صار عليه.")
+    agent = Agent(conn, llm=FakeLLM(_pay(20000, a), silent, silent), log_path=None)
+    r = agent.chat("s", "ابو علي دفع 20")
+    assert r["tool_calls"][0]["result"]["error"] == "possible_duplicate"
+    assert "تسديد 20,000" in r["reply"] and "؟" in r["reply"]
+    agent = Agent(conn, llm=FakeLLM(_pay(20000, a), LLMResponse(text="نفس الدفعة لو ثانية؟")), log_path=None)
+    assert agent.chat("t", "ابو علي دفع 20")["reply"] == "نفس الدفعة لو ثانية؟"
