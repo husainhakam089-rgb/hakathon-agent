@@ -563,6 +563,8 @@ class Agent:
     def _chat(self, session_id: str, message: str, source: str = "chat") -> dict:
         session = self.session(session_id)
         session.tools.source_message = message
+        session.tools.previous_message = next((m.get("text") for m in reversed(session.history())
+                                               if m.get("role") == "user"), None)
         session.tools.source = source
         session.tools.turn += 1
         session.undid_this_turn = session.correction_asked = False

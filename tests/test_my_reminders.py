@@ -31,8 +31,9 @@ def test_a_weekday_and_the_code_does_the_dates(conn, tools):
 def test_refusals(conn, tools):
     assert _ask(tools, "شكد على ابو علي؟", text="x", day="tomorrow")["error"] == "ask_first"  # he never asked
     assert _ask(tools, "ذكرني اليوم", text="x", day="today")["error"] == "time_required"
-    assert _ask(tools, "ذكرني", text="x", day="date", date="2020-01-01", time="09:00")["error"] == "time_passed"
-    assert _ask(tools, "ذكرني", text="x", day="tomorrow", time="25:00")["error"] == "invalid_time"
+    assert _ask(tools, "ذكرني يوم 2020-01-01 الساعة 9", text="x", day="date", date="2020-01-01",
+                time="09:00")["error"] == "time_passed"
+    assert _ask(tools, "ذكرني باچر الساعة 25", text="x", day="tomorrow", time="25:00")["error"] == "invalid_time"
     assert _ask(tools, "ذكرني", text="", day="tomorrow")["error"] == "text_required"
 
 
@@ -91,3 +92,18 @@ def test_when_words():
     assert _when_words(datetime(2026, 10, 18, 9, 0), now) == "باچر الأحد الساعة 9:00 الصبح"
     assert _when_words(datetime(2026, 10, 22, 16, 30), now) == "الخميس الجاي الساعة 4:30 العصر"
     assert _when_words(datetime(2026, 10, 17, 21, 0), now) == "اليوم السبت الساعة 9:00 بالليل"
+
+
+def test_the_day_from_his_words_and_an_answer_to_when(conn, tools):
+    """5-11-2026 online: "ذكرني باجر..." asked for a date, and after "الخميس" it asked again."""
+    from datetime import datetime, timedelta
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    r = _ask(tools, "ذكرني باجر انه اتصل بمندوب شركة الزين", text="اتصل بالمندوب", day="date", date="")
+    assert r["ok"] and r["due_at"].startswith(tomorrow)
+    assert _ask(tools, "ذكرني اتصل بالمندوب", text="اتصل بالمندوب", day="tomorrow")["error"] == "when_required"
+    tools.previous_message = "ذكرني اتصل بالمندوب"
+    r = _ask(tools, "الخميس", text="اتصل بالمندوب", day="date")
+    assert r["ok"] and datetime.strptime(r["due_at"], "%Y-%m-%d %H:%M").weekday() == 3
+    tools.previous_message = None
+    r = _ask(tools, "ذكرني بعد اسبوع اطلب غاز", text="اطلب غاز")
+    assert r["ok"] and r["due_at"].startswith((datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"))

@@ -594,6 +594,33 @@ _MONTHLY = re.compile(r"كل\s*شهر|شهري|شهرية|بالشهر|ثابت|
                       r"اسبوعي|أسبوعي|اسبوعية|أسبوعية|بالاسبوع|بالأسبوع")
 # remind_me only when the owner asked to be reminded
 _REMIND = re.compile(r"ذكرني|ذكّرني|ذكرنى|نبهني|نبّهني|لا\s*تنساني|خلي\s*ب?بالك|ذكرهم|فكرني|فكّرني|تذكير|remind", re.I)
+# 5-11-2026 online: "ذكرني باجر اتصل بمندوب الشركة" asked for a date, and after "الخميس" it asked again
+# (that answer had no "ذكرني" in it). The day is read from the owner's own words when the model has none.
+_AR_DAYS = {"السبت": "saturday", "سبت": "saturday", "الاحد": "sunday", "احد": "sunday", "الاثنين": "monday",
+            "اثنين": "monday", "الاتنين": "monday", "الثلاثاء": "tuesday", "ثلاثاء": "tuesday", "الثلاثا": "tuesday",
+            "الاربعاء": "wednesday", "اربعاء": "wednesday", "الاربعا": "wednesday", "الخميس": "thursday",
+            "خميس": "thursday", "الجمعه": "friday", "جمعه": "friday"}
+_TOMORROW_WORDS = r"باجر|باچر|بكره|بكرا|بچره|غدا|غدوه|الغد|tomorrow"
+_WHEN = re.compile(r"(?<!\w)(?:" + _TOMORROW_WORDS + "|" + "|".join(_AR_DAYS) + r"|اليوم|هسه|بعد|عقب|الصبح|الصباح|الظهر|"
+                   r"العصر|المغرب|بالليل|الليل|المسا|المساء|ساعه|ساعتين|دقيقه|دقايق|كل)(?!\w)|\d")
+
+
+def _day_from_words(text: str):
+    """("tomorrow" | "after_tomorrow" | a weekday | "today", extra days) from the owner's words, or None."""
+    t = normalize(text or "")
+    if re.search(r"(?:عقب|بعد)\s+(?:" + _TOMORROW_WORDS + ")", t):
+        return "after_tomorrow", 0
+    if re.search(r"(?<!\w)(?:" + _TOMORROW_WORDS + r")(?!\w)", t):
+        return "tomorrow", 0
+    m = re.search(r"بعد\s+(?:(يومين)|(\d+)\s*(?:ايام|يوم)|(اسبوع|جمعه))(?!\w)", t)
+    if m:
+        return "today", 2 if m.group(1) else 7 if m.group(3) else int(m.group(2))
+    for word in re.findall(r"\w+", t):
+        if word in _AR_DAYS:
+            return _AR_DAYS[word], 0
+    return None
+
+
 _WEEKDAYS = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
 
 # add_item right away only when the owner's own message asks to add an item (stage 17).
@@ -1410,11 +1437,22 @@ class DebtTools:
         text = " ".join(str(text or "").split())
         if not text:
             return _error("text_required", "بشنو أذكّرك؟")
-        if not _REMIND.search(self.source_message or ""):
+        said, before = self.source_message or "", getattr(self, "previous_message", None) or ""
+        if not _REMIND.search(said) and not _REMIND.search(before):  # "الخميس" answering "إيمتى؟" counts
             return _error("ask_first", "صاحب المحل ما طلب تذكير. اسأله: 'أذكّرك بيها؟ إيمتى؟'")
         repeat = repeat if repeat in ("none", "daily", "weekly", "monthly") else "none"
         now = datetime.now().replace(second=0, microsecond=0)
         mins, hrs = _as_int(in_minutes), _as_int(in_hours)
+        extra = 0
+        if not (mins or hrs) and self.source_message is not None:
+            heard = _day_from_words(said) or (_day_from_words(before) if not _WHEN.search(normalize(said)) else None)
+            if heard:  # his own words win over the model's guess ("الخميس" = Thursday, never a date to ask for)
+                day, extra = heard
+            elif not _WHEN.search(normalize(said)) and not _WHEN.search(normalize(_REMIND.split(before, 1)[-1])
+                                                                        if _REMIND.search(before) else ""):
+                return _error("when_required", "صاحب المحل ما گال إيمتى. اسأله: 'إيمتى أذكّرك؟ (باچر، الخميس، بعد ساعة…)' "
+                              "ولا تطلب تاريخ.")
+        day = _AR_DAYS.get(normalize(str(day or "")), day)
         if mins or hrs:
             due = now + timedelta(minutes=mins or 0, hours=hrs or 0)
         else:
@@ -1424,7 +1462,7 @@ class DebtTools:
                 if not m or int(m.group(1)) > 23 or int(m.group(2) or 0) > 59:
                     return _error("invalid_time", "الساعة لازم تكون مثل 09:00 أو 21:30")
                 hh, mm = int(m.group(1)), int(m.group(2) or 0)
-            elif day in (None, "today"):
+            elif day in (None, "today") and not extra:  # "بعد اسبوع" with no hour: 9 in the morning
                 return _error("time_required", "اليوم بأي ساعة أذكّرك؟")
             if day in (None, "today"):
                 d = now.date()
@@ -1440,10 +1478,10 @@ class DebtTools:
                 try:
                     d = datetime.strptime(str(date), "%Y-%m-%d").date()
                 except ValueError:
-                    return _error("invalid_date", "التاريخ لازم يكون مثل 2026-10-22")
+                    return _error("invalid_date", "إيمتى أذكّره؟ اسأله باليوم (باچر، الخميس…)، لا تطلب تاريخ.")
             else:
                 return _error("invalid_day", "إيمتى أذكّرك؟ (اليوم، باچر، الخميس، بعد ساعة…)")
-            due = datetime.combine(d, datetime.min.time()).replace(hour=hh, minute=mm)
+            due = datetime.combine(d, datetime.min.time()).replace(hour=hh, minute=mm) + timedelta(days=extra)
         if due <= now:
             return _error("time_passed", f"هالوقت فات ({due:%Y-%m-%d %H:%M}). إيمتى أذكّرك؟")
         rid = db.add_owner_reminder(self.conn, text, due, repeat, self.source_message)
