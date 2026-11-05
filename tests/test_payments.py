@@ -353,3 +353,29 @@ def test_behind_our_proxy_only_its_own_entry_counts(client, monkeypatch):
                     follow_redirects=False)
     assert r.status_code == 303 and "محاولات هواية" not in r.text
     auth._tries.clear()
+
+
+def test_a_message_sent_twice_runs_once(client, monkeypatch):
+    """5-11-2026 online: a long message came twice and the second asked to record it again."""
+    import threading
+    import time
+    from app import main as m
+    calls = []
+
+    def slow_chat(session_id, message, source="chat"):
+        calls.append(message)
+        time.sleep(0.3)
+        return {"reply": "تمام", "tool_calls": []}
+
+    monkeypatch.setattr(m.agent, "chat", slow_chat)
+    body = {"session_id": "dup", "message": "ابو علي دفع 10", "client_id": "abc123"}
+    out = []
+    threads = [threading.Thread(target=lambda: out.append(client.post("/chat", json=body).json())) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert calls == ["ابو علي دفع 10"] and [o["reply"] for o in out] == ["تمام", "تمام"]
+    assert client.post("/chat", json=body).json()["reply"] == "تمام" and len(calls) == 1  # same id later
+    client.post("/chat", json={**body, "client_id": "new1"})  # the owner sends it again himself: it runs
+    assert len(calls) == 2

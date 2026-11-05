@@ -27,7 +27,7 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or ROOT / "uploads")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 5
 MIGRATED_NOTE = "رصيد منقول من الدفتر"
-APP_VERSION = "55"  # bump when a change must not be served by an older copy still running
+APP_VERSION = "56"  # bump when a change must not be served by an older copy still running
 
 # Accepted uploads, recognised by their first bytes (not by name or browser header).
 FILE_KINDS = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf",
@@ -146,6 +146,15 @@ class ChatRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     message: str = Field(min_length=1, max_length=2000)
     source: Literal["chat", "voice"] = "chat"  # "voice": dictated with the mic, then read and sent
+    client_id: str | None = Field(default=None, max_length=64)  # one per message the page sends
+
+
+# 5-11-2026 online: a long message came twice (the request was sent again while the first still ran);
+# the second asked "تريد تسجيلها مرة ثانية؟" and "إي" recorded it twice. The same message again, with
+# its id or while the first is still running, gets the first one's answer: it never runs twice.
+_SEEN_FOR = 300  # seconds an answered message id is remembered
+_chats: dict[tuple, dict] = {}
+_chats_lock = threading.Lock()
 
 
 @app.get("/")
@@ -234,8 +243,34 @@ def logout(everywhere: bool = False):
 
 @app.post("/chat")
 def chat(req: ChatRequest, request: Request):
-    agent.session(req.session_id).tools.base_url = _base_url(request)
-    return agent.chat(req.session_id, req.message, req.source)
+    import time
+    keys = [(req.session_id, "text", req.message)] + ([(req.session_id, "id", req.client_id)] if req.client_id else [])
+    now = time.time()
+    with _chats_lock:
+        for key in [k for k, v in _chats.items() if v["done_at"] and now - v["done_at"] > _SEEN_FOR]:
+            del _chats[key]
+        first = None
+        for key in keys:
+            e = _chats.get(key)
+            if e and (not e["done_at"] or key[1] == "id"):  # running now, or this very message id answered
+                first = e
+                break
+        if first is None:
+            entry = {"event": threading.Event(), "result": None, "done_at": None}
+            for key in keys:
+                _chats[key] = entry
+    if first is not None:
+        first["event"].wait(timeout=600)
+        if first["result"] is not None:
+            return first["result"]
+        return {"reply": "رسالتك وصلت وبعدها بالشغل. انتظر شوية ولا تعيدها.", "tool_calls": []}
+    try:
+        agent.session(req.session_id).tools.base_url = _base_url(request)
+        entry["result"] = agent.chat(req.session_id, req.message, req.source)
+        return entry["result"]
+    finally:
+        entry["done_at"] = time.time()
+        entry["event"].set()
 
 
 def _ledger(kind: str) -> dict:

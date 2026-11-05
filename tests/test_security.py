@@ -470,3 +470,51 @@ def test_a_drawer_cash_in_is_undone_by_its_name(conn):
     tools.turn_start = len(tools.session_tx_ids)
     r = tools.execute("undo_last", {"name": "محمد"})
     assert r["ok"] and r["undone"]["type"] == "cash_in" and r["undone"]["amount"] == 7000
+
+
+# ---------- 5-11-2026 (third round): found by the owner ----------
+def test_amperes_are_not_money(conn):
+    """"دفعت المولدة 10 امبير" became 10,000 dinars."""
+    wd = _call("record_withdrawal", amount=10000, currency="IQD", reason="مولدة")
+    agent = Agent(conn, llm=FakeLLM(wd, LLMResponse(text="شكد دفعت؟")), log_path=None)
+    r = agent.chat("s", "دفعت المولدة 10 امبير")["tool_calls"][0]["result"]
+    assert r["error"] == "amount_not_from_owner" and "امبير" in r["message"]
+    by_unit = _call("record_withdrawal", quantity=10, unit_price=8000, currency="IQD", reason="مولدة")
+    agent = Agent(conn, llm=FakeLLM(by_unit, LLMResponse(text="تمام")), log_path=None)
+    r = agent.chat("t", "دفعت المولدة 10 امبير بـ 8 الاف للامبير")["tool_calls"][0]["result"]
+    assert r["ok"] and r["amount"] == 80000
+
+
+def test_a_reply_that_denies_a_recorded_write_is_replaced(conn):
+    wd = _call("record_withdrawal", amount=25000, currency="IQD", reason="مولدة")
+    agent = Agent(conn, llm=FakeLLM(wd, LLMResponse(text="ما انسجل المصروف، صار خطأ.")), log_path=None)
+    r = agent.chat("s", "دفعت المولدة 25 الف")
+    assert r["tool_calls"][0]["result"]["ok"] and "ما انسجل" not in r["reply"] and "25,000" in r["reply"]
+
+
+def test_a_tin_of_oil_is_asked_about(conn):
+    """"دبة زيت" was recorded as one liter."""
+    from app.tools import DebtTools
+    oil = db.add_item(conn, "زيت", 3000, unit="لتر")
+    tools = DebtTools(conn)
+    tools.source_message = "بعت دبة زيت"
+    r = tools.execute("record_sale", {"lines": [{"item_id": oil, "qty": 1}]})
+    assert r["error"] == "unit_unclear" and r["said_unit"] == "دبه"
+    tools.source_message = "بعت دبة زيت 4 لتر"
+    assert tools.execute("record_sale", {"lines": [{"item_id": oil, "qty": 4}]})["ok"]
+    tools.source_message = "بعت دبة زيت بـ 20"
+    assert tools.execute("record_sale", {"lines": [{"item_id": oil, "qty": 1, "unit_price": 20000}]})["ok"]
+    tools.source_message = "بعت لتر زيت"
+    assert tools.execute("record_sale", {"lines": [{"item_id": oil, "qty": 1}]})["ok"]
+    sun = db.add_item(conn, "زيت دوار الشمس", 3500, unit="لتر")  # "دبة زيت" for an item with a longer name
+    tools.source_message = "بعت دبة زيت"
+    assert tools.execute("record_sale", {"lines": [{"item_id": sun, "qty": 1}]})["error"] == "unit_unclear"
+
+
+def test_the_cards_undo_for_an_expense(conn):
+    wd = _call("record_withdrawal", amount=25000, currency="IQD", reason="مولدة")
+    agent = Agent(conn, llm=FakeLLM(wd, LLMResponse(text="تمام"), LLMResponse(text="", tool_calls=[ToolCall("u", "undo_last", {"name": "مولدة"})]),
+                                    LLMResponse(text=".")), log_path=None)
+    wid = agent.chat("s", "دفعت المولدة 25 الف")["tool_calls"][0]["result"]["withdrawal_id"]
+    r = agent.chat("s", f"مولدة غلط، شطبها (سحب رقم {wid})")["tool_calls"][0]["result"]
+    assert r["ok"] and r["undone"]["withdrawal_id"] == wid

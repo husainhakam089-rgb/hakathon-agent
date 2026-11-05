@@ -17,7 +17,21 @@ USD_LARGE_AMOUNT = 1000  # treated as equivalent to LARGE_AMOUNT_IQD (no FX conv
 _KIN = ("ابو", "ام", "ابن", "بنت", "اخو", "اخت", "مرت")
 # units a shop sells by, and the shop's own names for an item (normalized), for finding "طبقة بيض"
 _UNIT_WORDS = {"طبقه", "كارتون", "كارتونه", "كيس", "قنينه", "علبه", "كيلو", "باكيت", "باكيته", "حبه", "قطعه",
-               "صندوق", "درزن", "لتر", "ربطه", "شده", "ربع", "نص", "كيلوين"}
+               "صندوق", "درزن", "لتر", "ربطه", "شده", "ربع", "نص", "كيلوين",
+               "دبه", "تنكه", "جلكان", "غالون", "صفيحه", "شوال", "جونيه", "سطل", "كرتونه"}
+
+
+def _said_unit(message, item_name):
+    """The unit the owner said right before the item ("دبة زيت" -> "دبه"), normalized; None if none."""
+    text, name = normalize(message or ""), normalize(item_name or "")
+    # the whole name, or one word of it ("دبة زيت" for "زيت دوار الشمس")
+    for part in [name] + [w for w in name.split() if len(w) > 2 and w not in _UNIT_WORDS]:
+        m = re.search(r"(?<!\w)(\w+)\s+(?:ال)?" + re.escape(part) + r"(?!\w)", text) if part else None
+        if m:
+            word = re.sub(r"^ال", "", re.sub(r"^و", "", m.group(1)))
+            if word in _UNIT_WORDS:
+                return word
+    return None
 _ITEM_SYNONYMS = {"مي": "ماء", "ماي": "ماء", "مويه": "ماء", "مياه": "ماء", "سكر": "شكر", "شكر": "سكر"}
 # the owner saying a repeated entry is really a second one (normalized text)
 _REPEAT_OK = re.compile(r"(^|\s)(ثاني|ثانيه|ثانيه،|مره ثانيه|جديده|غيرها|اي|ايه|نعم|اكيد|موافق|تمام|سجلها|سجله|سجلهن|سجلها،)(\s|$|[،,.])")
@@ -1213,6 +1227,15 @@ class DebtTools:
             qty = raw.get("qty", 1)
             if isinstance(qty, bool) or not isinstance(qty, (int, float)) or qty <= 0 or qty > 100000:
                 return _error("invalid_qty", f"العدد غلط لـ {item['name']}")
+            # 5-11-2026 online: "دبة زيت" (a tin) was recorded as one liter. A unit said before the item that
+            # is not the item's own unit: ask what it holds or its price, unless he gave "4 لتر" or a price.
+            said = _said_unit(self.source_message, item["name"])
+            unit = normalize(item.get("unit") or "")
+            if said and unit and said != unit and unit not in said and raw.get("unit_price") is None \
+                    and not re.search(r"\d+\s*" + re.escape(unit), normalize(self.source_message or "")):
+                return _error("unit_unclear", f"گال «{said} {item['name']}» و{item['name']} تنباع بـ«{item['unit']}»: "
+                              f"لا تسجلها {qty:g} {item['unit']}. اسأله: الـ{said} بيها كم {item['unit']}، لو بيش باعها؟",
+                              item_name=item["name"], said_unit=said, unit=item["unit"])
             price = item["price"] if raw.get("unit_price") is None else _as_int(raw.get("unit_price"))
             if price is None or price <= 0:
                 return _error("invalid_amount", f"السعر غلط لـ {item['name']}")
@@ -1614,7 +1637,7 @@ class DebtTools:
     def tool_undo_last(self, name=None, entry=None):
         # 5-11-2026 online: the model put "payment" as the entry and the whole undo was refused though the
         # name was there. Only an entry the card wrote ("tx:12", "sale:5") counts; anything else is ignored.
-        if entry is not None and re.fullmatch(r"(tx|sale):\d+", str(entry).strip()):
+        if entry is not None and re.fullmatch(r"(tx|sale|withdrawal|cash_in):\d+", str(entry).strip()):
             return self._undo_given(str(entry).strip())
         if name is not None and str(name).strip():
             return self._undo_named(str(name).strip())
@@ -1676,10 +1699,10 @@ class DebtTools:
     def _undo_given(self, entry):
         """5-11-2026: "شطبها" on the payment card of "أم حسين دفعت 5 وأخذت شكر دين" undid the sugar (her
         last entry). The card's button names its own entry: exactly that one is undone."""
-        m = re.fullmatch(r"(tx|sale):(\d+)", entry)
+        m = re.fullmatch(r"(tx|sale|withdrawal|cash_in):(\d+)", entry)
         if not m:
             return _error("bad_entry", "رقم القيد مو مفهوم. اسأل صاحب المحل يا قيد يريد يشطب.")
-        key = int(m.group(2)) if m.group(1) == "tx" else ("sale", int(m.group(2)))
+        key = int(m.group(2)) if m.group(1) == "tx" else (m.group(1), int(m.group(2)))
         if key not in self.session_tx_ids:
             return _error("nothing_to_undo", "هذا القيد مو من هالمحادثة، فما ألغيه. لا تلغي غيره: گول هذا لصاحب المحل.")
         self.session_tx_ids.remove(key)

@@ -915,7 +915,8 @@ function addAgent(text, toolCalls, isError) {
 /* ---------- the reply as cards (31-10-2026): a receipt for what was recorded, buttons to answer ----------
    Drawn from the tool results only: every figure on a card is what the code returned. */
 const RECEIPT_TOOLS = {record_debt: 'دين على', record_payment: 'تسديد من', record_purchase: 'بضاعة بالدين من',
-  record_supplier_payment: 'دفعة إلى', record_sale: 'بيعة'};  // 5-11-2026: the sale had no card
+  record_supplier_payment: 'دفعة إلى', record_sale: 'بيعة',  // 5-11-2026: the sale had no card
+  record_withdrawal: 'مصروف:', record_cash_in: 'وارد للجرار:'};  // nor the expenses
 // How much one card moved the balance of its person (0 when it did not touch it: a cash sale).
 function moved(c) {
   const r = c.result;
@@ -926,16 +927,19 @@ function moved(c) {
 // one message the payment card showed the balance between the two, 5,750, not the final 7,000).
 function receiptCard(c, flowFor) {
   const r = c.result, sup = r.ledger === 'supplier', sale = c.tool === 'record_sale';
+  const drawer = c.tool === 'record_withdrawal' || c.tool === 'record_cash_in';
   const name = (sup ? r.supplier_name : r.customer_name) || '';
   const cur = r.currency || 'IQD', word = cur === 'USD' ? 'دولار' : 'دينار';
   const after = flowFor ? flowFor.after : null, before = flowFor ? flowFor.before : null;
   const flow = after == null ? '' : `<div class="flow">قبل ${before < 0 ? (sup ? 'إلك عنده ' : 'إله عندك ') + fmt(-before) : fmt(before)}<br>
     <b>${sup ? 'عليك إله' : after < 0 ? 'إله عندك' : 'صار عليه'} ${fmt(Math.abs(after))}</b></div>`;
-  const note = sale ? ` · ${esc(r.what || '')}${r.payment === 'debt' ? ' · دين' : r.payment === 'cash' ? ' · كاش' : ''}`
+  const note = drawer ? (c.tool === 'record_cash_in' ? ' · دخل للجرار' : r.from_drawer === false ? ' · ما طلع من الجرار' : ' · طلع من الجرار')
+    : sale ? ` · ${esc(r.what || '')}${r.payment === 'debt' ? ' · دين' : r.payment === 'cash' ? ' · كاش' : ''}`
     : r.drawer ? ` · ${esc(r.drawer)}` : r.from_drawer === false ? ' · ما دخل الجرار' : '';
-  const title = sale ? `بيعة${name ? (r.payment === 'debt' ? ' دين على ' : ' لـ ') + esc(name) : ''}`
+  const title = drawer ? `${RECEIPT_TOOLS[c.tool]} ${esc(r.reason || r.label || '')}` : sale ? `بيعة${name ? (r.payment === 'debt' ? ' دين على ' : ' لـ ') + esc(name) : ''}`
     : `${RECEIPT_TOOLS[c.tool]} ${esc(name)}`;
-  const undo = `${name || 'البيعة'} غلط، شطبها (${sale ? 'بيعة رقم ' + r.sale_id : 'قيد رقم ' + r.transaction_id})`;
+  const undo = drawer ? `${r.reason || r.label || ''} غلط، شطبها (${c.tool === 'record_cash_in' ? 'وارد رقم ' + r.cash_in_id : 'سحب رقم ' + r.withdrawal_id})`
+    : `${name || 'البيعة'} غلط، شطبها (${sale ? 'بيعة رقم ' + r.sale_id : 'قيد رقم ' + r.transaction_id})`;
   return `<div class="rcpt">
     <div class="rh"><div class="ok">${icon('check')}</div><div><b>تسجّل ${title}</b>
       <small>هسه${note}</small></div></div>
@@ -1106,7 +1110,8 @@ async function send(text) {
     const res = await fetch('/chat', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({session_id: sessionId, message: text, source: fromVoice ? 'voice' : 'chat'}),
+      body: JSON.stringify({session_id: sessionId, message: text, source: fromVoice ? 'voice' : 'chat',
+                            client_id: Date.now().toString(36) + Math.random().toString(36).slice(2, 10)}),
     });
     fromVoice = false;
     if (!res.ok) throw new Error('status ' + res.status);

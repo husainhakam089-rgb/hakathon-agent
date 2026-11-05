@@ -113,6 +113,21 @@ def _owner_numbers(text: str) -> set[int]:
     return out
 
 
+# 5-11-2026 online: "دفعت المولدة 10 امبير" became 10,000 dinars. A number said with a unit is a
+# quantity: it may be a quantity, never an amount of money (10 -> 10,000).
+_MEASURE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:امبير|أمبير|امبيرات|أمبيرات|امپير|كيلو|كغم|كيلوغرام|غرام|لتر|لترات|"
+                      r"متر|امتار|أمتار|ساعه|ساعة|ساعات|دقيقه|دقيقة|دقايق|يوم|ايام|أيام|اسبوع|أسبوع|شهر|اشهر|أشهر|"
+                      r"حبه|حبة|حبات|قطعه|قطعة|كيس|اكياس|أكياس|كارتون|كراتين|طبقه|طبقة|نفر|دبه|دبة|قنينه|قنينة)(?!\w)")
+
+
+def _measures(text: str) -> set[int]:
+    return {round(float(m.group(1).replace(",", "."))) for m in _MEASURE.finditer(text or "")}
+
+
+def _without_measures(text: str) -> str:
+    return _MEASURE.sub(lambda m: " ", text or "")
+
+
 def unsupported_numbers(reply: str, allowed: set[int]) -> list[int]:
     bad = []
     for n in sorted(_numbers(reply)):
@@ -185,7 +200,8 @@ def _two_movements(message: str) -> bool:
 _CORRECTION = re.compile(r"(?:^|\s)مو\s*\d|(?:^|\s)مو\s+(?:وارد|دين|تسديد|بيعة|بيعه|بيع|دفعة|دفعه|صادر|سحب|مصروف)|صحح|صحّح|تصحيح|عدل|عدّل|تعديل|طلعت\s*\d|بدلها|بدّلها")
 _RECORDS = {"record_debt", "record_payment", "record_purchase", "record_supplier_payment", "record_sale",
             "record_withdrawal", "record_cash_in"}
-_GIVEN_ENTRY = re.compile(r"\((قيد|بيعة) رقم (\d+)\)")
+_GIVEN_ENTRY = re.compile(r"\((قيد|بيعة|سحب|وارد) رقم (\d+)\)")
+_GIVEN_KIND = {"قيد": "tx", "بيعة": "sale", "سحب": "withdrawal", "وارد": "cash_in"}
 # 5-11-2026: "لا مو 10، 5 بس"، "صححها"، "عدّلها"، "طلعت 5 مو 10"، "خطأ" are corrections too: the wrong entry
 # has to be undone before the right one is written.
 _UNDO = re.compile(r"شطب|غلط|خطأ|خطا|صحح|صحّح|تصحيح|عدل|عدّل|تعديل|بدلها|بدّلها|رجع|رجّع|الغ|ألغ|إلغ|امسح|إمسح|احذف|احذف|شيل|"
@@ -337,10 +353,16 @@ def _without_repeats(text: str) -> str:
     return " ".join(x for x in out if x).replace(" \n", "\n").strip()
 
 
+_DENIES_WRITE = re.compile(r"ما\s*(?:انسجل|تسجل(?!ن)|سجلت|سجّلت|انحفظ|حفظت)|ما گدرت أسجل|ما گدرت اسجل|لم يتم")
+
+
 def _final_reply(reply: str, tool_log: list[dict]) -> str:
     """The reply the owner sees: repeats dropped; after an undo, or when the text is garbled and
     something was written, the code's own sentence (and a clean question of the model kept)."""
     reply = _without_repeats(reply)
+    writes = [e for e in tool_log if e["tool"] in WRITE_TOOLS]
+    if writes and all(e["result"].get("ok") for e in writes) and _DENIES_WRITE.search(reply) and "؟" not in reply:
+        return _done_summary(tool_log) or reply  # 5-11-2026: "ما انسجل" about a withdrawal that was recorded
     undid = any(e["tool"] == "undo_last" and e["result"].get("ok") for e in tool_log)
     if undid or _garbled(reply):
         own = _undo_summary(tool_log)
@@ -704,10 +726,10 @@ class Agent:
         return allowed
 
     def _owner_allowed(self, session: Session, message: str) -> set[int]:
-        allowed = _owner_amounts(message)
+        allowed = _owner_amounts(_without_measures(message)) | _measures(message)
         history = session.history()
         for m in [m for m in history if m.get("role") == "user"][-RECENT_OWNER_MESSAGES:]:
-            allowed |= _owner_amounts(m.get("text", ""))
+            allowed |= _owner_amounts(_without_measures(m.get("text", ""))) | _measures(m.get("text", ""))
         if _agreed(message):  # "اي" to "تقصد 100,000؟": he agreed to that figure
             last = next((m for m in reversed(history) if m.get("role") == "assistant" and m.get("text")), None)
             if last:
@@ -724,7 +746,7 @@ class Agent:
                     "message": "صاحب المحل ما طلب إلغاء. لا تلغي شي إلا يطلبه هو بكلامه."}
         given = _GIVEN_ENTRY.search(message or "") if call.name == "undo_last" else None
         if given:  # the card's button names its entry: undo exactly that one, whatever the model chose
-            call.input = {"entry": ("tx:" if given.group(1) == "قيد" else "sale:") + given.group(2)}
+            call.input = {"entry": f"{_GIVEN_KIND[given.group(1)]}:{given.group(2)}"}
             return None
         if call.name == "undo_last" and not (call.input or {}).get("name"):
             named = _named_party(self.conn, message)
@@ -777,6 +799,11 @@ class Agent:
         bad = _guard_reason(call.name, args, self._owner_allowed(session, message), balance)
         if not bad:
             return None
+        unit = _MEASURE.search(message or "")
+        if unit and int(bad.replace(",", "")) in {round(float(unit.group(1).replace(",", "."))) * k for k in (1000, 1_000_000)}:
+            return {"ok": False, "error": "amount_not_from_owner",
+                    "message": f"\"{unit.group(0).strip()}\" هذا عدد مو فلوس، فما تسجل {bad}. اسأل صاحب المحل: "
+                               "شكد دفعت بالدينار؟ (أو سعر الوحدة حتى يضربه الكود)."}
         return {"ok": False, "error": "amount_not_from_owner",
                 "message": f"المبلغ {bad} ما مذكور بكلام صاحب المحل، فما تسجّل. لا تسجل مبلغ ما گاله هو: "
                            f"اسأله \"تقصد {bad}؟\" وسجل بس إذا وافق."}
