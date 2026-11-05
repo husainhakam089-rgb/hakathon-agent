@@ -600,6 +600,20 @@ _WEEKDAYS = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday":
 _ADD_ITEM = re.compile(r"ضيف|اضف|أضف|إضافة|اضافة|سجل\s+مادة|مادة\s+جديدة|صنف\s+جديد|نزل\s+مادة")
 
 
+def _written_amounts(text: str) -> set[int]:
+    """Amounts written in full in a normalized message: "3 مليون" / "مليون و200" / "1.5 مليون" /
+    "مليونين" / "1500 الف" / "3,000,000". (Unlike the amount guard, "3" is not 3,000,000 here.)"""
+    out = set()
+    for m in re.finditer(r"(?:(\d[\d,]*(?:\.\d+)?)\s*)?(مليونين|مليون|ملايين|ملاين)(?:\s*و\s*(\d[\d,]*))?", text):
+        n = 2 if m.group(2) == "مليونين" else float(m.group(1).replace(",", "")) if m.group(1) else 1
+        rest = int(m.group(3).replace(",", "")) if m.group(3) else 0
+        out.add(int(round(n * 1_000_000)) + (rest * 1000 if rest < 1000 else rest))
+    for m in re.finditer(r"(\d[\d,]*)(\s*الف)?", text):
+        n = int(m.group(1).replace(",", ""))
+        out.add(n * 1000 if m.group(2) else n)
+    return out
+
+
 def _error(code: str, message: str, **extra) -> dict:
     return {"ok": False, "error": code, "message": message, **extra}
 
@@ -786,13 +800,11 @@ class DebtTools:
         if self.source_message is None:  # a direct call (not from a chat message)
             return True
         text = normalize(self.source_message)
-        if re.search(r"مليون|ملايين|ملاين|مليار", text):
+        # 5-11-2026: "ابو علي عليه مليون تقريباً، سجل عليه 3" let 3,000,000 through: "مليون" anywhere counted.
+        # Now the figure he wrote must BE this amount.
+        if value in _written_amounts(text):
             return True
-        for m in re.finditer(r"(\d[\d,]*)\s*(الف)?", text):
-            n = int(m.group(1).replace(",", ""))
-            if n == value or (m.group(2) and n * 1000 == value):
-                return True
-        return bool(_REPEAT_OK.search(text)) and not re.search(r"\d", text)
+        return bool(_REPEAT_OK.search(text)) and not re.search(r"\d|مليون|ملايين|ملاين|مليونين", text)
 
     def _record(self, tx_type, customer_id, amount, currency="IQD", note=None, confirmed=False,
                 kind="customer", from_drawer=True):
@@ -1562,7 +1574,9 @@ class DebtTools:
         return {"ok": True, "count": len(memories), "memories": memories}
 
     def tool_undo_last(self, name=None, entry=None):
-        if entry is not None and str(entry).strip():
+        # 5-11-2026 online: the model put "payment" as the entry and the whole undo was refused though the
+        # name was there. Only an entry the card wrote ("tx:12", "sale:5") counts; anything else is ignored.
+        if entry is not None and re.fullmatch(r"(tx|sale):\d+", str(entry).strip()):
             return self._undo_given(str(entry).strip())
         if name is not None and str(name).strip():
             return self._undo_named(str(name).strip())
@@ -1599,6 +1613,17 @@ class DebtTools:
                 parties[party["id"]] = (party, i)
         matches = find_matches(name, [p for p, _ in parties.values()])
         if not matches:
+            # 5-11-2026: "مو وارد، تسديد" after "وارد محمد 7": a drawer cash-in or withdrawal has a label, not
+            # a person in the notebook; the last one with that name is the one meant.
+            q = normalize(name)
+            for i in range(last - 1, -1, -1):
+                entry = self.session_tx_ids[i]
+                if isinstance(entry, tuple) and entry[0] in ("cash_in", "withdrawal"):
+                    row = (db.get_cash_in if entry[0] == "cash_in" else db.get_withdrawal)(self.conn, entry[1])
+                    text = normalize((row or {}).get("label") or (row or {}).get("reason") or "")
+                    if q and (q == text or q in text.split()) and not row["undone"]:
+                        self.session_tx_ids.pop(i)
+                        return self._undo_entry(entry)
             return _error("nothing_to_undo", f"ما كو قيد لـ {name} بهالمحادثة حتى ألغيه. لا تلغي غيره: گول هذا لصاحب المحل.",
                           name=name)
         exact = [m for m in matches if m["normalized_name"] == normalize(name)]

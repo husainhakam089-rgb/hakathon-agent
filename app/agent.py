@@ -182,14 +182,15 @@ def _two_movements(message: str) -> bool:
 
 # 5-11-2026 (trial): after "سجل على ابو علي 10", "لا مو 10، 5 بس" recorded a NEW 5,000 and kept the 10,000.
 # A correction writes the right figure only after the wrong entry is undone.
-_CORRECTION = re.compile(r"(?:^|\s)مو\s*\d|صحح|صحّح|تصحيح|عدل|عدّل|تعديل|طلعت\s*\d|بدلها|بدّلها")
+_CORRECTION = re.compile(r"(?:^|\s)مو\s*\d|(?:^|\s)مو\s+(?:وارد|دين|تسديد|بيعة|بيعه|بيع|دفعة|دفعه|صادر|سحب|مصروف)|صحح|صحّح|تصحيح|عدل|عدّل|تعديل|طلعت\s*\d|بدلها|بدّلها")
 _RECORDS = {"record_debt", "record_payment", "record_purchase", "record_supplier_payment", "record_sale",
             "record_withdrawal", "record_cash_in"}
 _GIVEN_ENTRY = re.compile(r"\((قيد|بيعة) رقم (\d+)\)")
 # 5-11-2026: "لا مو 10، 5 بس"، "صححها"، "عدّلها"، "طلعت 5 مو 10"، "خطأ" are corrections too: the wrong entry
 # has to be undone before the right one is written.
 _UNDO = re.compile(r"شطب|غلط|خطأ|خطا|صحح|صحّح|تصحيح|عدل|عدّل|تعديل|بدلها|بدّلها|رجع|رجّع|الغ|ألغ|إلغ|امسح|إمسح|احذف|احذف|شيل|"
-                   r"(?:^|\s)مو\s*\d|undo", re.IGNORECASE)
+                   r"(?:^|\s)مو\s*\d|(?:^|\s)مو\s+(?:وارد|دين|تسديد|بيعة|بيعه|بيع|دفعة|دفعه|صادر|سحب|مصروف)|undo",
+                   re.IGNORECASE)
 RECENT_OWNER_MESSAGES = 3
 
 
@@ -268,6 +269,88 @@ NUMBER_NOTE = ("تنبيه من النظام (مو من صاحب المحل): ر
 
 def _money(amount: int, currency: str) -> str:
     return f"{amount:,} " + ("دولار" if currency == "USD" else "دينار")
+
+
+_UNDONE = {"debt": "الدين", "payment": "التسديد", "purchase": "وارد البضاعة", "supplier_payment": "الدفعة",
+           "sale": "البيعة", "cash_in": "الوارد", "withdrawal": "السحب"}
+
+
+def _undo_summary(tool_log: list[dict]) -> str:
+    """5-11-2026 online: after an undo the backup model wrote "تم شطّـب القيد 80، الرصيد الأصلي أصله أصلاً
+    أم ف ... ؟". What was undone (and written after it) is said by the code, from the tools."""
+    lines, balance = [], None
+    for e in tool_log:
+        r = e["result"]
+        if not r.get("ok"):
+            continue
+        if e["tool"] == "undo_last" and r.get("undone"):
+            u = r["undone"]
+            who = u.get("customer_name") or u.get("label") or u.get("reason") or ""
+            what = _UNDONE.get(u.get("type"), "القيد")
+            amount = f" {_money(u['amount'], u.get('currency', 'IQD'))}" if isinstance(u.get("amount"), int) else ""
+            lines.append(f"شطبت {what}{' مال ' + who if who else ''}{amount}")
+        elif e["tool"] in WRITE_TOOLS and e["tool"] != "undo_last":
+            lines += _done_items([e])
+        else:
+            continue
+        name = r.get("customer_name") or (r.get("undone") or {}).get("customer_name")
+        bal = r.get("balance")
+        if name and isinstance(bal, dict) and (r.get("ledger") or (r.get("undone") or {}).get("ledger")) != "supplier":
+            cur = r.get("currency") or (r.get("undone") or {}).get("currency") or "IQD"
+            balance = (name, bal.get(cur, 0), cur)
+    if not lines:
+        return ""
+    text = "، و".join(lines) + "."
+    if balance:
+        name, amount, cur = balance
+        text += (f" وصار على {name} {_money(amount, cur)}." if amount > 0 else
+                 f" وصار {name} ما عليه شي." if amount == 0 else f" وصار إله عندك {_money(-amount, cur)}.")
+    return text
+
+
+_HIDDEN = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff\u0640]")
+
+
+def _garbled(text: str) -> bool:
+    """Hidden characters, a word said twice in a row, or "..." in the middle of a sentence."""
+    if _HIDDEN.search(text or ""):
+        return True
+    words = re.sub(r"[^\w\s]", " ", normalize(text or "")).split()
+    return any(a == b and len(a) > 1 and not a.isdigit() for a, b in zip(words, words[1:])) or "..." in (text or "") \
+        or "…" in (text or "")
+
+
+def _without_repeats(text: str) -> str:
+    """5-11-2026: the same words twice inside one part ("تمام، سجلت 10.تمام، سجلت 10.")."""
+    t = (text or "").strip()
+    half = len(t) // 2
+    for cut in (half, half + 1):  # the whole text said twice, with or without a space between
+        if len(t) > 12 and t[:cut].strip() == t[cut:].strip():
+            return t[:cut].strip()
+    seen, out = set(), []
+    for sentence in re.split(r"(?<=[.!؟?\n])\s*", t):
+        key = " ".join(sentence.split())
+        if len(key) > 6 and key in seen:
+            continue
+        seen.add(key)
+        out.append(sentence)
+    return " ".join(x for x in out if x).replace(" \n", "\n").strip()
+
+
+def _final_reply(reply: str, tool_log: list[dict]) -> str:
+    """The reply the owner sees: repeats dropped; after an undo, or when the text is garbled and
+    something was written, the code's own sentence (and a clean question of the model kept)."""
+    reply = _without_repeats(reply)
+    undid = any(e["tool"] == "undo_last" and e["result"].get("ok") for e in tool_log)
+    if undid or _garbled(reply):
+        own = _undo_summary(tool_log)
+        if own:
+            questions = [q for q in re.split(r"(?<=[.!؟?\n])\s*", reply) if q.strip().endswith("؟")]
+            ask = " ".join(questions) if questions and not _garbled(reply) else ""
+            return own + (" " + ask if ask else "")
+        if _garbled(reply):
+            reply = _HIDDEN.sub("", reply)
+    return reply
 
 
 def _named_party(conn, message: str) -> str | None:
@@ -587,6 +670,7 @@ class Agent:
 
         for at in sorted((i for i in (number_retry, empty_retry, claim_retry, held_retry) if i is not None), reverse=True):
             del turn[at:at + 2]  # keep the history clean: drop the rejected draft and the note
+        reply = _final_reply(reply, tool_log)
         turn.append({"role": "assistant", "text": reply, "tool_calls": []})
         session.commit(turn)
         session.last_errors = {e["result"].get("error") for e in tool_log if e["result"].get("error")}

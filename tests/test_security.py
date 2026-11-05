@@ -413,3 +413,60 @@ def test_a_customers_money_is_not_a_drawer_cash_in(conn):
                   log_path=None)
     agent.chat("u", "ام حسين جابت 10 الاف")
     assert agent.chat("u", "لا، وارد للجرار")["tool_calls"][0]["result"]["ok"]
+
+
+# ---------- 5-11-2026 (second round): found by the owner ----------
+def test_a_bad_entry_number_falls_back_to_the_name(conn):
+    """The model put "payment" as the entry; the undo was refused though أم حسين was named."""
+    from app.tools import DebtTools
+    um = db.add_customer(conn, "أم حسين")
+    tools = DebtTools(conn)
+    tools.source_message = "ام حسين دفعت 10"
+    tools.execute("record_payment", {"customer_id": um, "amount": 10000})
+    tools.turn_start = len(tools.session_tx_ids)
+    r = tools.execute("undo_last", {"name": "أم حسين", "entry": "payment"})
+    assert r["ok"] and r["undone"]["amount"] == 10000
+
+
+def test_the_code_says_what_was_undone(conn):
+    um = db.add_customer(conn, "أم حسين")
+    db.add_transaction(conn, um, "debt", 10750)
+    garbled = LLMResponse(text="تم شطّـب القيد 80، الرصيد الأصلي أصله أصلاً أم ف ... ؟")
+    agent = Agent(conn, llm=FakeLLM(_pay(10000, um), LLMResponse(text="تمام"),
+                                    _call("undo_last", entry="payment"), garbled), log_path=None)
+    agent.chat("s", "ام حسين دفعت 10")
+    reply = agent.chat("s", "شطبها")["reply"]
+    assert reply == "شطبت التسديد مال أم حسين 10,000 دينار. وصار على أم حسين 10,750 دينار."
+
+
+def test_a_correction_without_a_number(conn):
+    from app.agent import _CORRECTION, _UNDO
+    for msg in ("مو وارد، تسديد", "مو دين هاي تسديد", "لا مو 10، جابت 5 بس"):
+        assert _UNDO.search(msg) and _CORRECTION.search(msg), msg
+
+
+def test_million_elsewhere_in_the_message_does_not_confirm_another_amount(conn):
+    a = db.add_customer(conn, "أبو علي")
+    big = _call("record_debt", customer_id=a, amount=3_000_000, currency="IQD", confirmed=True)
+    agent = Agent(conn, llm=FakeLLM(big, LLMResponse(text="تقصد 3,000,000؟")), log_path=None)
+    r = agent.chat("s", "ابو علي عليه مليون تقريباً، سجل عليه 3")["tool_calls"][0]["result"]
+    assert not r["ok"] and db.get_balance(conn, a)["IQD"] == 0
+
+
+def test_repeats_inside_one_part_are_dropped():
+    from app.agent import _final_reply, _without_repeats
+    assert _without_repeats("تمام، سجلت 10,000.تمام، سجلت 10,000.") == "تمام، سجلت 10,000."
+    assert _without_repeats("تمام، سجلت 10,000. تمام، سجلت 10,000. باقي عليه 5,000.") == \
+        "تمام، سجلت 10,000. باقي عليه 5,000."
+    assert _final_reply("أبو علي عليه 77,500 دينار.", []) == "أبو علي عليه 77,500 دينار."
+
+
+def test_a_drawer_cash_in_is_undone_by_its_name(conn):
+    """"مو وارد، تسديد من ام حسين" after "وارد محمد 7": the undo by name did not find محمد."""
+    from app.tools import DebtTools
+    tools = DebtTools(conn)
+    tools.source_message = "وارد محمد 7"
+    assert tools.execute("record_cash_in", {"amount": 7000, "label": "محمد"})["ok"]
+    tools.turn_start = len(tools.session_tx_ids)
+    r = tools.execute("undo_last", {"name": "محمد"})
+    assert r["ok"] and r["undone"]["type"] == "cash_in" and r["undone"]["amount"] == 7000

@@ -213,7 +213,8 @@ def test_conversation_survives_a_restart(conn, tmp_path):
     msgs = db.get_messages(conn, "s1")
     assert [(m["role"], m["text"]) for m in msgs] == [
         ("user", "سجل على ابو علي 25 الف"), ("assistant", "سجلت 25,000."),
-        ("user", "شطب آخر وحدة"), ("assistant", "لغيته.")]
+        ("user", "شطب آخر وحدة"),
+        ("assistant", "شطبت الدين مال أبو علي 25,000 دينار. وصار أبو علي ما عليه شي.")]
     assert msgs[1]["tool_calls"][0]["tool"] == "record_debt"
     assert conn.execute("SELECT source FROM chat_messages ORDER BY id").fetchone()[0] == "voice"
     sessions = db.list_sessions(conn)
