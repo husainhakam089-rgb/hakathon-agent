@@ -345,10 +345,11 @@ def test_behind_our_proxy_only_its_own_entry_counts(client, monkeypatch):
     for i in range(6):
         r = client.post("/login", data={"password": "x"}, headers={"X-Forwarded-For": f"1.2.3.{i}, 5.5.5.5"})
     assert "محاولات هواية" in r.text
-    # many real addresses together still hit the backstop
+    # 5-11-2026: wrong tries from many addresses never lock out anyone else's right password
     auth._tries.clear()
-    for i in range(auth.MAX_TRIES_ALL):
+    for i in range(30):
         client.post("/login", data={"password": "x"}, headers={"X-Forwarded-For": f"6.6.6.{i}"})
-    assert "محاولات هواية" in client.post("/login", data={"password": "sirr-123"},
-                                          headers={"X-Forwarded-For": "7.7.7.7"}).text
+    r = client.post("/login", data={"password": "sirr-123"}, headers={"X-Forwarded-For": "7.7.7.7"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and "محاولات هواية" not in r.text
     auth._tries.clear()

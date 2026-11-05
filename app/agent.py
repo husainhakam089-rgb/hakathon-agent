@@ -160,8 +160,9 @@ def _agreed(message: str) -> bool:
 # is two movements, shown to the owner before either is written. ("ما دفع" = didn't pay: not a payment.)
 _PAID_WORD = re.compile(r"(?<!\w)(?<!ما )(?<!لا )(?<!مو )و?(?P<w>دفع|دفعت|دفعلي|دفعها|دفعهن|سدد|سددت|سددلي|سدده|سددها|"
                         r"جاب|جابت|جابلي|جابتلي|نطاني|نطتني|انطاني|انطتني|نطي|نطت|نطالي|عطاني|عطتني|اعطاني|"
-                        r"اعطتني|عطي|عطت|واصلني|واصلتني)(?!\w)")
-_TOOK_WORD = re.compile(r"(?<!\w)و?(?:خذ|اخذ|ياخذ|خذت|اخذت(?!\s+من(?:ه|ها)\b)|خذا|شال|شالت|دين|بالدين|ع?الحساب|"
+                        r"اعطتني|عطي|عطت|واصلني|واصلتني|(?<!علي )(?<!عل )(?<!ل)واصل|دز|دزت|دزلي|دزتلي|حول|حولت|حولي|حولتلي|"
+                        r"(?:خلص|خلصت|صفي|صفا|صفت)\s+حساب(?:ه|ها)?)(?!\w)")
+_TOOK_WORD = re.compile(r"(?<!\w)و?(?:سجل(?:ها|ه|هن)?\s+(?:علي|عليه|عليها|عل)|خذ|اخذ|ياخذ|خذت|اخذت(?!\s+من(?:ه|ها)\b)|خذا|شال|شالت|دين|بالدين|ع?الحساب|"
                         r"عالدفتر|(?<!اللي )(?<!الي )(?<!ما )عليه|(?<!اللي )(?<!الي )(?<!ما )عليها)(?!\w)")
 
 
@@ -179,7 +180,16 @@ def _two_movements(message: str) -> bool:
     return bool(paid) and bool(_TOOK_WORD.search(text[:paid.start()] + " " + text[paid.end():]))
 
 
-_UNDO = re.compile(r"شطب|غلط|رجع|رجّع|الغ|ألغ|إلغ|امسح|إمسح|احذف|احذف|شيل|undo", re.IGNORECASE)
+# 5-11-2026 (trial): after "سجل على ابو علي 10", "لا مو 10، 5 بس" recorded a NEW 5,000 and kept the 10,000.
+# A correction writes the right figure only after the wrong entry is undone.
+_CORRECTION = re.compile(r"(?:^|\s)مو\s*\d|صحح|صحّح|تصحيح|عدل|عدّل|تعديل|طلعت\s*\d|بدلها|بدّلها")
+_RECORDS = {"record_debt", "record_payment", "record_purchase", "record_supplier_payment", "record_sale",
+            "record_withdrawal", "record_cash_in"}
+_GIVEN_ENTRY = re.compile(r"\((قيد|بيعة) رقم (\d+)\)")
+# 5-11-2026: "لا مو 10، 5 بس"، "صححها"، "عدّلها"، "طلعت 5 مو 10"، "خطأ" are corrections too: the wrong entry
+# has to be undone before the right one is written.
+_UNDO = re.compile(r"شطب|غلط|خطأ|خطا|صحح|صحّح|تصحيح|عدل|عدّل|تعديل|بدلها|بدّلها|رجع|رجّع|الغ|ألغ|إلغ|امسح|إمسح|احذف|احذف|شيل|"
+                   r"(?:^|\s)مو\s*\d|undo", re.IGNORECASE)
 RECENT_OWNER_MESSAGES = 3
 
 
@@ -380,6 +390,9 @@ class Session:
         self.tools.session_id = session_id  # stamped on every entry it records
         # Completed turns; each turn is a list of neutral messages (see llm.py).
         self.turns: list[list[dict]] = []
+        self.last_errors: set[str] = set()  # what the code refused in the last message (its questions)
+        self.undid_this_turn = False  # an undo worked in this message
+        self.correction_asked = False  # this message was already sent back to undo first
         if session_id:
             self._restore(conn, session_id)
 
@@ -393,6 +406,13 @@ class Session:
             self.turns.append([{"role": "user", "text": user["text"]},
                                {"role": "assistant", "text": reply["text"], "tool_calls": []}])
         self.tools.session_tx_ids = db.session_entries(conn, session_id)
+
+    def last_reply(self) -> str:
+        return (self.turns[-1][-1].get("text") or "") if self.turns and self.turns[-1] else ""
+
+    def answering(self, error: str, message: str) -> bool:
+        """The owner is saying yes to the question the code made the agent ask last message."""
+        return error in self.last_errors and _agreed(message)
 
     def history(self) -> list[dict]:
         return [m for turn in self.turns for m in turn]
@@ -454,6 +474,7 @@ class Agent:
         session.tools.source_message = message
         session.tools.source = source
         session.tools.turn += 1
+        session.undid_this_turn = session.correction_asked = False
         session.tools._turn_entries = set()
         session.tools.turn_start = len(session.tools.session_tx_ids)  # this message never undoes its own entries
         turn: list[dict] = [{"role": "user", "text": message}]
@@ -560,6 +581,7 @@ class Agent:
             del turn[at:at + 2]  # keep the history clean: drop the rejected draft and the note
         turn.append({"role": "assistant", "text": reply, "tool_calls": []})
         session.commit(turn)
+        session.last_errors = {e["result"].get("error") for e in tool_log if e["result"].get("error")}
         self._save(session_id, message, reply, tool_log, source)
         return {"reply": reply, "tool_calls": tool_log}
 
@@ -603,24 +625,38 @@ class Agent:
     def _guard(self, session: Session, message: str, call) -> dict | None:
         """None when the call may run; otherwise the refusal the model gets instead."""
         if call.name in ("undo_last", "undo_batch") and not _UNDO.search(message or "") \
-                and not _AFFIRM.match(message or ""):
+                and not (_agreed(message) and _UNDO.search(session.last_reply()) and "؟" in session.last_reply()):
             return {"ok": False, "error": "undo_not_asked",
                     "message": "صاحب المحل ما طلب إلغاء. لا تلغي شي إلا يطلبه هو بكلامه."}
+        given = _GIVEN_ENTRY.search(message or "") if call.name == "undo_last" else None
+        if given:  # the card's button names its entry: undo exactly that one, whatever the model chose
+            call.input = {"entry": ("tx:" if given.group(1) == "قيد" else "sale:") + given.group(2)}
+            return None
         if call.name == "undo_last" and not (call.input or {}).get("name"):
             named = _named_party(self.conn, message)
             if named:  # the owner named someone: undo that person's entry, not just the last one
                 call.input = {**(call.input or {}), "name": named}
+        # 5-11-2026: "سجل ابو علي دفع 20 الف" starts with a yes-word and slipped past both checks. Only an
+        # answer to the question these checks asked lets the same words through.
         if call.name in ("record_debt", "record_payment", "record_sale") and _two_movements(message) \
-                and not _AFFIRM.match(message or ""):
+                and not session.answering("two_movements", message):
             return {"ok": False, "error": "two_movements",
                     "message": "رسالة صاحب المحل بيها حركتين: تسديد (دفع) وأخذ بضاعة أو دين. لا تسجل ولا وحدة هسه: "
                                "اعرضهن عليه سطر سطر (١- فلان دفع كذا، ينزل من دينه. ٢- أخذ كذا دين/بيع، يصعد عليه) "
                                "واسأله \"أسجل الاثنين؟\" وسجل بس من يوافق."}
         paid = _paid_word(message) if call.name == "record_debt" else None
-        if paid and not _AFFIRM.match(message or ""):
+        if paid and any(paid in normalize(c["name"]).split() for c in db.all_customers(self.conn)):
+            paid = None  # "واصل" is also a name
+        if paid and not session.answering("looks_like_payment", message):
             return {"ok": False, "error": "looks_like_payment",
                     "message": f"صاحب المحل گال \"{paid}\" يعني الزبون دفع فلوس: هذا تسديد (record_payment، ينزل من دينه) "
                                f"مو دين. لا تسجل دين. اسأله \"تقصد دفع (تسديد)؟\" وسجل بس من يجاوب."}
+        if call.name in _RECORDS and _CORRECTION.search(message or "") and not session.undid_this_turn \
+                and not session.correction_asked and session.tools.turn_start:
+            session.correction_asked = True  # once: if nothing was wrong to undo, the model may go on
+            return {"ok": False, "error": "correct_first",
+                    "message": "صاحب المحل يصحح قيد سجلته قبل. أول شي ألغي القيد الغلط (undo_last ويا اسم الشخص)، "
+                               "بعدين سجل المبلغ الصح. لا تسجل المبلغ الجديد فوگ الغلط."}
         if call.name not in GUARDED_AMOUNTS:
             return None
         args = call.input or {}
@@ -642,6 +678,8 @@ class Agent:
         started = time.perf_counter()
         try:
             result = self._guard(session, message, call) or session.tools.execute(call.name, call.input)
+            if call.name in ("undo_last", "undo_batch") and result.get("ok"):
+                session.undid_this_turn = True
         except Exception as e:
             log.exception("Tool %s crashed", call.name)
             result = {"ok": False, "error": "tool_crashed", "message": str(e)}

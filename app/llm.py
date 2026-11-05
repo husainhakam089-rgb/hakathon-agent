@@ -29,6 +29,27 @@ _FALLBACK_MODELS = {"claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "cl
 log = logging.getLogger("debt_agent")
 
 
+
+def _join_parts(texts) -> str:
+    """The text parts of one reply as one text. 5-11-2026: "تم شطب القيد.قيد الدين انحذف" — Gemini's parts
+    were glued with no space, and sometimes the same part came twice. A part already said is dropped;
+    two parts that touch get a line break after a sentence's end, a space otherwise."""
+    out = ""
+    for part in texts:
+        piece = part.strip()
+        if not piece:
+            continue
+        if piece == out.strip() or (len(piece) > 10 and piece in out):
+            continue  # the same words again
+        if out and (piece.startswith(out.strip()) or (len(out) > 10 and out.strip() in piece)):
+            out = ""  # this part repeats the earlier one and goes on: keep just this one
+        if out and not out[-1].isspace() and not part[:1].isspace():
+            out += "\n" if out[-1] in ".!؟?:،" else " "
+        elif out:
+            out += "\n" if out.rstrip()[-1:] in ".!؟?" else " "
+        out += piece
+    return out.strip()
+
 class LLMError(Exception):
     """Model call failed. `user_message` is safe to show to the shop owner (Arabic)."""
 
@@ -113,7 +134,7 @@ class AnthropicLLM:
         if response.stop_reason == "max_tokens":
             raise LLMError("الرد طلع طويل وانقطع، عيد الطلب بطريقة أبسط.", "max_tokens", retryable=True)
 
-        text = "".join(b.text for b in response.content if b.type == "text").strip()
+        text = _join_parts(b.text for b in response.content if b.type == "text")
         calls = [ToolCall(b.id, b.name, dict(b.input)) for b in response.content if b.type == "tool_use"]
         return LLMResponse(text=text, tool_calls=calls, raw=list(response.content))
 
@@ -205,6 +226,7 @@ class GeminiLLM:
         fallbacks = DEFAULT_GEMINI_FALLBACKS if fallbacks is None else fallbacks.split(",")
         self.models = list(dict.fromkeys([self.model] + [m.strip() for m in fallbacks if m.strip()]))
         self._out_of_quota: dict[str, date] = {}  # model -> day its daily quota ran out
+        self._busy_until: dict[str, float] = {}  # model -> until when it is tried last (overloaded or slow)
         self.max_tokens = max_tokens
         # How much the model thinks before answering: minimal / low / medium / high.
         # Each message needs 2-3 model calls, so less thinking = noticeably faster replies.
@@ -215,9 +237,10 @@ class GeminiLLM:
         # Gemini often answers 503 "high demand" for a moment: retry those (then
         # switch model). 429 is not retried: on the free tier it is usually the daily quota.
         self.http_options = types.HttpOptions(
-            # ms, per attempt. A timeout is retried too, so a stuck model costs 2 x 40 s at most
-            # before the next model is tried (it used to be 3 x 60 s).
-            timeout=40_000,
+            # ms, per attempt. A timeout is retried too, so a stuck model costs 2 x 20 s at most
+            # before the next model is tried (it was 2 x 40 s: 5-11-2026 replies took 35-89 s while
+            # "high demand" models hung; a normal call takes 2-11 s).
+            timeout=20_000,
             retry_options=types.HttpRetryOptions(
                 attempts=2, initial_delay=1.0, max_delay=4.0,
                 http_status_codes=[408, 500, 502, 503, 504]))
@@ -261,6 +284,8 @@ class GeminiLLM:
     # ----- main call -----
 
     MAX_RATE_LIMIT_WAIT = 60  # seconds: a per-minute window never needs more
+    BUSY_FOR = 600  # seconds a model that was overloaded or too slow goes to the back of the line
+    SWITCH_BUDGET = 30  # seconds spent on models that failed before giving up (the backup takes over)
 
     @staticmethod
     def _retry_delay(e) -> float | None:
@@ -284,13 +309,22 @@ class GeminiLLM:
         if can_switch:
             candidates = [self.model] + [m for m in self.models if m != self.model]
             candidates = [m for m in candidates if self._out_of_quota.get(m) != today]
+            now = time.time()  # models busy a moment ago go last (5-11-2026: each cost 60-80 s again)
+            candidates.sort(key=lambda m: self._busy_until.get(m, 0) > now)
         else:
             candidates = [self.model]
         rate_limited = []  # (model, error) hit by a per-minute limit
         last_error = None
+        started = time.monotonic()
         for model in candidates:
+            if last_error is not None and time.monotonic() - started > self.SWITCH_BUDGET:
+                log.warning("Gemini models failing for %.0f s: giving the message to the backup",
+                            time.monotonic() - started)
+                break
+            tried_at = time.monotonic()
             try:
-                response = self._generate_with(model, contents, config, wait=not can_switch)
+                response = self._generate_with(model, contents, config, wait=not can_switch,
+                                               quick=can_switch and model != candidates[-1])
                 self.model = model
                 return response
             except errors.ClientError as e:
@@ -301,11 +335,13 @@ class GeminiLLM:
                 elif e.code != 404:
                     raise
                 last_error = e
-            except errors.ServerError as e:  # still overloaded after retries
+            except (errors.ServerError, self._httpx.TimeoutException) as e:  # overloaded or too slow: the next
                 last_error = e
-            except self._httpx.TimeoutException as e:  # this model is too slow right now: try the next
-                last_error = e
-        if rate_limited:  # every usable model is busy this minute: wait for the first one
+                self._busy_until[model] = time.time() + self.BUSY_FOR
+                log.warning("Gemini %s busy or slow (%.0f s, %s): trying the next model",
+                            model, time.monotonic() - tried_at, type(e).__name__)
+        if rate_limited and time.monotonic() - started <= self.SWITCH_BUDGET:
+            # every usable model is busy this minute: wait for the first one
             model, first_error = rate_limited[0]
             response = self._generate_with(model, contents, config, wait=True, first_error=first_error)
             self.model = model
@@ -314,7 +350,7 @@ class GeminiLLM:
             raise LLMError(ALL_QUOTA_USED, "all Gemini models out of daily quota")
         raise last_error
 
-    def _generate_with(self, model, contents, config, wait: bool, first_error=None):
+    def _generate_with(self, model, contents, config, wait: bool, first_error=None, quick=False):
         """Free tier allows only a few requests per minute. With `wait`, when Gemini
         says how long to wait, wait and retry, up to MAX_RATE_LIMIT_WAIT in total."""
         waited = 0.0
@@ -326,6 +362,9 @@ class GeminiLLM:
                     raise error
                 time.sleep(delay + 1)
                 waited += delay + 1
+            if quick:  # at a turn's start a busy model is not asked twice: the next one is (5-11-2026)
+                config = config.model_copy(update={"http_options": self.types.HttpOptions(
+                    retry_options=self.types.HttpRetryOptions(attempts=1))})
             try:
                 return self.client.models.generate_content(model=model, contents=contents, config=config)
             except self._errors.ClientError as e:
@@ -356,7 +395,7 @@ class GeminiLLM:
                                     t.FinishReason.BLOCKLIST, t.FinishReason.SPII):
             return LLMResponse(text="", refused=True)
 
-        text = "".join(p.text for p in parts if p.text and not p.thought).strip()
+        text = _join_parts(p.text for p in parts if p.text and not p.thought)
         calls = []
         for i, p in enumerate(parts):
             if p.function_call:

@@ -690,3 +690,42 @@ def test_groq_asks_gpt_oss_to_think_little():
     with pytest.raises(LLMError) as e:
         _groq(lambda req: _reply({"content": ""}, finish="length")).complete("s", [{"role": "user", "text": "x"}], [])
     assert e.value.retryable  # the agent starts the message again once
+
+
+# ---------- 5-11-2026: replies took 35-89 s while "high demand" models hung ----------
+def test_a_busy_model_goes_to_the_back_of_the_line():
+    busy = (503, {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}})
+    llm, urls = _gemini_raising([busy, _ok([{"text": "هلا"}]), _ok([{"text": "هلا"}])], ["m1", "m2", "m3"])
+    llm.complete("s", [{"role": "user", "text": "هلا"}], [])
+    llm.model = "m1"  # even as the first choice, the busy one waits its turn for 10 minutes
+    llm.complete("s", [{"role": "user", "text": "هلا"}], [])
+    assert ["m1" in urls[0], "m2" in urls[1], "m2" in urls[2]] == [True, True, True]
+
+
+def test_switching_models_stops_after_its_time(monkeypatch):
+    from app import llm as L
+    clock = iter(range(0, 1000, 20))  # every model call "takes" 20 s
+    monkeypatch.setattr(L.time, "monotonic", lambda: next(clock))
+    llm, urls = _gemini_raising([httpx.ReadTimeout("slow")] * 5, ["m1", "m2", "m3", "m4", "m5"])
+    with pytest.raises(LLMError) as e:
+        llm.complete("s", [{"role": "user", "text": "هلا"}], [])
+    assert e.value.retryable and len(urls) < 5  # the backup takes over instead of trying all five
+
+
+def test_reply_parts_are_not_glued_or_repeated():
+    from app.llm import _join_parts
+    assert _join_parts(["تم شطب القيد.", "قيد الدين انحذف"]) == "تم شطب القيد.\nقيد الدين انحذف"
+    assert _join_parts(["تمام، سجلت 20,000.", "تمام، سجلت 20,000."]) == "تمام، سجلت 20,000."
+    assert _join_parts(["تمام", "تمام، سجلت 20,000 على أبو علي."]) == "تمام، سجلت 20,000 على أبو علي."
+    assert _join_parts(["أبو علي دفع ", "20 الف"]) == "أبو علي دفع 20 الف"
+    llm = _gemini([_ok([{"text": "تم شطب القيد."}, {"text": "قيد الدين انحذف"}])])
+    assert llm.complete("s", [{"role": "user", "text": "شطبها"}], []).text == "تم شطب القيد.\nقيد الدين انحذف"
+
+
+def test_at_the_start_a_busy_model_is_asked_once_when_another_is_left():
+    busy = (503, {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}})
+    urls = []
+    llm = _gemini([busy, _ok([{"text": "هلا"}])], models=["m1", "m2"], urls=urls)
+    llm.model = "m1"
+    assert llm.complete("s", [{"role": "user", "text": "هلا"}], []).text == "هلا"
+    assert "m1" in urls[0] and "m2" in urls[1] and len(urls) == 2

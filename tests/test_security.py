@@ -307,3 +307,83 @@ def test_a_held_write_is_always_asked_about(conn):
     assert "تسديد 20,000" in r["reply"] and "؟" in r["reply"]
     agent = Agent(conn, llm=FakeLLM(_pay(20000, a), LLMResponse(text="نفس الدفعة لو ثانية؟")), log_path=None)
     assert agent.chat("t", "ابو علي دفع 20")["reply"] == "نفس الدفعة لو ثانية؟"
+
+
+# ---------- 5-11-2026: found by the owner ----------
+def test_the_cards_undo_button_undoes_its_own_entry(conn):
+    """"شطبها" on the payment card of "دفعت 5,000 وأخذت شكر دين" undid the sugar, not the payment."""
+    um = db.add_customer(conn, "أم حسين")
+    db.add_transaction(conn, um, "debt", 10750)
+    pay = _pay(5000, um)
+    debt = _call("record_debt", customer_id=um, amount=1250, currency="IQD")
+    undo = LLMResponse(text="", tool_calls=[ToolCall("u", "undo_last", {"name": "أم حسين"})])  # her LAST entry
+    agent = Agent(conn, llm=FakeLLM(pay, LLMResponse(text="."), debt, LLMResponse(text="."),
+                                    undo, LLMResponse(text="شطبتها")), log_path=None)
+    paid = agent.chat("s", "ام حسين دفعت 5")["tool_calls"][0]["result"]
+    agent.chat("s", "سجل على ام حسين 1250 شكر")
+    r = agent.chat("s", f"أم حسين غلط، شطبها (قيد رقم {paid['transaction_id']})")["tool_calls"][0]
+    assert r["result"]["undone"]["transaction_id"] == paid["transaction_id"]
+    assert db.get_balance(conn, um)["IQD"] == 10750 + 1250  # the payment is gone, the sugar stays
+
+
+def test_a_correction_may_undo(conn):
+    a = db.add_customer(conn, "أبو علي")
+    for msg in ("لا مو 10، 5 بس", "صححها", "عدّلها", "طلعت 5 مو 10", "خطأ"):
+        undo = _call("undo_last")
+        agent = Agent(conn, llm=FakeLLM(_call("record_debt", customer_id=a, amount=10000, currency="IQD"),
+                                        LLMResponse(text="."), undo, LLMResponse(text="شطبتها")), log_path=None)
+        agent.chat("s", "سجل على ابو علي 10")
+        assert agent.chat("s", msg)["tool_calls"][0]["result"]["ok"], msg
+    assert db.get_balance(conn, a)["IQD"] == 0
+
+
+def test_a_yes_word_at_the_start_does_not_switch_the_checks_off(conn):
+    a = db.add_customer(conn, "أبو علي")
+    db.add_transaction(conn, a, "debt", 77500)
+    agent = Agent(conn, llm=FakeLLM(_call("record_debt", customer_id=a, amount=20000, currency="IQD"),
+                                    LLMResponse(text="تقصد دفع؟")), log_path=None)
+    assert agent.chat("s", "سجل ابو علي دفع 20 الف")["tool_calls"][0]["result"]["error"] == "looks_like_payment"
+    agent = Agent(conn, llm=FakeLLM(_pay(10000, a), LLMResponse(text="أسجل الاثنين؟")), log_path=None)
+    assert agent.chat("s", "سجل على ابو علي 20 ودفع 10")["tool_calls"][0]["result"]["error"] == "two_movements"
+    undo = _call("undo_last")
+    agent = Agent(conn, llm=FakeLLM(undo, LLMResponse(text=".")), log_path=None)
+    assert agent.chat("s", "سجل على ابو علي 5")["tool_calls"][0]["result"]["error"] == "undo_not_asked"
+    assert db.get_balance(conn, a)["IQD"] == 77500
+
+
+def test_the_model_cannot_confirm_a_large_amount_itself(conn):
+    """"سجل على ابو علي 3" read as 3,000,000 with confirmed=true set by the model."""
+    a = db.add_customer(conn, "أبو علي")
+    big = _call("record_debt", customer_id=a, amount=3_000_000, currency="IQD", confirmed=True)
+    agent = Agent(conn, llm=FakeLLM(big, LLMResponse(text="تقصد 3,000,000؟"), big, LLMResponse(text="سجلت")),
+                  log_path=None)
+    assert agent.chat("s", "سجل على ابو علي 3")["tool_calls"][0]["result"]["error"] in (
+        "confirmation_required", "amount_not_from_owner")
+    assert db.get_balance(conn, a)["IQD"] == 0
+    assert agent.chat("s", "اي")["tool_calls"][0]["result"]["ok"]  # his yes to the question
+    for msg in ("سجل على ابو علي 3 مليون", "سجل على ابو علي 3,000,000"):
+        agent = Agent(conn, llm=FakeLLM(big, LLMResponse(text="سجلت")), log_path=None)
+        assert agent.chat(msg, msg)["tool_calls"][0]["result"]["ok"], msg
+
+
+def test_more_payment_words():
+    from app.agent import _paid_word, _two_movements
+    for msg in ("ابو علي دز 20 زين كاش", "ابو علي حوّل 20", "واصل من ابو علي 20", "ابو علي خلّص حسابه",
+                "ابو علي صفّى حسابه", "ام حسين صفّت حسابها"):
+        assert _paid_word(msg), msg
+    assert not _paid_word("سجل على واصل 20") and not _paid_word("ابو علي ما دفع")
+    assert _two_movements("سجل على ابو علي 20 ودفع 10") and not _two_movements("ابو علي دفع 20 من دينه")
+
+
+def test_a_correction_undoes_before_it_writes(conn):
+    """"لا مو 10، 5 بس" recorded a new 5,000 on top of the 10,000."""
+    a = db.add_customer(conn, "أبو علي")
+    five = _call("record_debt", customer_id=a, amount=5000, currency="IQD")
+    undo = LLMResponse(text="", tool_calls=[ToolCall("u", "undo_last", {"name": "أبو علي"})])
+    agent = Agent(conn, llm=FakeLLM(_call("record_debt", customer_id=a, amount=10000, currency="IQD"),
+                                    LLMResponse(text="."), five, undo, five, LLMResponse(text="صححتها")),
+                  log_path=None)
+    agent.chat("s", "سجل على ابو علي 10")
+    calls = agent.chat("s", "لا مو 10، 5 بس")["tool_calls"]
+    assert [c["result"].get("error") or "ok" for c in calls] == ["correct_first", "ok", "ok"]
+    assert db.get_balance(conn, a)["IQD"] == 5000

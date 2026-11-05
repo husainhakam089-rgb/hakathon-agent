@@ -892,7 +892,7 @@ function addAgent(text, toolCalls, isError) {
   if (receipts.length) {
     // a short "تمام، سجلت..." says what the card says: the card alone; anything longer keeps the text too
     if (text.length < 140 && !text.includes('؟')) wrap.querySelector('.msg').remove();
-    for (const c of receipts.slice(0, 4)) wrap.insertAdjacentHTML('beforeend', receiptCard(c));
+    wrap.insertAdjacentHTML('beforeend', receiptCards(receipts.slice(0, 4)));
   }
   const choices = isError ? [] : answerChoices(text, toolCalls || []);
   if (choices.length) wrap.insertAdjacentHTML('beforeend', `<div class="ans">${choices.map((c, i) =>
@@ -915,24 +915,49 @@ function addAgent(text, toolCalls, isError) {
 /* ---------- the reply as cards (31-10-2026): a receipt for what was recorded, buttons to answer ----------
    Drawn from the tool results only: every figure on a card is what the code returned. */
 const RECEIPT_TOOLS = {record_debt: 'دين على', record_payment: 'تسديد من', record_purchase: 'بضاعة بالدين من',
-  record_supplier_payment: 'دفعة إلى'};
-function receiptCard(c) {
-  const r = c.result, sup = r.ledger === 'supplier';
-  const name = sup ? r.supplier_name : r.customer_name;
+  record_supplier_payment: 'دفعة إلى', record_sale: 'بيعة'};  // 5-11-2026: the sale had no card
+// How much one card moved the balance of its person (0 when it did not touch it: a cash sale).
+function moved(c) {
+  const r = c.result;
+  if (c.tool === 'record_sale') return r.payment === 'debt' ? r.total : 0;
+  return (c.tool === 'record_debt' || c.tool === 'record_purchase' ? 1 : -1) * r.amount;
+}
+// flow = {before, after} on the person's LAST card of the reply (5-11-2026: with a payment and a debt in
+// one message the payment card showed the balance between the two, 5,750, not the final 7,000).
+function receiptCard(c, flowFor) {
+  const r = c.result, sup = r.ledger === 'supplier', sale = c.tool === 'record_sale';
+  const name = (sup ? r.supplier_name : r.customer_name) || '';
   const cur = r.currency || 'IQD', word = cur === 'USD' ? 'دولار' : 'دينار';
-  const after = ((sup ? r.balance_owed_by_me : r.balance) || {})[cur];
-  const up = c.tool === 'record_debt' || c.tool === 'record_purchase';
-  const before = after == null ? null : after + (up ? -r.amount : r.amount);
+  const after = flowFor ? flowFor.after : null, before = flowFor ? flowFor.before : null;
   const flow = after == null ? '' : `<div class="flow">قبل ${before < 0 ? (sup ? 'إلك عنده ' : 'إله عندك ') + fmt(-before) : fmt(before)}<br>
     <b>${sup ? 'عليك إله' : after < 0 ? 'إله عندك' : 'صار عليه'} ${fmt(Math.abs(after))}</b></div>`;
-  const note = r.drawer ? ` · ${esc(r.drawer)}` : r.from_drawer === false ? ' · ما دخل الجرار' : '';
+  const note = sale ? ` · ${esc(r.what || '')}${r.payment === 'debt' ? ' · دين' : r.payment === 'cash' ? ' · كاش' : ''}`
+    : r.drawer ? ` · ${esc(r.drawer)}` : r.from_drawer === false ? ' · ما دخل الجرار' : '';
+  const title = sale ? `بيعة${name ? (r.payment === 'debt' ? ' دين على ' : ' لـ ') + esc(name) : ''}`
+    : `${RECEIPT_TOOLS[c.tool]} ${esc(name)}`;
+  const undo = `${name || 'البيعة'} غلط، شطبها (${sale ? 'بيعة رقم ' + r.sale_id : 'قيد رقم ' + r.transaction_id})`;
   return `<div class="rcpt">
-    <div class="rh"><div class="ok">${icon('check')}</div><div><b>تسجّل ${RECEIPT_TOOLS[c.tool]} ${esc(name)}</b>
+    <div class="rh"><div class="ok">${icon('check')}</div><div><b>تسجّل ${title}</b>
       <small>هسه${note}</small></div></div>
-    <div class="rb"><div class="amt">${fmt(r.amount)} <small>${word}</small></div>${flow}</div>
-    <div class="ra"><button type="button" data-say="${esc(name)} غلط، شطبها">↶ شطبها</button>
-      <button type="button" data-say="كشف حساب ${esc(name)}">كشف حسابه</button>
-      ${!sup && after > 0 ? `<button type="button" data-say="ذكّر ${esc(name)}">ذكّره</button>` : ''}</div></div>`;
+    <div class="rb"><div class="amt">${fmt(sale ? r.total : r.amount)} <small>${word}</small></div>${flow}</div>
+    <div class="ra"><button type="button" data-say="${esc(undo)}">↶ شطبها</button>
+      ${name ? `<button type="button" data-say="كشف حساب ${esc(name)}">كشف حسابه</button>` : ''}
+      ${name && !sup && after > 0 ? `<button type="button" data-say="ذكّر ${esc(name)}">ذكّره</button>` : ''}</div></div>`;
+}
+function receiptCards(receipts) {
+  const last = {}, total = {};
+  receipts.forEach((c, i) => {
+    const r = c.result, key = (r.ledger === 'supplier' ? 's:' + r.supplier_name : 'c:' + r.customer_name) + ':' + (r.currency || 'IQD');
+    c._key = key;
+    if (!(r.customer_name || r.supplier_name) || (c.tool === 'record_sale' && r.payment !== 'debt')) return;
+    last[key] = i;
+    total[key] = (total[key] || 0) + moved(c);
+  });
+  return receipts.map((c, i) => {
+    const r = c.result, cur = r.currency || 'IQD';
+    const after = last[c._key] === i ? ((r.ledger === 'supplier' ? r.balance_owed_by_me : r.balance) || {})[cur] : null;
+    return receiptCard(c, after == null ? null : {after, before: after - total[c._key]});
+  }).join('');
 }
 // The agent asked something it can be answered with one press: the choices come from what the tools said.
 function answerChoices(text, calls) {

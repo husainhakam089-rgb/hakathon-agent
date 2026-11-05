@@ -120,7 +120,9 @@ TOOL_SCHEMAS = [
                        "مرر name: يلغي آخر قيد لهذا الشخص بالذات، مو آخر قيد بالمحادثة.",
         "input_schema": {
             "type": "object",
-            "properties": {"name": {"type": "string", "description": "اسم الزبون أو المورد اللي يريد يلغي قيده، اختياري"}},
+            "properties": {"name": {"type": "string", "description": "اسم الزبون أو المورد اللي يريد يلغي قيده، اختياري"},
+                           "entry": {"type": "string", "description": "رقم القيد بالضبط إذا صاحب المحل ذكره "
+                                     "(\"قيد رقم 12\" = tx:12، \"بيعة رقم 5\" = sale:5)، اختياري"}},
         },
     },
     {
@@ -569,7 +571,7 @@ _OWNER_TOOK = re.compile(_LEAD + r"(?:اخذت|أخذت|خذيت)\s+(?:من(?!\s
 # after the name is not part of it.
 _PAY_VERBS = {"دفع", "دفعت", "دفعلي", "سدد", "سددت", "سددلي", "جاب", "جابت", "جابلي", "نطاني", "نطتني",
               "انطاني", "انطتني", "نطي", "نطت", "عطاني", "عطتني", "اعطاني", "اعطتني", "عطي", "عطت",
-              "واصلني", "واصلتني"}
+              "واصلني", "واصلتني", "واصل", "دز", "دزت", "دزلي", "دزتلي", "حول", "حولت", "حولي", "حولتلي"}
 
 
 def _without_pay_verb(name) -> str | None:
@@ -775,6 +777,23 @@ class DebtTools:
                       "وإذا گال يقصده عيد نفس الاستدعاء ويا اسمه الكامل بكلامه، وإذا گال ضيفه استدعي الإضافة.",
                       customer_name=party["name"], said=said)
 
+    def _big_ok(self, value, confirmed) -> bool:
+        """5-11-2026: "سجل على ابو علي 3" read as 3,000,000 went through with confirmed=true that the
+        model set by itself. A large amount needs the owner: he wrote it in full ("3 مليون"، "3,000,000")
+        or this message is his yes to the agent's question ("اي"، "سجلها")."""
+        if not confirmed:
+            return False
+        if self.source_message is None:  # a direct call (not from a chat message)
+            return True
+        text = normalize(self.source_message)
+        if re.search(r"مليون|ملايين|ملاين|مليار", text):
+            return True
+        for m in re.finditer(r"(\d[\d,]*)\s*(الف)?", text):
+            n = int(m.group(1).replace(",", ""))
+            if n == value or (m.group(2) and n * 1000 == value):
+                return True
+        return bool(_REPEAT_OK.search(text)) and not re.search(r"\d", text)
+
     def _record(self, tx_type, customer_id, amount, currency="IQD", note=None, confirmed=False,
                 kind="customer", from_drawer=True):
         customer, err = self._party_or_error(customer_id, kind)
@@ -807,7 +826,7 @@ class DebtTools:
                     "اسأل صاحب المحل: 'سجلتها قبل شوية، هاي دفعة ثانية لو نفسها؟' وإذا گال ثانية عيد بـ confirmed=true.",
                     customer_name=customer["name"], amount=value, currency=currency, earlier_at=dup["created_at"])
         limit = self.large_amount_iqd if currency == "IQD" else USD_LARGE_AMOUNT
-        if value > limit and not confirmed:
+        if value > limit and not self._big_ok(value, confirmed):
             return _error(
                 "confirmation_required",
                 "المبلغ كبير، لازم تأكد ويا المستخدم وبعدين تعيد الاستدعاء بـ confirmed=true",
@@ -1050,7 +1069,7 @@ class DebtTools:
         if currency not in db.CURRENCIES:
             return _error("invalid_currency", "العملة لازم تكون IQD أو USD")
         limit = self.large_amount_iqd if currency == "IQD" else USD_LARGE_AMOUNT
-        if value > limit and not confirmed:
+        if value > limit and not self._big_ok(value, confirmed):
             return _error("confirmation_required",
                           "المبلغ كبير، لازم تأكد ويا المستخدم وبعدين تعيد الاستدعاء بـ confirmed=true",
                           reason=reason, amount=value, currency=currency, limit=limit)
@@ -1170,7 +1189,7 @@ class DebtTools:
             if err:
                 return _error("customer_required", "بيعة الدين تحتاج الزبون: دوّره بـ find_customer. " + err["message"])
         limit = self.large_amount_iqd if currency == "IQD" else USD_LARGE_AMOUNT
-        if total > limit and not confirmed:
+        if total > limit and not self._big_ok(total, confirmed):
             return _error("confirmation_required",
                           "المبلغ كبير، لازم تأكد ويا المستخدم وبعدين تعيد الاستدعاء بـ confirmed=true",
                           total=total, currency=currency, limit=limit)
@@ -1223,7 +1242,7 @@ class DebtTools:
         if currency not in db.CURRENCIES:
             return _error("invalid_currency", "العملة لازم تكون IQD أو USD")
         limit = self.large_amount_iqd if currency == "IQD" else USD_LARGE_AMOUNT
-        if value > limit and not confirmed:
+        if value > limit and not self._big_ok(value, confirmed):
             return _error("confirmation_required",
                           "المبلغ كبير، لازم تأكد ويا المستخدم وبعدين تعيد الاستدعاء بـ confirmed=true",
                           label=label, amount=value, currency=currency, limit=limit)
@@ -1542,7 +1561,9 @@ class DebtTools:
         memories = db.list_memories(self.conn)
         return {"ok": True, "count": len(memories), "memories": memories}
 
-    def tool_undo_last(self, name=None):
+    def tool_undo_last(self, name=None, entry=None):
+        if entry is not None and str(entry).strip():
+            return self._undo_given(str(entry).strip())
         if name is not None and str(name).strip():
             return self._undo_named(str(name).strip())
         while self.session_tx_ids:
@@ -1588,6 +1609,18 @@ class DebtTools:
         _, i = parties[party["id"]]
         entry = self.session_tx_ids.pop(i)
         return self._undo_entry(entry) or _error("nothing_to_undo", f"قيد {party['name']} ملغي من قبل.")
+
+    def _undo_given(self, entry):
+        """5-11-2026: "شطبها" on the payment card of "أم حسين دفعت 5 وأخذت شكر دين" undid the sugar (her
+        last entry). The card's button names its own entry: exactly that one is undone."""
+        m = re.fullmatch(r"(tx|sale):(\d+)", entry)
+        if not m:
+            return _error("bad_entry", "رقم القيد مو مفهوم. اسأل صاحب المحل يا قيد يريد يشطب.")
+        key = int(m.group(2)) if m.group(1) == "tx" else ("sale", int(m.group(2)))
+        if key not in self.session_tx_ids:
+            return _error("nothing_to_undo", "هذا القيد مو من هالمحادثة، فما ألغيه. لا تلغي غيره: گول هذا لصاحب المحل.")
+        self.session_tx_ids.remove(key)
+        return self._undo_entry(key) or _error("nothing_to_undo", "هذا القيد ملغي من قبل.")
 
     def _undo_entry(self, entry) -> dict | None:
         """Undo one recorded entry; None when it was already undone."""

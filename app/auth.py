@@ -21,9 +21,7 @@ COOKIE = "dafter_login"
 DAYS = 30
 OPEN_PREFIXES = ("/pay/", "/login", "/version")
 MAX_TRIES = 5          # wrong passwords per address in TRY_WINDOW
-MAX_TRIES_ALL = 20     # wrong passwords from everyone together in TRY_WINDOW: the backstop
 TRY_WINDOW = 600  # seconds
-ALL = "*all*"
 WRONG_DELAY = 1.0  # seconds a wrong password waits
 
 _tries: dict[str, list[float]] = {}
@@ -101,16 +99,19 @@ def _recent(key: str, now: float) -> list[float]:
 
 
 def too_many(request: Request, now: float | None = None) -> bool:
-    """Five wrong tries from one address, or twenty from everyone together, close the login for
-    10 minutes. The owner is not locked out of what he already opened: his cookie lasts 30 days."""
+    """Five wrong tries from one address close the login FOR THAT ADDRESS for 10 minutes.
+    (5-11-2026: a shared count of 20 from everyone let anyone lock the owner and the judges out,
+    even with the right password. Guessing from many addresses is still slowed by WRONG_DELAY.)"""
     now = time.time() if now is None else now
-    return len(_recent(_client(request), now)) >= MAX_TRIES or len(_recent(ALL, now)) >= MAX_TRIES_ALL
+    return len(_recent(_client(request), now)) >= MAX_TRIES
 
 
 def failed(request: Request) -> None:
     now = time.time()
+    if len(_tries) > 10_000:  # many addresses: forget the ones whose tries are over
+        for key in [k for k, v in _tries.items() if not v or now - v[-1] >= TRY_WINDOW]:
+            del _tries[key]
     _tries.setdefault(_client(request), []).append(now)
-    _tries.setdefault(ALL, []).append(now)
 
 
 def is_open(path: str) -> bool:
