@@ -968,6 +968,7 @@ function answerChoices(text, calls) {
     if (r.error === 'ask_first') return ['إي، ضيفه', 'لا'];
     if (r.error === 'possible_duplicate') return ['دفعة ثانية، سجّلها', 'نفسها، لا تسجل'];
     if (r.error === 'two_movements') return ['إي، سجّل الاثنين', 'لا'];
+    if (r.error === 'payment_or_cash_in') return ['إي، تسديد من حسابه', 'لا، وارد للجرار'];
     if (r.error === 'looks_like_payment') return ['إي، تسديد', 'لا، دين'];
     if (r.error === 'confirmation_required' || r.error === 'amount_not_from_owner') return ['إي، سجّل', 'لا'];
     if ((c.tool === 'find_customer' || c.tool === 'find_supplier') && r.ok && r.count && text.includes('تقصد')) {

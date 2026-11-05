@@ -279,6 +279,14 @@ def _named_party(conn, message: str) -> str | None:
     return max(named, key=lambda c: len(c["normalized_name"]))["name"] if named else None
 
 
+def _customer_named(conn, text: str) -> dict | None:
+    """The customer (not supplier) named in the text, whole words, the longest name first."""
+    text = " " + " ".join(re.sub(r"[^\w\s]", " ", normalize(text or "")).split()) + " "
+    named = [c for c in db.all_customers(conn, "customer")
+             if c["normalized_name"] and f" {c['normalized_name']} " in text]
+    return max(named, key=lambda c: len(c["normalized_name"])) if named else None
+
+
 _ONE_COMPANY = re.compile(r"(?<!\w)لل(?:شركه|شركة|مورد|معمل|مندوب)(?!\w)")
 
 
@@ -651,6 +659,19 @@ class Agent:
             return {"ok": False, "error": "looks_like_payment",
                     "message": f"صاحب المحل گال \"{paid}\" يعني الزبون دفع فلوس: هذا تسديد (record_payment، ينزل من دينه) "
                                f"مو دين. لا تسجل دين. اسأله \"تقصد دفع (تسديد)؟\" وسجل بس من يجاوب."}
+        # 5-11-2026 online: "ام حسين جابت 10 الاف" became a cash-in for the drawer, and her 10,750 debt stayed.
+        # Money from a customer in the notebook, or said with a payment word, is asked about first.
+        if call.name == "record_cash_in" and "payment_or_cash_in" not in session.last_errors:
+            label = str((call.input or {}).get("label") or "")
+            who = _customer_named(self.conn, f"{message} {label}")
+            if who or _paid_word(message):
+                name = who["name"] if who else label
+                return {"ok": False, "error": "payment_or_cash_in", "customer_name": name,
+                        "message": f"{name} " + ("زبون بالدفتر" if who else "") +
+                                   (" و" if who and _paid_word(message) else "") +
+                                   ("الرسالة بيها كلمة دفع" if _paid_word(message) else "") +
+                                   f". لا تسجل وارد. اسأل صاحب المحل: \"تسديد من حساب {name}؟\" "
+                                   "إذا گال إي سجل record_payment، وإذا گال وارد للجرار سجل record_cash_in."}
         if call.name in _RECORDS and _CORRECTION.search(message or "") and not session.undid_this_turn \
                 and not session.correction_asked and session.tools.turn_start:
             session.correction_asked = True  # once: if nothing was wrong to undo, the model may go on

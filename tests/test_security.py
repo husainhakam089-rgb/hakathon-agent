@@ -387,3 +387,29 @@ def test_a_correction_undoes_before_it_writes(conn):
     calls = agent.chat("s", "لا مو 10، 5 بس")["tool_calls"]
     assert [c["result"].get("error") or "ok" for c in calls] == ["correct_first", "ok", "ok"]
     assert db.get_balance(conn, a)["IQD"] == 5000
+
+
+def test_a_customers_money_is_not_a_drawer_cash_in(conn):
+    """"ام حسين جابت 10 الاف" was a cash-in for the drawer, and her 10,750 debt stayed."""
+    um = db.add_customer(conn, "أم حسين")
+    db.add_transaction(conn, um, "debt", 10750)
+    cash_in = _call("record_cash_in", amount=10000, currency="IQD", label="أم حسين")
+    agent = Agent(conn, llm=FakeLLM(cash_in, LLMResponse(text="تسديد من حساب أم حسين؟"),
+                                    _pay(10000, um), LLMResponse(text="سجلت")), log_path=None)
+    first = agent.chat("s", "ام حسين جابت 10 الاف")["tool_calls"][0]["result"]
+    assert first["error"] == "payment_or_cash_in" and first["customer_name"] == "أم حسين"
+    assert agent.chat("s", "إي، تسديد من حسابه")["tool_calls"][0]["result"]["ok"]
+    assert db.get_balance(conn, um)["IQD"] == 750
+    # a payment word with a name not in the notebook is asked about too; a plain cash-in is not
+    for msg, label in (("محمد جاب 25", "محمد"),):
+        agent = Agent(conn, llm=FakeLLM(_call("record_cash_in", amount=25000, currency="IQD", label=label),
+                                        LLMResponse(text="؟")), log_path=None)
+        assert agent.chat(msg, msg)["tool_calls"][0]["result"]["error"] == "payment_or_cash_in"
+    agent = Agent(conn, llm=FakeLLM(_call("record_cash_in", amount=40000, currency="IQD", label="كارت شحن"),
+                                    LLMResponse(text="تمام")), log_path=None)
+    assert agent.chat("t", "دخل 40 ألف كارت شحن")["tool_calls"][0]["result"]["ok"]
+    # after the question, "لا، وارد للجرار" records the cash-in
+    agent = Agent(conn, llm=FakeLLM(cash_in, LLMResponse(text="تسديد؟"), cash_in, LLMResponse(text="تمام")),
+                  log_path=None)
+    agent.chat("u", "ام حسين جابت 10 الاف")
+    assert agent.chat("u", "لا، وارد للجرار")["tool_calls"][0]["result"]["ok"]
